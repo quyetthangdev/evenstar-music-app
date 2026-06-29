@@ -30,17 +30,23 @@ final class PlaybackService {
         pushNowPlaying()
     }
 
-    func togglePlayPause() {
-        guard hasLoaded else { return }
-        if isPlaying {
-            player.pause()
-            isPlaying = false
-        } else {
-            activateSessionIfNeeded()
-            player.play()
-            isPlaying = true
-        }
+    func play() {
+        guard hasLoaded, !isPlaying else { return }
+        activateSessionIfNeeded()
+        player.play()
+        isPlaying = true
         pushNowPlaying()
+    }
+
+    func pause() {
+        guard hasLoaded, isPlaying else { return }
+        player.pause()
+        isPlaying = false
+        pushNowPlaying()
+    }
+
+    func togglePlayPause() {
+        if isPlaying { pause() } else { play() }
     }
 
     private func handleFinish() {

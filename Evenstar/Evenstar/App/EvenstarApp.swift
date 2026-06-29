@@ -11,11 +11,15 @@ import UIKit
 @main
 struct EvenstarApp: App {
     @State private var playback: PlaybackService
+    private let remoteCommands: RemoteCommandsBridge
 
     init() {
         let player = AVAudioPlayerWrapper()
         let nowPlaying = NowPlayingService()
-        _playback = State(initialValue: PlaybackService(player: player, nowPlaying: nowPlaying))
+        let service = PlaybackService(player: player, nowPlaying: nowPlaying)
+        _playback = State(initialValue: service)
+        remoteCommands = RemoteCommandsBridge(playback: service)
+        remoteCommands.install()
     }
 
     var body: some Scene {
