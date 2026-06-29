@@ -54,6 +54,35 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(player.playCallCount, 0)
         XCTAssertEqual(nowPlaying.updates.count, 0)
     }
+
+    func testSeekUpdatesPlayerCurrentTime() throws {
+        let (service, player, _) = makeService()
+        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
+
+        service.seek(to: 42)
+
+        XCTAssertEqual(player.currentTime, 42)
+        XCTAssertEqual(service.position, 42)
+    }
+
+    func testSeekClampsAtZero() throws {
+        let (service, _, _) = makeService()
+        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
+
+        service.seek(to: -10)
+
+        XCTAssertEqual(service.position, 0)
+    }
+
+    func testSeekClampsAtDuration() throws {
+        let (service, player, _) = makeService()
+        player.duration = 120
+        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
+
+        service.seek(to: 999)
+
+        XCTAssertEqual(service.position, 120)
+    }
 }
 
 private extension TrackMetadata {

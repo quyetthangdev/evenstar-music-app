@@ -7,11 +7,14 @@ final class PlaybackService {
     private(set) var isPlaying: Bool = false
     private(set) var currentTrackTitle: String?
     private(set) var currentMetadata: TrackMetadata?
+    private(set) var position: TimeInterval = 0
+    var duration: TimeInterval { player.duration }
 
     private let player: AudioPlayerProtocol
     private let nowPlaying: NowPlayingPublisher
     private var hasLoaded: Bool = false
     private var sessionActivated: Bool = false
+    private var positionTimer: Timer?
 
     init(player: AudioPlayerProtocol, nowPlaying: NowPlayingPublisher) {
         self.player = player
@@ -26,6 +29,7 @@ final class PlaybackService {
         currentMetadata = metadata
         currentTrackTitle = metadata.title
         isPlaying = false
+        position = 0
         hasLoaded = true
         pushNowPlaying()
     }
@@ -35,6 +39,7 @@ final class PlaybackService {
         activateSessionIfNeeded()
         player.play()
         isPlaying = true
+        startPositionUpdates()
         pushNowPlaying()
     }
 
@@ -42,6 +47,7 @@ final class PlaybackService {
         guard hasLoaded, isPlaying else { return }
         player.pause()
         isPlaying = false
+        stopPositionUpdates()
         pushNowPlaying()
     }
 
@@ -49,8 +55,33 @@ final class PlaybackService {
         if isPlaying { pause() } else { play() }
     }
 
+    func seek(to target: TimeInterval) {
+        guard hasLoaded else { return }
+        let clamped = max(0, min(target, player.duration))
+        player.currentTime = clamped
+        position = clamped
+        pushNowPlaying()
+    }
+
+    private func startPositionUpdates() {
+        stopPositionUpdates()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.position = self.player.currentTime
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        positionTimer = timer
+    }
+
+    private func stopPositionUpdates() {
+        positionTimer?.invalidate()
+        positionTimer = nil
+    }
+
     private func handleFinish() {
         isPlaying = false
+        position = player.duration
+        stopPositionUpdates()
         pushNowPlaying()
     }
 
@@ -61,8 +92,8 @@ final class PlaybackService {
             artist: metadata.artist,
             album: metadata.album,
             artwork: metadata.artwork,
-            duration: metadata.durationSeconds,
-            elapsed: player.currentTime,
+            duration: player.duration,
+            elapsed: position,
             isPlaying: isPlaying
         )
     }

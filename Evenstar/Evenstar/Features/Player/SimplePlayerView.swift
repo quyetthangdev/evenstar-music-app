@@ -3,8 +3,10 @@ import SwiftUI
 struct SimplePlayerView: View {
     let playback: PlaybackService
 
+    @State private var draggingPosition: TimeInterval?
+
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: 24) {
             Spacer()
 
             Image(systemName: "music.note")
@@ -17,14 +19,14 @@ struct SimplePlayerView: View {
                 )
 
             VStack(spacing: 4) {
-                Text(playback.currentTrackTitle ?? "—")
+                Text(playback.currentMetadata?.title ?? "—")
                     .font(.title2.bold())
-                Text("Sample track")
+                Text(playback.currentMetadata?.artist ?? "")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            scrubber
 
             Button {
                 playback.togglePlayPause()
@@ -39,6 +41,42 @@ struct SimplePlayerView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGroupedBackground))
+    }
+
+    private var scrubber: some View {
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(
+                    get: { draggingPosition ?? playback.position },
+                    set: { draggingPosition = $0 }
+                ),
+                in: 0...max(playback.duration, 0.001),
+                onEditingChanged: { editing in
+                    if !editing, let target = draggingPosition {
+                        playback.seek(to: target)
+                        draggingPosition = nil
+                    }
+                }
+            )
+
+            HStack {
+                Text(formatTime(draggingPosition ?? playback.position))
+                Spacer()
+                Text("-" + formatTime(max(0, playback.duration - (draggingPosition ?? playback.position))))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        .padding(.horizontal)
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        guard time.isFinite, time >= 0 else { return "0:00" }
+        let total = Int(time.rounded())
+        let minutes = total / 60
+        let seconds = total % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 
