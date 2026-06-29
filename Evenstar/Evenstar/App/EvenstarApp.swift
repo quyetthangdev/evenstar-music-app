@@ -30,7 +30,7 @@ struct EvenstarApp: App {
             assertionFailure("sample.mp3 missing from bundle")
             return
         }
-        let artwork = UIImage(named: "SampleArtWork")
+        let artwork = UIImage(named: "SampleArtwork")
         let metadata = TrackMetadata(
             title: "Sample",
             artist: "Unknown Artist",
