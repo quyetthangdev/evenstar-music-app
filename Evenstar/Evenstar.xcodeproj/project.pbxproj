@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		D7BE56862FF26BC8002ABD44 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D7BE56542FF2544B002ABD44 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D7BE565B2FF2544B002ABD44;
+			remoteInfo = Evenstar;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		D7BE565C2FF2544B002ABD44 /* Evenstar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Evenstar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D7BE56822FF26BC8002ABD44 /* EvenstarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EvenstarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -29,10 +40,22 @@
 			path = Evenstar;
 			sourceTree = "<group>";
 		};
+		D7BE56832FF26BC8002ABD44 /* EvenstarTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = EvenstarTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D7BE56592FF2544B002ABD44 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D7BE567F2FF26BC8002ABD44 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				D7BE565E2FF2544B002ABD44 /* Evenstar */,
+				D7BE56832FF26BC8002ABD44 /* EvenstarTests */,
 				D7BE565D2FF2544B002ABD44 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				D7BE565C2FF2544B002ABD44 /* Evenstar.app */,
+				D7BE56822FF26BC8002ABD44 /* EvenstarTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +108,29 @@
 			productReference = D7BE565C2FF2544B002ABD44 /* Evenstar.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D7BE56812FF26BC8002ABD44 /* EvenstarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D7BE56882FF26BC8002ABD44 /* Build configuration list for PBXNativeTarget "EvenstarTests" */;
+			buildPhases = (
+				D7BE567E2FF26BC8002ABD44 /* Sources */,
+				D7BE567F2FF26BC8002ABD44 /* Frameworks */,
+				D7BE56802FF26BC8002ABD44 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D7BE56872FF26BC8002ABD44 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D7BE56832FF26BC8002ABD44 /* EvenstarTests */,
+			);
+			name = EvenstarTests;
+			packageProductDependencies = (
+			);
+			productName = EvenstarTests;
+			productReference = D7BE56822FF26BC8002ABD44 /* EvenstarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -95,6 +143,10 @@
 				TargetAttributes = {
 					D7BE565B2FF2544B002ABD44 = {
 						CreatedOnToolsVersion = 26.0.1;
+					};
+					D7BE56812FF26BC8002ABD44 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = D7BE565B2FF2544B002ABD44;
 					};
 				};
 			};
@@ -113,12 +165,20 @@
 			projectRoot = "";
 			targets = (
 				D7BE565B2FF2544B002ABD44 /* Evenstar */,
+				D7BE56812FF26BC8002ABD44 /* EvenstarTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		D7BE565A2FF2544B002ABD44 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D7BE56802FF26BC8002ABD44 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -135,7 +195,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D7BE567E2FF26BC8002ABD44 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D7BE56872FF26BC8002ABD44 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D7BE565B2FF2544B002ABD44 /* Evenstar */;
+			targetProxy = D7BE56862FF26BC8002ABD44 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D7BE56652FF2544C002ABD44 /* Debug */ = {
@@ -335,6 +410,50 @@
 			};
 			name = Release;
 		};
+		D7BE56892FF26BC8002ABD44 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QMMP2HNM6W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Trend-Coffee.EvenstarTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Evenstar.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Evenstar";
+			};
+			name = Debug;
+		};
+		D7BE568A2FF26BC8002ABD44 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QMMP2HNM6W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Trend-Coffee.EvenstarTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Evenstar.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Evenstar";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -352,6 +471,15 @@
 			buildConfigurations = (
 				D7BE56682FF2544C002ABD44 /* Debug */,
 				D7BE56692FF2544C002ABD44 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D7BE56882FF26BC8002ABD44 /* Build configuration list for PBXNativeTarget "EvenstarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D7BE56892FF26BC8002ABD44 /* Debug */,
+				D7BE568A2FF26BC8002ABD44 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
