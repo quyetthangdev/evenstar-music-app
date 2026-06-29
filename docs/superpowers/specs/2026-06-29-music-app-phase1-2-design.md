@@ -1,6 +1,7 @@
-# Music App — Phase 1 & 2 Design Spec
+# Evenstar — Phase 1 & 2 Design Spec
 
 **Date:** 2026-06-29
+**Project codename / App name:** Evenstar
 **Scope:** Mini player (Phase 1) + Local files v0 (Phase 2)
 **Author/Owner:** gihubtbe1@gmail.com
 **Target platform:** iOS 17.2+ (iPhone)
@@ -111,9 +112,9 @@ Apple Music integration, Spotify, smart playlists, lyrics, EQ/gapless, iPad-opti
 ### Project structure
 
 ```
-MusicApp/
+Evenstar/
 ├── App/
-│   ├── MusicAppApp.swift          # @main, sets up ModelContainer + services
+│   ├── EvenstarApp.swift          # @main, sets up ModelContainer + services
 │   └── AppEnvironment.swift       # wires services into SwiftUI environment
 ├── Models/
 │   ├── Track.swift                # @Model
@@ -521,7 +522,8 @@ End of Phase 2: app is usable for daily listening with a 1k–5k track library, 
 
 ## 11. Open questions to revisit before Phase 2 starts
 
-- Final app name and bundle identifier (placeholder: `MusicApp` / `com.user.MusicApp`).
+- Final bundle identifier — placeholder `com.<your-team-id>.evenstar`. Decide concrete prefix once Apple Developer Program is enrolled.
+- App Store name: searching "Evenstar" on the App Store before submission to check for naming collisions.
 - Apple Developer Program enrollment ($99/year) needed before TestFlight (M2.10). Confirm enrollment timing.
 - Whether to add a basic UI tests target now (probably no, but defer the decision until after Phase 1).
 
