@@ -7,20 +7,28 @@
 
 import SwiftUI
 
-  @main
-  struct EvenstarApp: App {
-      var body: some Scene {
-          WindowGroup {
-              VStack(spacing: 16) {
-                  Image(systemName: "music.note")
-                      .font(.system(size: 72))
-                      .foregroundStyle(.tint)
-                  Text("Hello, Evenstar")
-                      .font(.largeTitle)
-                      .bold()
-              }
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .background(Color(.systemGroupedBackground))
-          }
-      }
-  }
+@main
+struct EvenstarApp: App {
+    @State private var playback = PlaybackService(player: AVAudioPlayerWrapper())
+
+    var body: some Scene {
+        WindowGroup {
+            SimplePlayerView(playback: playback)
+                .task {
+                    loadSampleTrack()
+                }
+        }
+    }
+
+    private func loadSampleTrack() {
+        guard let url = Bundle.main.url(forResource: "sample", withExtension: "mp3") else {
+            assertionFailure("sample.mp3 missing from bundle")
+            return
+        }
+        do {
+            try playback.load(url: url, title: "Sample")
+        } catch {
+            print("Failed to load sample track: \(error)")
+        }
+    }
+}
