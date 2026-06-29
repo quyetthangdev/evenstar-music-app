@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AVFoundation
 
 @Observable
 final class PlaybackService {
@@ -8,6 +9,7 @@ final class PlaybackService {
 
     private let player: AudioPlayerProtocol
     private var hasLoaded: Bool = false
+    private var sessionActivated: Bool = false
 
     init(player: AudioPlayerProtocol) {
         self.player = player
@@ -29,8 +31,21 @@ final class PlaybackService {
             player.pause()
             isPlaying = false
         } else {
+            activateSessionIfNeeded()
             player.play()
             isPlaying = true
+        }
+    }
+
+    private func activateSessionIfNeeded() {
+        guard !sessionActivated else { return }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            sessionActivated = true
+        } catch {
+            print("Failed to activate audio session: \(error)")
         }
     }
 }
