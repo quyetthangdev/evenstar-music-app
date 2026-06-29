@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 @testable import Evenstar
 
 final class MockAudioPlayer: AudioPlayerProtocol {
@@ -30,4 +31,28 @@ final class MockAudioPlayer: AudioPlayerProtocol {
         isPlaying = false
         didFinishCallback?()
     }
+}
+
+final class MockNowPlayingPublisher: NowPlayingPublisher {
+    struct Update {
+        let title: String
+        let artist: String
+        let album: String
+        let duration: TimeInterval
+        let elapsed: TimeInterval
+        let isPlaying: Bool
+    }
+
+    private(set) var updates: [Update] = []
+    private(set) var clearCallCount = 0
+
+    func update(title: String, artist: String, album: String,
+                artwork _: UIImage?, duration: TimeInterval,
+                elapsed: TimeInterval, isPlaying: Bool) {
+        updates.append(.init(title: title, artist: artist, album: album,
+                             duration: duration, elapsed: elapsed,
+                             isPlaying: isPlaying))
+    }
+
+    func clear() { clearCallCount += 1 }
 }

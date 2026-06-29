@@ -43,7 +43,10 @@ struct SimplePlayerView: View {
 }
 
 #Preview {
-    SimplePlayerView(playback: PlaybackService(player: PreviewAudioPlayer()))
+    SimplePlayerView(playback: PlaybackService(
+        player: PreviewAudioPlayer(),
+        nowPlaying: PreviewNowPlayingPublisher()
+    ))
 }
 
 private final class PreviewAudioPlayer: AudioPlayerProtocol {
@@ -54,4 +57,11 @@ private final class PreviewAudioPlayer: AudioPlayerProtocol {
     func load(url _: URL) throws {}
     func play() { isPlaying = true }
     func pause() { isPlaying = false }
+}
+
+private final class PreviewNowPlayingPublisher: NowPlayingPublisher {
+    func update(title _: String, artist _: String, album _: String,
+                artwork _: UIImage?, duration _: TimeInterval,
+                elapsed _: TimeInterval, isPlaying _: Bool) {}
+    func clear() {}
 }

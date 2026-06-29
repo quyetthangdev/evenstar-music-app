@@ -6,23 +6,28 @@ import AVFoundation
 final class PlaybackService {
     private(set) var isPlaying: Bool = false
     private(set) var currentTrackTitle: String?
+    private(set) var currentMetadata: TrackMetadata?
 
     private let player: AudioPlayerProtocol
+    private let nowPlaying: NowPlayingPublisher
     private var hasLoaded: Bool = false
     private var sessionActivated: Bool = false
 
-    init(player: AudioPlayerProtocol) {
+    init(player: AudioPlayerProtocol, nowPlaying: NowPlayingPublisher) {
         self.player = player
+        self.nowPlaying = nowPlaying
         self.player.didFinishCallback = { [weak self] in
-            self?.isPlaying = false
+            self?.handleFinish()
         }
     }
 
-    func load(url: URL, title: String) throws {
+    func load(url: URL, metadata: TrackMetadata) throws {
         try player.load(url: url)
-        currentTrackTitle = title
+        currentMetadata = metadata
+        currentTrackTitle = metadata.title
         isPlaying = false
         hasLoaded = true
+        pushNowPlaying()
     }
 
     func togglePlayPause() {
@@ -35,6 +40,25 @@ final class PlaybackService {
             player.play()
             isPlaying = true
         }
+        pushNowPlaying()
+    }
+
+    private func handleFinish() {
+        isPlaying = false
+        pushNowPlaying()
+    }
+
+    private func pushNowPlaying() {
+        guard let metadata = currentMetadata else { return }
+        nowPlaying.update(
+            title: metadata.title,
+            artist: metadata.artist,
+            album: metadata.album,
+            artwork: metadata.artwork,
+            duration: metadata.durationSeconds,
+            elapsed: player.currentTime,
+            isPlaying: isPlaying
+        )
     }
 
     private func activateSessionIfNeeded() {

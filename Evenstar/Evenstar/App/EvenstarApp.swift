@@ -6,17 +6,22 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct EvenstarApp: App {
-    @State private var playback = PlaybackService(player: AVAudioPlayerWrapper())
+    @State private var playback: PlaybackService
+
+    init() {
+        let player = AVAudioPlayerWrapper()
+        let nowPlaying = NowPlayingService()
+        _playback = State(initialValue: PlaybackService(player: player, nowPlaying: nowPlaying))
+    }
 
     var body: some Scene {
         WindowGroup {
             SimplePlayerView(playback: playback)
-                .task {
-                    loadSampleTrack()
-                }
+                .task { loadSampleTrack() }
         }
     }
 
@@ -25,8 +30,16 @@ struct EvenstarApp: App {
             assertionFailure("sample.mp3 missing from bundle")
             return
         }
+        let artwork = UIImage(named: "SampleArtWork")
+        let metadata = TrackMetadata(
+            title: "Sample",
+            artist: "Unknown Artist",
+            album: "Unknown Album",
+            artwork: artwork,
+            durationSeconds: 0
+        )
         do {
-            try playback.load(url: url, title: "Sample")
+            try playback.load(url: url, metadata: metadata)
         } catch {
             print("Failed to load sample track: \(error)")
         }
