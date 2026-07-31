@@ -18,6 +18,7 @@ enum InMemoryLibrary {
                           albumTitle: String = "Unknown Album",
                           durationSeconds: Double = 180,
                           relativePath: String = "Music/sample.mp3",
+                          artworkRelativePath: String? = nil,
                           format: String = "mp3") -> Track {
         Track(
             title: title,
@@ -25,6 +26,7 @@ enum InMemoryLibrary {
             albumTitle: albumTitle,
             durationSeconds: durationSeconds,
             relativePath: relativePath,
+            artworkRelativePath: artworkRelativePath,
             format: format
         )
     }

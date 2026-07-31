@@ -4,14 +4,11 @@ import Observation
 
 enum LibraryError: LocalizedError {
     case persistenceFailed(underlying: Error)
-    case fileDeleteFailed(URL, underlying: Error)
 
     var errorDescription: String? {
         switch self {
         case .persistenceFailed(let error):
             return "Couldn't save changes: \(error.localizedDescription)"
-        case .fileDeleteFailed(let url, let error):
-            return "Couldn't delete file \(url.lastPathComponent): \(error.localizedDescription)"
         }
     }
 }
@@ -36,6 +33,11 @@ final class LibraryService {
     }
 
     func delete(_ track: Track) throws {
+        // Filesystem cleanup failures are deliberately ignored. The user's intent is to remove
+        // the track from the library database, which must always succeed. If files are already
+        // missing or inaccessible, the track record is still cleared; polished error reporting
+        // for orphaned files is a Phase 2d concern. This best-effort approach ensures the DB
+        // is never blocked by filesystem state.
         let audioURL = FileLocation.absoluteURL(forRelative: track.relativePath, fileManager: fileManager)
         try? fileManager.removeItem(at: audioURL)
         if let artworkPath = track.artworkRelativePath {

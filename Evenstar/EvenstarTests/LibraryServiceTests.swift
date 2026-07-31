@@ -78,4 +78,45 @@ final class LibraryServiceTests: XCTestCase {
 
         XCTAssertEqual(try library.fetchAllTracks().count, 0)
     }
+
+    func testDeleteRemovesFilesFromDisk() throws {
+        let fileManager = FileManager.default
+        let trackID = UUID()
+        let musicRelativePath = "Music/\(trackID).mp3"
+        let artworkRelativePath = "Artwork/\(trackID).jpg"
+
+        let musicURL = FileLocation.absoluteURL(forRelative: musicRelativePath, fileManager: fileManager)
+        let artworkURL = FileLocation.absoluteURL(forRelative: artworkRelativePath, fileManager: fileManager)
+
+        defer {
+            try? fileManager.removeItem(at: musicURL)
+            try? fileManager.removeItem(at: artworkURL)
+            try? fileManager.removeItem(at: musicURL.deletingLastPathComponent())
+            try? fileManager.removeItem(at: artworkURL.deletingLastPathComponent())
+        }
+
+        // Create directories and write dummy files
+        try fileManager.createDirectory(at: musicURL.deletingLastPathComponent(),
+                                        withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: artworkURL.deletingLastPathComponent(),
+                                        withIntermediateDirectories: true)
+        try Data("dummy audio".utf8).write(to: musicURL)
+        try Data("dummy artwork".utf8).write(to: artworkURL)
+
+        XCTAssertTrue(fileManager.fileExists(atPath: musicURL.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: artworkURL.path))
+
+        let library = try InMemoryLibrary.make()
+        let track = InMemoryLibrary.makeTrack(
+            relativePath: musicRelativePath,
+            artworkRelativePath: artworkRelativePath
+        )
+        try library.insert(track)
+
+        try library.delete(track)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: musicURL.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: artworkURL.path))
+        XCTAssertEqual(try library.fetchAllTracks().count, 0)
+    }
 }
