@@ -92,8 +92,15 @@ final class ImportServiceTests: XCTestCase {
         let library = try InMemoryLibrary.make()
         let reader = MockMetadataReader()
         let importer = ImportService(library: library, metadataReader: reader)
-        let url1 = try makeSourceFile(name: "Bohemian Rhapsody.mp3")
-        let url2 = try makeSourceFile(name: "BOHEMIAN RHAPSODY.mp3")
+        // Create separate subdirectories so case-insensitive filesystems don't collide
+        let dir1 = tempDir.appendingPathComponent("a")
+        let dir2 = tempDir.appendingPathComponent("b")
+        try FileManager.default.createDirectory(at: dir1, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir2, withIntermediateDirectories: true)
+        let url1 = dir1.appendingPathComponent("Bohemian Rhapsody.mp3")
+        let url2 = dir2.appendingPathComponent("BOHEMIAN RHAPSODY.mp3")
+        try Data("fake audio bytes".utf8).write(to: url1)
+        try Data("fake audio bytes".utf8).write(to: url2)
         reader.defaultOutcome = .success(
             ExtractedMetadata(
                 title: nil, artist: nil, album: nil,
