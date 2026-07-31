@@ -77,6 +77,9 @@ struct LibraryView: View {
         .fullScreenCover(isPresented: $showNowPlaying) {
             NowPlayingView(playback: playback)
         }
+        .onChange(of: playback.currentTrack?.id) { _, newValue in
+            if newValue == nil { showNowPlaying = false }
+        }
     }
 
     @ViewBuilder

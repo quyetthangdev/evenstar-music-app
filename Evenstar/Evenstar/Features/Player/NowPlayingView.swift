@@ -5,6 +5,9 @@ struct NowPlayingView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var draggingPosition: TimeInterval?
+    @State private var artworkImage: UIImage?
+
+    private static let artworkSize: CGFloat = 280
 
     var body: some View {
         VStack(spacing: 24) {
@@ -36,11 +39,50 @@ struct NowPlayingView: View {
     }
 
     private var artwork: some View {
-        ArtworkThumbnail(
-            relativePath: playback.currentTrack?.artworkRelativePath,
-            size: 280
-        )
+        Group {
+            if let artworkImage {
+                Image(uiImage: artworkImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                artworkPlaceholder
+            }
+        }
+        .frame(width: Self.artworkSize, height: Self.artworkSize)
+        .clipShape(RoundedRectangle(cornerRadius: Self.artworkSize * 0.12))
         .shadow(radius: 10, y: 4)
+        .task(id: playback.currentTrack?.id) {
+            await loadArtwork()
+        }
+    }
+
+    private var artworkPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Self.artworkSize * 0.12)
+                .fill(Color(.tertiarySystemFill))
+            Image(systemName: "music.note")
+                .font(.system(size: Self.artworkSize * 0.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Loads the current track's artwork once per track change (driven by
+    /// `.task(id:)`), rather than on every body re-evaluation. `body`
+    /// re-evaluates every 0.5s while `playback.position` ticks, so relying on
+    /// `ArtworkThumbnail`'s own synchronous decode-on-every-render behavior
+    /// here — appropriate at 44pt in a list row — would mean a repeating
+    /// main-thread disk read/decode of a full-size image while this screen
+    /// stays open.
+    private func loadArtwork() async {
+        let path = playback.currentTrack?.artworkRelativePath
+        artworkImage = await Self.decodeImage(relativePath: path)
+    }
+
+    private static func decodeImage(relativePath: String?) async -> UIImage? {
+        guard let relativePath else { return nil }
+        let url = FileLocation.absoluteURL(forRelative: relativePath)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
     }
 
     private var titleBlock: some View {
@@ -102,6 +144,7 @@ struct NowPlayingView: View {
                     .font(.system(size: 64))
             }
             .buttonStyle(.plain)
+            .disabled(playback.currentTrack == nil)
 
             Button {
                 playback.next()
