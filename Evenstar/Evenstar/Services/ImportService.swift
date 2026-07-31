@@ -7,6 +7,7 @@ enum ImportError: LocalizedError {
     case copyFailed(underlying: Error)
     case persistFailed(underlying: Error)
     case diskFull
+    case fileNotAccessible(URL)
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum ImportError: LocalizedError {
         case .copyFailed(let error): return "Copy failed: \(error.localizedDescription)"
         case .persistFailed(let error): return "Couldn't save to the library: \(error.localizedDescription)"
         case .diskFull: return "Storage is full."
+        case .fileNotAccessible(let url):
+            return "Couldn't access \(url.lastPathComponent). It may have been moved or removed."
         }
     }
 }

@@ -2,6 +2,10 @@ import SwiftUI
 
 struct ImportProgressSheet: View {
     let urls: [URL]
+    /// URLs the picker returned whose security-scoped access could not be started.
+    /// These never reach `ImportService`, but must still be reported as failures
+    /// rather than silently dropped from the summary.
+    let inaccessibleFailures: [(url: URL, error: ImportError)]
     let importer: ImportService
 
     @Environment(\.dismiss) private var dismiss
@@ -44,7 +48,12 @@ struct ImportProgressSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled(importer.isImporting)
         .task {
-            summary = await importer.importFiles(at: urls)
+            let result = await importer.importFiles(at: urls)
+            summary = ImportSummary(
+                imported: result.imported,
+                failures: result.failures + inaccessibleFailures,
+                duplicates: result.duplicates
+            )
         }
     }
 
