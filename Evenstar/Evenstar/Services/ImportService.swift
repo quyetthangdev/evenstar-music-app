@@ -3,17 +3,17 @@ import Observation
 
 enum ImportError: LocalizedError {
     case unsupportedFormat(String)
-    case fileNotReadable(URL)
     case metadataExtractionFailed
     case copyFailed(underlying: Error)
+    case persistFailed(underlying: Error)
     case diskFull
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFormat(let ext): return "Unsupported format: .\(ext)"
-        case .fileNotReadable(let url): return "Cannot read file: \(url.lastPathComponent)"
         case .metadataExtractionFailed: return "Could not extract audio metadata."
         case .copyFailed(let error): return "Copy failed: \(error.localizedDescription)"
+        case .persistFailed(let error): return "Couldn't save to the library: \(error.localizedDescription)"
         case .diskFull: return "Storage is full."
         }
     }
@@ -87,11 +87,6 @@ final class ImportService {
                 )
                 if case .diskFull = error {
                     // Stop the whole batch.
-                    progress = ImportProgress(
-                        completed: progress.completed,
-                        total: progress.total,
-                        lastError: error
-                    )
                     return ImportSummary(imported: imported, failures: failures, duplicates: duplicates)
                 }
             }
@@ -185,7 +180,7 @@ final class ImportService {
                     at: FileLocation.absoluteURL(forRelative: artworkRelative, fileManager: fileManager)
                 )
             }
-            return .failed(.copyFailed(underlying: error))
+            return .failed(.persistFailed(underlying: error))
         }
     }
 

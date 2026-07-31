@@ -53,15 +53,16 @@ final class ImportServiceTests: XCTestCase {
         XCTAssertEqual(summary.imported.count, 1)
         XCTAssertEqual(summary.failures.count, 0)
         let inserted = try XCTUnwrap(summary.imported.first)
+        let destURL = FileLocation.absoluteURL(forRelative: inserted.relativePath)
+        defer {
+            try? FileManager.default.removeItem(at: destURL)
+        }
         XCTAssertEqual(inserted.title, "Bohemian Rhapsody")    // filename fallback
         XCTAssertEqual(inserted.artistName, "Unknown Artist")
         XCTAssertEqual(inserted.albumTitle, "Unknown Album")
         XCTAssertEqual(inserted.format, "mp3")
         // Verify file was copied into sandbox
-        let destURL = FileLocation.absoluteURL(forRelative: inserted.relativePath)
         XCTAssertTrue(FileManager.default.fileExists(atPath: destURL.path))
-        // Cleanup
-        try? FileManager.default.removeItem(at: destURL)
     }
 
     func testImportUsesEmbeddedTitleWhenPresent() async throws {
@@ -82,10 +83,13 @@ final class ImportServiceTests: XCTestCase {
         let summary = await importer.importFiles(at: [url])
 
         let inserted = try XCTUnwrap(summary.imported.first)
+        let destURL = FileLocation.absoluteURL(forRelative: inserted.relativePath)
+        defer {
+            try? FileManager.default.removeItem(at: destURL)
+        }
         XCTAssertEqual(inserted.title, "Real Title")
         XCTAssertEqual(inserted.artistName, "Real Artist")
         XCTAssertEqual(inserted.albumTitle, "Real Album")
-        try? FileManager.default.removeItem(at: FileLocation.absoluteURL(forRelative: inserted.relativePath))
     }
 
     func testImportDedupesByLowercaseTupleAndRoundedDuration() async throws {
@@ -142,9 +146,12 @@ final class ImportServiceTests: XCTestCase {
         let inserted = try XCTUnwrap(summary.imported.first)
         let artworkPath = try XCTUnwrap(inserted.artworkRelativePath)
         let artworkURL = FileLocation.absoluteURL(forRelative: artworkPath)
+        let audioURL = FileLocation.absoluteURL(forRelative: inserted.relativePath)
+        defer {
+            try? FileManager.default.removeItem(at: artworkURL)
+            try? FileManager.default.removeItem(at: audioURL)
+        }
         XCTAssertTrue(FileManager.default.fileExists(atPath: artworkURL.path))
-        try? FileManager.default.removeItem(at: artworkURL)
-        try? FileManager.default.removeItem(at: FileLocation.absoluteURL(forRelative: inserted.relativePath))
     }
 
     func testImportRecordsMetadataExtractionFailure() async throws {
