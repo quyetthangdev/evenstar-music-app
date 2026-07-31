@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - **Min iOS deployment target:** 17.6 (chosen during Phase 1)
+- **`SWIFT_DEFAULT_ACTOR_ISOLATION` must stay `nonisolated`** on both targets. Xcode 26's template sets it to `MainActor`, which gives every MainActor-isolated class an isolated `deinit`; on a deployment target below iOS 26 that routes through the back-deployed `swift_task_deinitOnExecutorMainActorBackDeploy` shim, which aborts with a libmalloc double-free on **every** dealloc. Verified 2026-07-31 on Xcode 26.0.1: with the setting at `MainActor`, all 7 Phase 1 tests crash with SIGABRT; with it at `nonisolated`, all 7 pass. Explicit `@MainActor` annotations (which this plan mandates on `LibraryService` and `ImportService`) are unaffected and safe — the crash comes from the module-wide setting, not the annotation. Do not re-enable it.
 - **UI framework:** SwiftUI only
 - **State management:** `@Observable` macro (`Observation` framework)
 - **Persistence:** SwiftData (`@Model`, `ModelContainer`, `ModelContext`)
