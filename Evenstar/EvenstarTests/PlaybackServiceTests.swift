@@ -1,31 +1,23 @@
 import XCTest
 @testable import Evenstar
 
+@MainActor
 final class PlaybackServiceTests: XCTestCase {
 
-    private func makeService() -> (PlaybackService, MockAudioPlayer, MockNowPlayingPublisher) {
+    private func makeStack() throws -> (PlaybackService, MockAudioPlayer, MockNowPlayingPublisher, Track) {
         let player = MockAudioPlayer()
         let nowPlaying = MockNowPlayingPublisher()
-        let service = PlaybackService(player: player, nowPlaying: nowPlaying)
-        return (service, player, nowPlaying)
+        let library = try InMemoryLibrary.make()
+        let service = PlaybackService(player: player, nowPlaying: nowPlaying, library: library)
+        let track = InMemoryLibrary.makeTrack(title: "Sample")
+        try library.insert(track)
+        return (service, player, nowPlaying, track)
     }
 
-    func testLoadStoresMetadataAndCallsPlayerLoad() throws {
-        let (service, player, _) = makeService()
-        let url = URL(fileURLWithPath: "/tmp/test.mp3")
+    func testPlayingTrackPushesNowPlaying() throws {
+        let (service, player, nowPlaying, track) = try makeStack()
 
-        try service.load(url: url, metadata: .sample)
-
-        XCTAssertEqual(service.currentTrackTitle, "Sample")
-        XCTAssertEqual(player.loadedURL, url)
-        XCTAssertFalse(service.isPlaying)
-    }
-
-    func testTogglePlayPauseStartsPlaybackAndPushesNowPlaying() throws {
-        let (service, player, nowPlaying) = makeService()
-        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
-
-        service.togglePlayPause()
+        service.play(track, in: [track])
 
         XCTAssertTrue(service.isPlaying)
         XCTAssertEqual(player.playCallCount, 1)
@@ -33,10 +25,9 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(nowPlaying.updates.last?.isPlaying, true)
     }
 
-    func testTogglePlayPausePausesAndPushesNowPlaying() throws {
-        let (service, player, nowPlaying) = makeService()
-        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
-        service.togglePlayPause()
+    func testPausePausesPlaybackAndPushesNowPlaying() throws {
+        let (service, player, nowPlaying, track) = try makeStack()
+        service.play(track, in: [track])
 
         service.togglePlayPause()
 
@@ -45,52 +36,19 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(nowPlaying.updates.last?.isPlaying, false)
     }
 
-    func testTogglePlayPauseIsNoOpWhenNothingLoaded() {
-        let (service, player, nowPlaying) = makeService()
+    func testSeekClampsBetweenZeroAndDuration() throws {
+        let (service, player, _, track) = try makeStack()
+        player.duration = 120
+        service.play(track, in: [track])
 
-        service.togglePlayPause()
+        service.seek(to: -10)
+        XCTAssertEqual(service.position, 0)
 
-        XCTAssertFalse(service.isPlaying)
-        XCTAssertEqual(player.playCallCount, 0)
-        XCTAssertEqual(nowPlaying.updates.count, 0)
-    }
-
-    func testSeekUpdatesPlayerCurrentTime() throws {
-        let (service, player, _) = makeService()
-        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
+        service.seek(to: 999)
+        XCTAssertEqual(service.position, 120)
 
         service.seek(to: 42)
-
         XCTAssertEqual(player.currentTime, 42)
         XCTAssertEqual(service.position, 42)
     }
-
-    func testSeekClampsAtZero() throws {
-        let (service, _, _) = makeService()
-        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
-
-        service.seek(to: -10)
-
-        XCTAssertEqual(service.position, 0)
-    }
-
-    func testSeekClampsAtDuration() throws {
-        let (service, player, _) = makeService()
-        player.duration = 120
-        try service.load(url: URL(fileURLWithPath: "/tmp/test.mp3"), metadata: .sample)
-
-        service.seek(to: 999)
-
-        XCTAssertEqual(service.position, 120)
-    }
-}
-
-private extension TrackMetadata {
-    static let sample = TrackMetadata(
-        title: "Sample",
-        artist: "Unknown Artist",
-        album: "Unknown Album",
-        artwork: nil,
-        durationSeconds: 180
-    )
 }

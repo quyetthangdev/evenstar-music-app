@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct SimplePlayerView: View {
     let playback: PlaybackService
@@ -81,9 +82,13 @@ struct SimplePlayerView: View {
 }
 
 #Preview {
-    SimplePlayerView(playback: PlaybackService(
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: Track.self, PlaybackState.self, configurations: config)
+    let library = LibraryService(context: ModelContext(container))
+    return SimplePlayerView(playback: PlaybackService(
         player: PreviewAudioPlayer(),
-        nowPlaying: PreviewNowPlayingPublisher()
+        nowPlaying: PreviewNowPlayingPublisher(),
+        library: library
     ))
 }
 

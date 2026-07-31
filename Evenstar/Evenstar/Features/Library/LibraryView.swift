@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(LibraryService.self) private var library
     @Environment(ImportService.self) private var importer
+    @Environment(PlaybackService.self) private var playback
     @Query(sort: \Track.title, order: .forward) private var tracks: [Track]
 
     @State private var showFileImporter = false
@@ -74,6 +75,10 @@ struct LibraryView: View {
         } else {
             List(tracks) { track in
                 SongRow(track: track)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        playback.play(track, in: tracks)
+                    }
             }
             .listStyle(.plain)
         }

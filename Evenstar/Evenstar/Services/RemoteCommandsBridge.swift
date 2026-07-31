@@ -19,7 +19,7 @@ final class RemoteCommandsBridge {
         center.changePlaybackPositionCommand.removeTarget(nil)
 
         center.playCommand.addTarget { [weak self] _ in
-            self?.playback.play()
+            self?.playback.resume()
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -30,6 +30,10 @@ final class RemoteCommandsBridge {
             self?.playback.togglePlayPause()
             return .success
         }
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            self?.playback.next()
+            return .success
+        }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
@@ -38,7 +42,7 @@ final class RemoteCommandsBridge {
             return .success
         }
 
-        center.nextTrackCommand.isEnabled = false
+        center.nextTrackCommand.isEnabled = true
         center.previousTrackCommand.isEnabled = false
         center.changePlaybackPositionCommand.isEnabled = true
     }
