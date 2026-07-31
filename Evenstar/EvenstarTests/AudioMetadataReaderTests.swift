@@ -42,6 +42,8 @@ final class AudioMetadataReaderTests: XCTestCase {
         XCTAssertNil(metadata.artist)
         XCTAssertNil(metadata.album)
         XCTAssertNil(metadata.artworkData)
+        XCTAssertEqual(metadata.sampleRate, 22050)
+        XCTAssertEqual(metadata.bitDepth, 16)
     }
 
     func testReadThrowsForUnreadableFile() async throws {
@@ -58,4 +60,5 @@ final class AudioMetadataReaderTests: XCTestCase {
             // expected
         }
     }
+
 }
