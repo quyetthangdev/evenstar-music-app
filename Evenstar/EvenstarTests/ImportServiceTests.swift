@@ -144,12 +144,14 @@ final class ImportServiceTests: XCTestCase {
         let summary = await importer.importFiles(at: [url])
 
         let inserted = try XCTUnwrap(summary.imported.first)
-        let artworkPath = try XCTUnwrap(inserted.artworkRelativePath)
-        let artworkURL = FileLocation.absoluteURL(forRelative: artworkPath)
         let audioURL = FileLocation.absoluteURL(forRelative: inserted.relativePath)
         defer {
-            try? FileManager.default.removeItem(at: artworkURL)
             try? FileManager.default.removeItem(at: audioURL)
+        }
+        let artworkPath = try XCTUnwrap(inserted.artworkRelativePath)
+        let artworkURL = FileLocation.absoluteURL(forRelative: artworkPath)
+        defer {
+            try? FileManager.default.removeItem(at: artworkURL)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: artworkURL.path))
     }
