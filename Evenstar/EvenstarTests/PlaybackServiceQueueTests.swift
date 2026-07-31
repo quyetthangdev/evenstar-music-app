@@ -112,4 +112,32 @@ final class PlaybackServiceQueueTests: XCTestCase {
 
         XCTAssertEqual(list[0].playCount, 1)
     }
+
+    func testSkipsUnplayableTrackAndContinuesQueue() throws {
+        let (service, player, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        player.failingURLs = [FileLocation.absoluteURL(forRelative: list[1].relativePath)]
+
+        service.play(list[0], in: list)
+        service.next()
+
+        XCTAssertEqual(service.queueIndex, 2)
+        XCTAssertEqual(service.currentTrack?.id, list[2].id)
+        XCTAssertEqual(service.queue.map(\.id), list.map(\.id))
+        XCTAssertTrue(service.isPlaying)
+    }
+
+    func testAllTracksFailToLoadStopsPlaybackWithoutHanging() throws {
+        let (service, player, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        for track in list {
+            player.failingURLs.insert(FileLocation.absoluteURL(forRelative: track.relativePath))
+        }
+
+        service.play(list[0], in: list)
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
 }

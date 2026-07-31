@@ -94,28 +94,47 @@ final class PlaybackService {
 
     // MARK: - Private
 
+    /// Loads the track at `queueIndex` and starts playback. If a track fails to
+    /// load (missing/corrupt file), skips forward through the remaining queue
+    /// looking for one that does — the queue itself is untouched, only
+    /// `queueIndex` advances. This is a bounded loop (at most `queue.count`
+    /// attempts, since each failed attempt either advances `queueIndex` or
+    /// exits) so a queue whose files have all been deleted still terminates in
+    /// `stopPlayback()` rather than recursing or spinning forever.
     private func loadCurrentAndPlay() {
-        guard let track = currentTrack else {
-            stopPlayback()
+        var attempts = 0
+        while attempts < queue.count {
+            guard let track = currentTrack else {
+                stopPlayback()
+                return
+            }
+            let url = FileLocation.absoluteURL(forRelative: track.relativePath)
+            do {
+                try player.load(url: url)
+                hasLoaded = true
+            } catch {
+                attempts += 1
+                if queueIndex + 1 < queue.count {
+                    queueIndex += 1
+                    playCountedForCurrent = false
+                    continue
+                } else {
+                    stopPlayback()
+                    return
+                }
+            }
+            currentMetadata = metadata(from: track)
+            currentTrackTitle = track.title
+            position = 0
+            playCountedForCurrent = false
+            activateSessionIfNeeded()
+            player.play()
+            isPlaying = true
+            startPositionUpdates()
+            pushNowPlaying()
             return
         }
-        let url = FileLocation.absoluteURL(forRelative: track.relativePath)
-        do {
-            try player.load(url: url)
-            hasLoaded = true
-        } catch {
-            stopPlayback()
-            return
-        }
-        currentMetadata = metadata(from: track)
-        currentTrackTitle = track.title
-        position = 0
-        playCountedForCurrent = false
-        activateSessionIfNeeded()
-        player.play()
-        isPlaying = true
-        startPositionUpdates()
-        pushNowPlaying()
+        stopPlayback()
     }
 
     private func stopPlayback() {
@@ -153,7 +172,8 @@ final class PlaybackService {
     private func startPositionUpdates() {
         stopPositionUpdates()
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tickPosition() }
+            guard let self else { return }
+            Task { @MainActor in self.tickPosition() }
         }
         RunLoop.main.add(timer, forMode: .common)
         positionTimer = timer

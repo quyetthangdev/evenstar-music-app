@@ -19,26 +19,32 @@ final class RemoteCommandsBridge {
         center.changePlaybackPositionCommand.removeTarget(nil)
 
         center.playCommand.addTarget { [weak self] _ in
-            self?.playback.resume()
+            guard let playback = self?.playback else { return .success }
+            Task { @MainActor in playback.resume() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            self?.playback.pause()
+            guard let playback = self?.playback else { return .success }
+            Task { @MainActor in playback.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.playback.togglePlayPause()
+            guard let playback = self?.playback else { return .success }
+            Task { @MainActor in playback.togglePlayPause() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            self?.playback.next()
+            guard let playback = self?.playback else { return .success }
+            Task { @MainActor in playback.next() }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            self?.playback.seek(to: positionEvent.positionTime)
+            guard let playback = self?.playback else { return .success }
+            let target = positionEvent.positionTime
+            Task { @MainActor in playback.seek(to: target) }
             return .success
         }
 
