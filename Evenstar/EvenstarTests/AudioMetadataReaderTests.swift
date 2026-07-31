@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import UIKit
 @testable import Evenstar
 
 final class AudioMetadataReaderTests: XCTestCase {
@@ -44,6 +45,147 @@ final class AudioMetadataReaderTests: XCTestCase {
         XCTAssertNil(metadata.artworkData)
         XCTAssertEqual(metadata.sampleRate, 22050)
         XCTAssertEqual(metadata.bitDepth, 16)
+    }
+
+    /// Builds a short M4A file with real embedded common-key tags (title/artist/album)
+    /// and JPEG artwork, using `AVAssetWriter` (whose `metadata` property is actually
+    /// persisted to the output container, unlike `AVAssetExportSession.metadata`).
+    ///
+    /// Silence is generated as PCM via `AVAudioFile`/`AVAudioPCMBuffer`, then piped
+    /// through an `AVAssetReader` into the `AVAssetWriterInput` so the writer can
+    /// encode it to AAC.
+    private func makeTaggedTestFile() async throws -> (url: URL, artwork: Data) {
+        // 1. Generate a 1-second mono 44100 Hz silent PCM source file.
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tagged-source-\(UUID().uuidString).aiff")
+        let sourceFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 44100,
+            channels: 1,
+            interleaved: true
+        )!
+        let sourceFile = try AVAudioFile(
+            forWriting: sourceURL,
+            settings: sourceFormat.settings,
+            commonFormat: sourceFormat.commonFormat,
+            interleaved: sourceFormat.isInterleaved
+        )
+        let frames: AVAudioFrameCount = 44100
+        let sourceBuf = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frames)!
+        sourceBuf.frameLength = frames
+        memset(sourceBuf.int16ChannelData!.pointee, 0, Int(frames) * 2)
+        try sourceFile.write(from: sourceBuf)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        // 2. Build tiny JPEG artwork.
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4))
+        let image = renderer.image { ctx in
+            UIColor.red.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+        let artworkData = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+
+        // 3. Set up an AVAssetReader over the PCM source track.
+        let sourceAsset = AVURLAsset(url: sourceURL)
+        let assetReader = try AVAssetReader(asset: sourceAsset)
+        let sourceTracks = try await sourceAsset.loadTracks(withMediaType: .audio)
+        let sourceTrack = try XCTUnwrap(sourceTracks.first)
+        let sourceFormatDescriptions = try await sourceTrack.load(.formatDescriptions)
+        let sourceFormatHint = sourceFormatDescriptions.first
+
+        let readerOutput = AVAssetReaderTrackOutput(track: sourceTrack, outputSettings: nil)
+        assetReader.add(readerOutput)
+
+        // 4. Set up an AVAssetWriter with metadata + an AAC audio input.
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tagged-\(UUID().uuidString).m4a")
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .m4a)
+
+        func makeMetadataItem(
+            _ identifier: AVMetadataIdentifier,
+            value: NSCopying & NSObjectProtocol,
+            dataType: String? = nil
+        ) -> AVMutableMetadataItem {
+            let item = AVMutableMetadataItem()
+            item.identifier = identifier
+            item.value = value
+            item.extendedLanguageTag = "und"
+            item.dataType = dataType
+            return item
+        }
+
+        writer.metadata = [
+            makeMetadataItem(.commonIdentifierTitle, value: "Test Title" as NSString),
+            makeMetadataItem(.commonIdentifierArtist, value: "Test Artist" as NSString),
+            makeMetadataItem(.commonIdentifierAlbumName, value: "Test Album" as NSString),
+            makeMetadataItem(
+                .commonIdentifierArtwork,
+                value: artworkData as NSData,
+                dataType: kCMMetadataBaseDataType_JPEG as String
+            )
+        ]
+
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 64000
+        ]
+        let writerInput = AVAssetWriterInput(
+            mediaType: .audio,
+            outputSettings: outputSettings,
+            sourceFormatHint: sourceFormatHint
+        )
+        writerInput.expectsMediaDataInRealTime = false
+        writer.add(writerInput)
+
+        guard assetReader.startReading() else {
+            throw assetReader.error ?? AudioMetadataError.unreadable
+        }
+        guard writer.startWriting() else {
+            throw writer.error ?? AudioMetadataError.unreadable
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        let queue = DispatchQueue(label: "tagged-fixture-writer")
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writerInput.requestMediaDataWhenReady(on: queue) {
+                while writerInput.isReadyForMoreMediaData {
+                    if let sampleBuffer = readerOutput.copyNextSampleBuffer() {
+                        writerInput.append(sampleBuffer)
+                    } else {
+                        writerInput.markAsFinished()
+                        continuation.resume()
+                        return
+                    }
+                }
+            }
+        }
+
+        await writer.finishWriting()
+        guard writer.status == .completed else {
+            throw writer.error ?? AudioMetadataError.unreadable
+        }
+
+        return (outputURL, artworkData)
+    }
+
+    func testReadReturnsTagsAndArtworkForTaggedFile() async throws {
+        let (url, expectedArtwork) = try await makeTaggedTestFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let reader = AudioMetadataReader()
+
+        let metadata = try await reader.read(url: url)
+
+        XCTAssertEqual(metadata.title, "Test Title")
+        XCTAssertEqual(metadata.artist, "Test Artist")
+        XCTAssertEqual(metadata.album, "Test Album")
+        XCTAssertNotNil(metadata.artworkData)
+        if let artworkData = metadata.artworkData {
+            // Compare as decoded images rather than raw bytes: the writer may
+            // re-encode/re-wrap the JPEG we handed it.
+            XCTAssertEqual(UIImage(data: artworkData)?.size, UIImage(data: expectedArtwork)?.size)
+        }
     }
 
     func testReadThrowsForUnreadableFile() async throws {
