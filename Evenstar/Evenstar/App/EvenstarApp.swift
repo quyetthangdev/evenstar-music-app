@@ -20,7 +20,7 @@ struct EvenstarApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Text("Phase 2a — under construction")
+            LibraryView()
         }
         .modelContainer(modelContainer)
     }
