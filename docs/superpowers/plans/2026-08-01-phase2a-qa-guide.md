@@ -1,7 +1,7 @@
 # Evenstar Phase 2a — Hướng dẫn QA trên iPhone thật
 
 **Ngày:** 2026-08-01
-**Nhánh:** `phase-2a` (23 commit, 47 test xanh, clean build không warning)
+**Nhánh:** `phase-2a` (30 commit, 47 test xanh, clean build không warning)
 **Mục đích:** Bổ sung cho checklist trong Task 11 của plan. Danh sách này **xếp theo xác suất lộ lỗi**, dựa trên những gì các vòng review đã tìm thấy — không phải theo thứ tự tính năng.
 
 ---
@@ -53,6 +53,15 @@ Import cùng lúc: 1 file `.txt` + 1 file `.mp3` giả (thực ra là text).
 
 > Đã sửa ở F3. Checklist gốc yêu cầu rõ có lý do.
 
+### 1.4 Import file iCloud chưa tải về  ✅ đã sửa, cần xác nhận
+Chọn 4–5 file từ iCloud Drive **chưa tải xuống máy**.
+
+- **Đã sửa:** sheet giờ cuộn được và kéo lên `.large` được, nên chữ không còn bị cắt.
+
+  Cần xác nhận: kéo sheet lên cao, cuộn thử — mỗi dòng hiện ra có đọc trọn vẹn không, có dòng nào bị cắt ngang không, và nút "Done" có chạm tới được không?
+
+  Lưu ý để bạn khỏi báo nhầm lỗi: danh sách **cố ý** chỉ hiện tối đa 4 lý do rồi gộp phần còn lại thành "+N more". Chọn 5 file thì thấy "+1 more" là **đúng thiết kế**, không phải bị cắt.
+
 ---
 
 ## Nhóm 2 — Lỗi đã biết còn tồn đọng, cần bạn xác nhận mức độ
@@ -66,11 +75,6 @@ Mở màn hình Now Playing, để một bài chạy **hết tự nhiên** (đ�
 - Nếu **không** → tốt, cửa sổ lỗi hẹp hơn dự đoán.
 
 > Nguyên nhân: guard chống race dùng `currentTime < duration - 0.5`, nhưng `AVAudioPlayer.currentTime` trả về **0** sau khi bài kết thúc chứ không phải `duration`, nên guard không chặn được gì. Sửa một dòng nếu bạn thấy phiền.
-
-### 2.2 Import file iCloud chưa tải về  ✅ đã sửa, cần xác nhận
-Chọn 4–5 file từ iCloud Drive **chưa tải xuống máy**.
-
-- **Đã sửa:** sheet giờ cuộn được và kéo lên cao được, nên danh sách lý do không còn bị cắt. Việc của bạn là xác nhận: kéo sheet lên và cuộn thử, có đọc được hết mọi lý do không?
 
 ### 2.3 Cuộc gọi đến giữa lúc nghe nhạc  ⚠️ nghi ngờ cao
 Nhờ ai gọi vào máy khi đang phát nhạc. Sau khi cúp:

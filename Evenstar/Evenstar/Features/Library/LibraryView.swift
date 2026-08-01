@@ -62,6 +62,7 @@ struct LibraryView: View {
                 inaccessibleFailures: inaccessibleFailures,
                 importer: importer
             )
+            // Drag indicator lives inside ImportProgressSheet — it depends on importer.isImporting.
             .presentationDetents([.medium, .large])
         }
         .alert(

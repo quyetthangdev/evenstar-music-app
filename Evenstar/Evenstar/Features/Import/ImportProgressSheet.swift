@@ -65,6 +65,10 @@ struct ImportProgressSheet: View {
         // the user cannot act on is a false affordance.
         .presentationDragIndicator(importer.isImporting ? .hidden : .visible)
         .task {
+            // Presentation-level idempotency: the `Group` above re-evaluates its
+            // branches as `importer.isImporting`/`summary` change, but this task
+            // must still run exactly once per sheet presentation.
+            guard summary == nil else { return }
             let result = await importer.importFiles(at: urls)
             summary = ImportSummary(
                 imported: result.imported,
@@ -119,7 +123,6 @@ struct ImportProgressSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 32)
         .padding(.top, 4)
     }
 }
