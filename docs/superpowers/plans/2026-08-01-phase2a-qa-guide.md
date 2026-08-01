@@ -86,6 +86,16 @@ Nhờ ai gọi vào máy khi đang phát nhạc. Sau khi cúp:
 
 Làm lại thí nghiệm tương tự với **rút tai nghe** đang cắm.
 
+### 2.4 Kéo thanh scrubber có làm đóng sheet không?  ⚠️ chưa kiểm chứng được
+Mở Now Playing, kéo thanh scrubber để tua bài — kéo vài lần, cả chậm lẫn nhanh.
+
+**Câu hỏi cụ thể:** có lần nào sheet bị đóng lại thay vì tua không?
+
+Now Playing giờ là `.sheet`, nên kéo dọc ở vùng trống sẽ đóng nó. Kéo ngang để tua thì đúng, nhưng nếu ngón tay lệch dọc lúc bắt đầu, hệ thống có thể hiểu nhầm. Apple Music cũng có đặc tính này.
+
+- Nếu **không bao giờ** xảy ra → không cần làm gì
+- Nếu **thỉnh thoảng** xảy ra → cho tôi biết tần suất, có cách giới hạn cử chỉ của slider
+
 ---
 
 ## Nhóm 3 — Kiểm tra quy mô (quan trọng cho lời hứa "1k–5k bài")

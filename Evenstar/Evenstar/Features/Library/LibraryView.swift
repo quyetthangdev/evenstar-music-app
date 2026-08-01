@@ -77,8 +77,10 @@ struct LibraryView: View {
         } message: {
             Text(pickerErrorMessage ?? "")
         }
-        .fullScreenCover(isPresented: $showNowPlaying) {
+        .sheet(isPresented: $showNowPlaying) {
             NowPlayingView(playback: playback)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: playback.currentTrack?.id) { _, newValue in
             if newValue == nil { showNowPlaying = false }

@@ -2,8 +2,6 @@ import SwiftUI
 
 struct NowPlayingView: View {
     let playback: PlaybackService
-
-    @Environment(\.dismiss) private var dismiss
     @State private var draggingPosition: TimeInterval?
     @State private var artworkImage: UIImage?
 
@@ -11,7 +9,6 @@ struct NowPlayingView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            handle
             Spacer(minLength: 0)
             artwork
             titleBlock
@@ -20,22 +17,10 @@ struct NowPlayingView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 8)
+        .padding(.top, 24)
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGroupedBackground))
-    }
-
-    private var handle: some View {
-        HStack {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.title3)
-                    .padding(8)
-            }
-            .buttonStyle(.plain)
-            Spacer()
-        }
     }
 
     private var artwork: some View {
