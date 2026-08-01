@@ -201,6 +201,35 @@ final class PlaybackServiceQueueTests: XCTestCase {
         XCTAssertTrue(service.isPlaying)
     }
 
+    func testHandleDeletedCurrentTrackWhilePausedDoesNotResumePlayback() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.pause()
+        XCTAssertFalse(service.isPlaying)
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertEqual(service.currentTrack?.id, list[1].id)
+        XCTAssertFalse(service.isPlaying)
+    }
+
+    /// Delete-then-relaunch: `handleTrackDeleted`'s persistence was
+    /// previously only ever checked against in-memory service state. This
+    /// asserts the actual `PlaybackState` row — what a relaunch would read
+    /// back — reflects the surviving queue and the new current track.
+    func testHandleDeletedCurrentTrackPersistsSurvivingQueueAndCurrentTrack() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+
+        service.handleTrackDeleted(list[0])
+
+        let state = library.playbackState
+        XCTAssertEqual(state.queueTrackIDs, [list[1].id, list[2].id])
+        XCTAssertEqual(state.currentTrackID, list[1].id)
+    }
+
     func testHandleDeletedSoleTrackWhenCurrentStopsPlayback() throws {
         let (service, _, _, library) = try makeStack()
         let list = try tracks(1, library: library)

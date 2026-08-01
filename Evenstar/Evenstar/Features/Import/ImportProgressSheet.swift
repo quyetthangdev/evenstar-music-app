@@ -39,6 +39,9 @@ struct ImportProgressSheet: View {
                         summaryLine(count: summary.failures.count, text: "failed")
                     }
                 }
+                if !failureReasons(for: summary).isEmpty {
+                    failureReasonsList(for: summary)
+                }
                 Button("Done") { dismiss() }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 8)
@@ -61,5 +64,47 @@ struct ImportProgressSheet: View {
         Text("\(count) \(text)")
             .font(.subheadline)
             .foregroundStyle(.secondary)
+    }
+
+    /// The distinct reasons behind `summary.failures`, deduplicated so ten
+    /// files that all failed the same way produce one line, not ten.
+    /// Preserves first-seen order so the list is stable rather than
+    /// reshuffling between renders.
+    private func failureReasons(for summary: ImportSummary) -> [String] {
+        var seen = Set<String>()
+        var reasons: [String] = []
+        for failure in summary.failures {
+            guard let description = failure.error.errorDescription else { continue }
+            if seen.insert(description).inserted {
+                reasons.append(description)
+            }
+        }
+        return reasons
+    }
+
+    /// Caps the visible list at 4 distinct reasons, folding the rest into a
+    /// "+N more" line so a batch with many different failure kinds doesn't
+    /// blow out the sheet's `.medium` presentation detent.
+    private func failureReasonsList(for summary: ImportSummary) -> some View {
+        let reasons = failureReasons(for: summary)
+        let maxShown = 4
+        let shown = reasons.prefix(maxShown)
+        let remaining = reasons.count - shown.count
+        return VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(shown), id: \.self) { reason in
+                Text("• \(reason)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            if remaining > 0 {
+                Text("+\(remaining) more")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 32)
+        .padding(.top, 4)
     }
 }

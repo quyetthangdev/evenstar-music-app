@@ -34,7 +34,7 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         state.queueTrackIDs = tracks.map(\.id)
         state.queueIndex = 1
         state.positionSeconds = 42
-        try library.savePlaybackState()
+        try library.save()
 
         await service.restoreFromPersistedState()
 
@@ -52,7 +52,7 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         state.queueTrackIDs = tracks.map(\.id)
         state.queueIndex = 1
         state.positionSeconds = 0
-        try library.savePlaybackState()
+        try library.save()
         // Delete the middle track from the library after persistence captured the ID.
         let deleted = tracks.remove(at: 1)
         try library.delete(deleted)
@@ -60,9 +60,13 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         await service.restoreFromPersistedState()
 
         XCTAssertEqual(service.queue.map(\.id), tracks.map(\.id))
-        // queueIndex was 1 (the deleted one). After shrink, index is clamped to remaining bounds.
-        XCTAssertGreaterThanOrEqual(service.queueIndex, 0)
-        XCTAssertLessThan(service.queueIndex, service.queue.count)
+        // queueIndex was 1 (the deleted, middle track). After the queue
+        // shrinks to the two survivors, index 1 is still in-bounds and now
+        // refers to what was originally the third track — pin that
+        // explicitly rather than only asserting the clamp's tautological
+        // bounds (>= 0 and < count hold for any clamped index).
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertEqual(service.currentTrack?.id, tracks[1].id)
     }
 
     func testRestoreEmptyStateIsNoOp() async throws {
@@ -104,7 +108,7 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         state.queueTrackIDs = tracks.map(\.id)
         state.queueIndex = 1
         state.positionSeconds = 42
-        try library.savePlaybackState()
+        try library.save()
 
         await service.restoreFromPersistedState()
 
@@ -134,7 +138,7 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         state.queueTrackIDs = tracks.map(\.id)
         state.queueIndex = 0
         state.positionSeconds = 10
-        try library.savePlaybackState()
+        try library.save()
 
         await service.restoreFromPersistedState()
 

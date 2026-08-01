@@ -108,6 +108,7 @@ final class PlaybackService {
     /// Otherwise just removes it and shifts `queueIndex` if it sat before the
     /// current position.
     func handleTrackDeleted(_ track: Track) {
+        let wasPlaying = isPlaying
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
         let wasCurrent = (removalIndex == queueIndex)
         queue.remove(at: removalIndex)
@@ -118,7 +119,7 @@ final class PlaybackService {
             } else {
                 // queueIndex stays; the new track at this index becomes current.
                 playCountedForCurrent = false
-                loadCurrentAndPlay()
+                loadCurrentAndPlay(autoPlay: wasPlaying)
                 persistImmediately()
             }
         } else if removalIndex < queueIndex {
@@ -159,7 +160,7 @@ final class PlaybackService {
             state.queueIndex = 0
             state.currentTrackID = nil
             state.positionSeconds = 0
-            try? library.savePlaybackState()
+            try? library.save()
             return
         }
         queue = resolved
@@ -217,7 +218,12 @@ final class PlaybackService {
     /// attempts, since each failed attempt either advances `queueIndex` or
     /// exits) so a queue whose files have all been deleted still terminates in
     /// `stopPlayback()` rather than recursing or spinning forever.
-    private func loadCurrentAndPlay() {
+    /// - Parameter autoPlay: When false, the track still loads, seeks to 0,
+    ///   publishes Now Playing info, and persists — it just doesn't start
+    ///   playback, and `isPlaying` ends up `false`. Defaults to `true` so
+    ///   every existing call site (play, next, restore-adjacent flows) keeps
+    ///   its current behavior unchanged.
+    private func loadCurrentAndPlay(autoPlay: Bool = true) {
         var attempts = 0
         while attempts < queue.count {
             guard let track = currentTrack else {
@@ -243,10 +249,14 @@ final class PlaybackService {
             currentTrackTitle = track.title
             position = 0
             playCountedForCurrent = false
-            activateSessionIfNeeded()
-            player.play()
-            isPlaying = true
-            startPositionUpdates()
+            if autoPlay {
+                activateSessionIfNeeded()
+                player.play()
+                isPlaying = true
+                startPositionUpdates()
+            } else {
+                isPlaying = false
+            }
             pushNowPlaying()
             return
         }
@@ -281,8 +291,22 @@ final class PlaybackService {
         if !playCountedForCurrent, position >= 30, let track = currentTrack {
             track.playCount += 1
             track.lastPlayedAt = .now
-            try? library.savePlaybackState()
+            try? library.save()
             playCountedForCurrent = true
+        }
+        // The player can stop underneath us without going through pause()/
+        // stopPlayback() — a phone call, a headphone unplug. Reconcile our
+        // state so the UI and lock screen stop claiming playback. Guarded
+        // against the end-of-track race: `player.isPlaying` goes false a
+        // moment before the async didFinishCallback hop lands, so only
+        // reconcile when clearly not near the end, or this would fire on
+        // every track's natural finish and fight auto-advance.
+        if isPlaying, !player.isPlaying, player.currentTime < player.duration - 0.5 {
+            isPlaying = false
+            stopPositionUpdates()
+            pushNowPlaying()
+            persistImmediately()
+            return
         }
         persistThrottled()
     }
@@ -314,7 +338,7 @@ final class PlaybackService {
         state.queueIndex = queueIndex
         state.currentTrackID = currentTrack?.id
         state.positionSeconds = position
-        try? library.savePlaybackState()
+        try? library.save()
         lastPersistAt = .now
     }
 

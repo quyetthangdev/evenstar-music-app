@@ -6,7 +6,7 @@ struct LibraryView: View {
     @Environment(LibraryService.self) private var library
     @Environment(ImportService.self) private var importer
     @Environment(PlaybackService.self) private var playback
-    @Query(sort: \Track.title, order: .forward) private var tracks: [Track]
+    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
     @State private var showFileImporter = false
     @State private var accessibleURLs: [URL] = []

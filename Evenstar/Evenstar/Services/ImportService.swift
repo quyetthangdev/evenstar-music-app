@@ -139,7 +139,7 @@ final class ImportService {
         do {
             try fileManager.copyItem(at: url, to: destAudio)
         } catch let error as NSError {
-            if error.domain == NSPOSIXErrorDomain && error.code == ENOSPC {
+            if isDiskFullError(error) {
                 return .failed(.diskFull)
             }
             return .failed(.copyFailed(underlying: error))
@@ -185,6 +185,23 @@ final class ImportService {
             }
             return .failed(.persistFailed(underlying: error))
         }
+    }
+
+    /// `FileManager.copyItem(at:to:)` reports out-of-space as
+    /// `NSCocoaErrorDomain` / `NSFileWriteOutOfSpaceError`, with the POSIX
+    /// `ENOSPC` nested underneath via `NSUnderlyingErrorKey` — not surfaced
+    /// directly as `NSPOSIXErrorDomain`. Check both so the disk-full path is
+    /// actually reachable.
+    private func isDiskFullError(_ error: NSError) -> Bool {
+        if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError {
+            return true
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain,
+           underlying.code == ENOSPC {
+            return true
+        }
+        return false
     }
 
     private func ensureFolderExists(_ url: URL) throws {

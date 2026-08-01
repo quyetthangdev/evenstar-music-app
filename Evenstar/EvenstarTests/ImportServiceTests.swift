@@ -172,6 +172,44 @@ final class ImportServiceTests: XCTestCase {
         }
     }
 
+    /// `FileManager.copyItem(at:to:)` reports out-of-space as
+    /// `NSCocoaErrorDomain` / `NSFileWriteOutOfSpaceError`, not
+    /// `NSPOSIXErrorDomain` / `ENOSPC` directly. This subclass reproduces
+    /// that real-world shape so the test exercises the actual classification
+    /// path rather than an easier-to-match stand-in.
+    private final class DiskFullFileManager: FileManager {
+        private(set) var copyAttempts: [URL] = []
+
+        override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+            copyAttempts.append(srcURL)
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+        }
+    }
+
+    func testDiskFullIsClassifiedAndStopsTheBatch() async throws {
+        let library = try InMemoryLibrary.make()
+        let reader = MockMetadataReader()
+        let fileManager = DiskFullFileManager()
+        let importer = ImportService(library: library, metadataReader: reader, fileManager: fileManager)
+        let url1 = try makeSourceFile(name: "one.mp3")
+        let url2 = try makeSourceFile(name: "two.mp3")
+        let url3 = try makeSourceFile(name: "three.mp3")
+
+        let summary = await importer.importFiles(at: [url1, url2, url3])
+
+        XCTAssertEqual(summary.imported.count, 0)
+        XCTAssertEqual(summary.failures.count, 1)
+        if case .diskFull = summary.failures.first?.error {
+            // OK
+        } else {
+            XCTFail("Expected diskFull, got \(String(describing: summary.failures.first?.error))")
+        }
+        // Batch-stop: only the failing file was ever attempted. url2/url3
+        // must never have reached copyItem or even metadata extraction.
+        XCTAssertEqual(fileManager.copyAttempts, [url1])
+        XCTAssertEqual(reader.readURLs, [url1])
+    }
+
     func testProgressUpdatesAsFilesAreProcessed() async throws {
         let library = try InMemoryLibrary.make()
         let reader = MockMetadataReader()

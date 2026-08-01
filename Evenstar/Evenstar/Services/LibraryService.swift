@@ -90,7 +90,11 @@ final class LibraryService {
         return newState
     }
 
-    func savePlaybackState() throws {
+    /// Commits all pending changes in the shared `ModelContext` — not only
+    /// `PlaybackState` edits. `Track` and `PlaybackState` share one context,
+    /// so this also persists things like `Track.playCount` and
+    /// `Track.lastPlayedAt` mutations made elsewhere (e.g. `PlaybackService`).
+    func save() throws {
         do { try context.save() }
         catch { throw LibraryError.persistenceFailed(underlying: error) }
     }
