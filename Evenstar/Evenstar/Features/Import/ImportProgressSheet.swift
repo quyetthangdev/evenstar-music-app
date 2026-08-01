@@ -12,44 +12,58 @@ struct ImportProgressSheet: View {
     @State private var summary: ImportSummary?
 
     var body: some View {
-        VStack(spacing: 20) {
+        Group {
             if importer.isImporting || summary == nil {
-                ProgressView(
-                    value: Double(importer.progress.completed),
-                    total: Double(max(importer.progress.total, 1))
-                )
-                .progressViewStyle(.linear)
-                .padding(.horizontal, 32)
-                Text("Importing \(importer.progress.completed) of \(importer.progress.total)")
-                    .font(.body)
+                VStack(spacing: 20) {
+                    ProgressView(
+                        value: Double(importer.progress.completed),
+                        total: Double(max(importer.progress.total, 1))
+                    )
+                    .progressViewStyle(.linear)
+                    .padding(.horizontal, 32)
+                    Text("Importing \(importer.progress.completed) of \(importer.progress.total)")
+                        .font(.body)
+                }
+                .padding(40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let summary {
-                Image(systemName: summary.failures.isEmpty
-                      ? "checkmark.circle.fill"
-                      : "exclamationmark.triangle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(summary.failures.isEmpty ? .green : .orange)
-                Text("Import complete")
-                    .font(.title2.bold())
-                VStack(spacing: 4) {
-                    summaryLine(count: summary.imported.count, text: "imported")
-                    if summary.duplicates.count > 0 {
-                        summaryLine(count: summary.duplicates.count, text: "duplicate(s) skipped")
+                // Scrolls because the failure-reason list has no fixed height:
+                // `.fileNotAccessible` embeds the filename, so those reasons
+                // never dedupe and several long ones can exceed the detent.
+                ScrollView {
+                    VStack(spacing: 20) {
+                        Image(systemName: summary.failures.isEmpty
+                              ? "checkmark.circle.fill"
+                              : "exclamationmark.triangle.fill")
+                            .font(.system(size: 48))
+                            .foregroundStyle(summary.failures.isEmpty ? .green : .orange)
+                        Text("Import complete")
+                            .font(.title2.bold())
+                        VStack(spacing: 4) {
+                            summaryLine(count: summary.imported.count, text: "imported")
+                            if summary.duplicates.count > 0 {
+                                summaryLine(count: summary.duplicates.count, text: "duplicate(s) skipped")
+                            }
+                            if summary.failures.count > 0 {
+                                summaryLine(count: summary.failures.count, text: "failed")
+                            }
+                        }
+                        if !failureReasons(for: summary).isEmpty {
+                            failureReasonsList(for: summary)
+                        }
+                        Button("Done") { dismiss() }
+                            .buttonStyle(.borderedProminent)
+                            .padding(.top, 8)
                     }
-                    if summary.failures.count > 0 {
-                        summaryLine(count: summary.failures.count, text: "failed")
-                    }
+                    .padding(40)
+                    .frame(maxWidth: .infinity)
                 }
-                if !failureReasons(for: summary).isEmpty {
-                    failureReasonsList(for: summary)
-                }
-                Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
             }
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled(importer.isImporting)
+        // Hidden while importing: dismissal is disabled then, and a grabber
+        // the user cannot act on is a false affordance.
+        .presentationDragIndicator(importer.isImporting ? .hidden : .visible)
         .task {
             let result = await importer.importFiles(at: urls)
             summary = ImportSummary(
@@ -83,8 +97,9 @@ struct ImportProgressSheet: View {
     }
 
     /// Caps the visible list at 4 distinct reasons, folding the rest into a
-    /// "+N more" line so a batch with many different failure kinds doesn't
-    /// blow out the sheet's `.medium` presentation detent.
+    /// "+N more" line to keep the common case tidy. The sheet also scrolls
+    /// and can be dragged to `.large`, so the cap is about readability now
+    /// rather than about fitting a fixed height.
     private func failureReasonsList(for summary: ImportSummary) -> some View {
         let reasons = failureReasons(for: summary)
         let maxShown = 4

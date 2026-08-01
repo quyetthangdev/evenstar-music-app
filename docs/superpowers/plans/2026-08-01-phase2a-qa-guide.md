@@ -70,10 +70,7 @@ Mở màn hình Now Playing, để một bài chạy **hết tự nhiên** (đ�
 ### 2.2 Import file iCloud chưa tải về  ⚠️ đã biết còn lỗi
 Chọn 4–5 file từ iCloud Drive **chưa tải xuống máy**.
 
-- **Mong đợi:** sheet hiện danh sách lý do "Couldn't access <tên file>…"
-- **Vấn đề đã biết (P2):** vì mỗi lý do có kèm tên file nên chúng không gộp được; 4 tên file tiếng Việt xuống dòng thành 8 dòng, trong khi sheet chỉ cao cỡ 100pt và **không có thanh cuộn** → chữ có thể bị cắt
-
-Cho tôi biết nó bị cắt hay vẫn đọc được.
+- **Đã sửa:** sheet giờ cuộn được và kéo lên cao được, nên danh sách lý do không còn bị cắt. Việc của bạn là xác nhận: kéo sheet lên và cuộn thử, có đọc được hết mọi lý do không?
 
 ### 2.3 Cuộc gọi đến giữa lúc nghe nhạc  ⚠️ nghi ngờ cao
 Nhờ ai gọi vào máy khi đang phát nhạc. Sau khi cúp:
@@ -133,7 +130,7 @@ Chạy nốt các mục còn lại trong Task 11 của plan:
 - [ ] Import 5 file → "Imported 5"
 - [ ] Import lại đúng 5 file đó → "5 duplicates skipped"
 - [ ] Chạm bài hát → mini player hiện, nhạc phát
-- [ ] Chạm mini player → Now Playing mở toàn màn hình; kéo scrubber, play/pause, next đều chạy
+- [ ] Chạm mini player → Now Playing mở lên dạng sheet, kéo xuống đóng được; kéo scrubber, play/pause, next đều chạy
 - [ ] Bài cuối kết thúc → mini player biến mất, màn hình khoá sạch
 - [ ] Khoá máy khi đang phát → màn hình khoá hiện tên/ca sĩ/album/ảnh bìa + điều khiển được
 - [ ] Bấm nút tai nghe (AirPods/EarPods) → play/pause chạy

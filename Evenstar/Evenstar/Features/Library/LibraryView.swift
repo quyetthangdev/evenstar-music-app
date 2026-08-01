@@ -62,7 +62,7 @@ struct LibraryView: View {
                 inaccessibleFailures: inaccessibleFailures,
                 importer: importer
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
         }
         .alert(
             "Couldn't open files",
