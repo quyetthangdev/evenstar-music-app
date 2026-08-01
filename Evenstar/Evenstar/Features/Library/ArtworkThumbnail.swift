@@ -4,9 +4,11 @@ struct ArtworkThumbnail: View {
     let relativePath: String?
     let size: CGFloat
 
+    @State private var image: UIImage?
+
     var body: some View {
         Group {
-            if let image = loadImage() {
+            if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -16,6 +18,12 @@ struct ArtworkThumbnail: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.12))
+        .task(id: relativePath) {
+            image = await ArtworkStore.image(
+                for: relativePath,
+                maxPixel: size * UIScreen.main.scale
+            )
+        }
     }
 
     private var placeholder: some View {
@@ -26,12 +34,5 @@ struct ArtworkThumbnail: View {
                 .font(.system(size: size * 0.5))
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func loadImage() -> UIImage? {
-        guard let path = relativePath else { return nil }
-        let url = FileLocation.absoluteURL(forRelative: path)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
     }
 }
