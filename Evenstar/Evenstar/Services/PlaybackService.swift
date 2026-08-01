@@ -28,6 +28,8 @@ final class PlaybackService {
     private var sessionActivated: Bool = false
     private var positionTimer: Timer?
     private var playCountedForCurrent: Bool = false
+    private var lastPersistAt: Date = .distantPast
+    private let persistInterval: TimeInterval = 5
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
@@ -46,6 +48,7 @@ final class PlaybackService {
         queue = queueTracks
         queueIndex = queueTracks.firstIndex(where: { $0.id == track.id }) ?? 0
         loadCurrentAndPlay()
+        persistImmediately()
     }
 
     func togglePlayPause() {
@@ -56,8 +59,10 @@ final class PlaybackService {
         guard hasLoaded, isPlaying else { return }
         player.pause()
         isPlaying = false
+        position = player.currentTime
         stopPositionUpdates()
         pushNowPlaying()
+        persistImmediately()
     }
 
     func resume() {
@@ -67,6 +72,7 @@ final class PlaybackService {
         isPlaying = true
         startPositionUpdates()
         pushNowPlaying()
+        persistImmediately()
     }
 
     func seek(to target: TimeInterval) {
@@ -75,6 +81,7 @@ final class PlaybackService {
         player.currentTime = clamped
         position = clamped
         pushNowPlaying()
+        persistImmediately()
     }
 
     func next() {
@@ -83,6 +90,7 @@ final class PlaybackService {
             queueIndex += 1
             playCountedForCurrent = false
             loadCurrentAndPlay()
+            persistImmediately()
         } else {
             stopPlayback()
         }
@@ -91,6 +99,50 @@ final class PlaybackService {
     /// Test-only hook: drives the same code path as the 0.5s position timer.
     /// Not for production callers.
     func tickForTesting() { tickPosition() }
+
+    /// Restores the queue, current track, and position from the persisted
+    /// `PlaybackState` row on app launch. Loads and seeks the current track
+    /// but deliberately leaves `isPlaying == false` — the user resumes by
+    /// tapping play. Track IDs that no longer resolve in the library (e.g.
+    /// deleted between sessions) are dropped from the restored queue, and
+    /// `queueIndex` is clamped into the surviving range. An empty/absent
+    /// persisted state is a no-op.
+    func restoreFromPersistedState() async {
+        let state = library.playbackState
+        guard !state.queueTrackIDs.isEmpty else { return }
+        let resolved: [Track] = state.queueTrackIDs.compactMap { id in
+            try? library.findTrack(byID: id)
+        }
+        guard !resolved.isEmpty else {
+            // Stale state — clear it.
+            state.queueTrackIDs = []
+            state.queueIndex = 0
+            state.currentTrackID = nil
+            state.positionSeconds = 0
+            try? library.savePlaybackState()
+            return
+        }
+        queue = resolved
+        queueIndex = max(0, min(state.queueIndex, resolved.count - 1))
+        guard let track = currentTrack else { return }
+        let url = FileLocation.absoluteURL(forRelative: track.relativePath)
+        do {
+            try player.load(url: url)
+            hasLoaded = true
+        } catch {
+            // File missing — clear the state.
+            stopPlayback()
+            return
+        }
+        let pos = max(0, min(state.positionSeconds, player.duration))
+        player.currentTime = pos
+        position = pos
+        currentMetadata = metadata(from: track)
+        currentTrackTitle = track.title
+        playCountedForCurrent = pos >= 30
+        isPlaying = false
+        pushNowPlaying()
+    }
 
     // MARK: - Private
 
@@ -149,6 +201,7 @@ final class PlaybackService {
         playCountedForCurrent = false
         stopPositionUpdates()
         nowPlaying.clear()
+        persistImmediately()
     }
 
     private func handleFinish() {
@@ -167,6 +220,7 @@ final class PlaybackService {
             try? library.savePlaybackState()
             playCountedForCurrent = true
         }
+        persistThrottled()
     }
 
     private func startPositionUpdates() {
@@ -182,6 +236,22 @@ final class PlaybackService {
     private func stopPositionUpdates() {
         positionTimer?.invalidate()
         positionTimer = nil
+    }
+
+    private func persistThrottled() {
+        if Date.now.timeIntervalSince(lastPersistAt) >= persistInterval {
+            persistImmediately()
+        }
+    }
+
+    private func persistImmediately() {
+        let state = library.playbackState
+        state.queueTrackIDs = queue.map(\.id)
+        state.queueIndex = queueIndex
+        state.currentTrackID = currentTrack?.id
+        state.positionSeconds = position
+        try? library.savePlaybackState()
+        lastPersistAt = .now
     }
 
     private func pushNowPlaying() {

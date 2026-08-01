@@ -35,6 +35,9 @@ struct LibraryView: View {
                             if playback.currentTrack != nil { showNowPlaying = true }
                         }
                 }
+                .task {
+                    await playback.restoreFromPersistedState()
+                }
         }
         .fileImporter(
             isPresented: $showFileImporter,
