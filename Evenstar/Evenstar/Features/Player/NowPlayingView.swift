@@ -73,9 +73,19 @@ struct NowPlayingView: View {
     /// here — appropriate at 44pt in a list row — would mean a repeating
     /// main-thread disk read/decode of a full-size image while this screen
     /// stays open.
+    ///
+    /// `.task(id:)` cancellation is cooperative, and `Data(contentsOf:)`
+    /// never checks `Task.isCancelled`, so a slow load for a track the user
+    /// has since navigated away from can still complete. Before writing the
+    /// result we confirm `playback.currentTrack?.id` still matches the track
+    /// this load was started for; if the user has moved on, the stale result
+    /// is discarded rather than overwriting newer (or already-correct) art.
     private func loadArtwork() async {
+        let trackID = playback.currentTrack?.id
         let path = playback.currentTrack?.artworkRelativePath
-        artworkImage = await Self.decodeImage(relativePath: path)
+        let image = await Self.decodeImage(relativePath: path)
+        guard !Task.isCancelled, playback.currentTrack?.id == trackID else { return }
+        artworkImage = image
     }
 
     private static func decodeImage(relativePath: String?) async -> UIImage? {
