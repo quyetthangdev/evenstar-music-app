@@ -169,15 +169,17 @@ final class PlaybackServiceRestoreTests: XCTestCase {
     }
 
     /// Once the throttle window has elapsed, the next tick does write.
-    /// Uses a near-zero injected interval so the test doesn't need to sleep
-    /// for a real 5 seconds.
+    /// Expresses "the window has elapsed" by construction — injecting a
+    /// zero-length interval so any tick is already past it — rather than by
+    /// waiting on the wall clock, which would make the suite flaky under
+    /// load. If the throttle regressed to never write, `positionSeconds`
+    /// would stay at 0 and this assertion would fail.
     func testThrottleWritesOnceWindowElapses() throws {
-        let (service, player, library) = try makeStack(persistInterval: 0.01)
+        let (service, player, library) = try makeStack(persistInterval: 0)
         let tracks = try seed(1, library: library)
         service.play(tracks[0], in: tracks)
         XCTAssertEqual(library.playbackState.positionSeconds, 0, accuracy: 0.01)
 
-        Thread.sleep(forTimeInterval: 0.05)
         player.currentTime = 9
         service.tickForTesting()
 
