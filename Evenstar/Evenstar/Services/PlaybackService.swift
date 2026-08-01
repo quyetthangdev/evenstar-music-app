@@ -29,14 +29,16 @@ final class PlaybackService {
     private var positionTimer: Timer?
     private var playCountedForCurrent: Bool = false
     private var lastPersistAt: Date = .distantPast
-    private let persistInterval: TimeInterval = 5
+    private let persistInterval: TimeInterval
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
-         library: LibraryService) {
+         library: LibraryService,
+         persistInterval: TimeInterval = 5) {
         self.player = player
         self.nowPlaying = nowPlaying
         self.library = library
+        self.persistInterval = persistInterval
         self.player.didFinishCallback = { [weak self] in
             Task { @MainActor in self?.handleFinish() }
         }
@@ -107,6 +109,17 @@ final class PlaybackService {
     /// deleted between sessions) are dropped from the restored queue, and
     /// `queueIndex` is clamped into the surviving range. An empty/absent
     /// persisted state is a no-op.
+    ///
+    /// If the file for the saved current track can no longer be loaded
+    /// (missing/corrupt on disk, even though its DB row still exists), this
+    /// mirrors `loadCurrentAndPlay()`'s resilience: it skips forward through
+    /// the remaining queue looking for a track that does load, rather than
+    /// tearing down the whole restored queue over one bad file. This is a
+    /// separate, self-contained loop rather than a call into
+    /// `loadCurrentAndPlay()` — that method also starts playback, which
+    /// restore must never do, and duplicating the small skip mechanics here
+    /// keeps `loadCurrentAndPlay()` itself untouched. Only when nothing in
+    /// the queue can load does it fall through to `stopPlayback()`.
     func restoreFromPersistedState() async {
         let state = library.playbackState
         guard !state.queueTrackIDs.isEmpty else { return }
@@ -124,24 +137,48 @@ final class PlaybackService {
         }
         queue = resolved
         queueIndex = max(0, min(state.queueIndex, resolved.count - 1))
-        guard let track = currentTrack else { return }
-        let url = FileLocation.absoluteURL(forRelative: track.relativePath)
-        do {
-            try player.load(url: url)
-            hasLoaded = true
-        } catch {
-            // File missing — clear the state.
-            stopPlayback()
+        let originalIndex = queueIndex
+        let savedPosition = state.positionSeconds
+
+        var attempts = 0
+        while attempts < queue.count {
+            guard let track = currentTrack else {
+                stopPlayback()
+                return
+            }
+            let url = FileLocation.absoluteURL(forRelative: track.relativePath)
+            do {
+                try player.load(url: url)
+                hasLoaded = true
+            } catch {
+                attempts += 1
+                if queueIndex + 1 < queue.count {
+                    queueIndex += 1
+                    continue
+                } else {
+                    stopPlayback()
+                    return
+                }
+            }
+            // The saved position only applies to the track it was recorded
+            // against; a track reached by skipping forward starts at 0.
+            let pos = queueIndex == originalIndex
+                ? max(0, min(savedPosition, player.duration))
+                : 0
+            player.currentTime = pos
+            position = pos
+            currentMetadata = metadata(from: track)
+            currentTrackTitle = track.title
+            playCountedForCurrent = pos >= 30
+            isPlaying = false
+            pushNowPlaying()
+            // Persist the queue/index/position that actually landed — the
+            // stored row must reflect surviving tracks, not the pre-restore
+            // state, and must not be silently left pointing at a dead track.
+            persistImmediately()
             return
         }
-        let pos = max(0, min(state.positionSeconds, player.duration))
-        player.currentTime = pos
-        position = pos
-        currentMetadata = metadata(from: track)
-        currentTrackTitle = track.title
-        playCountedForCurrent = pos >= 30
-        isPlaying = false
-        pushNowPlaying()
+        stopPlayback()
     }
 
     // MARK: - Private
