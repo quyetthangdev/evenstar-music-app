@@ -67,7 +67,7 @@ Mở màn hình Now Playing, để một bài chạy **hết tự nhiên** (đ�
 
 > Nguyên nhân: guard chống race dùng `currentTime < duration - 0.5`, nhưng `AVAudioPlayer.currentTime` trả về **0** sau khi bài kết thúc chứ không phải `duration`, nên guard không chặn được gì. Sửa một dòng nếu bạn thấy phiền.
 
-### 2.2 Import file iCloud chưa tải về  ⚠️ đã biết còn lỗi
+### 2.2 Import file iCloud chưa tải về  ✅ đã sửa, cần xác nhận
 Chọn 4–5 file từ iCloud Drive **chưa tải xuống máy**.
 
 - **Đã sửa:** sheet giờ cuộn được và kéo lên cao được, nên danh sách lý do không còn bị cắt. Việc của bạn là xác nhận: kéo sheet lên và cuộn thử, có đọc được hết mọi lý do không?
