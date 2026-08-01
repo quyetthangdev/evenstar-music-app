@@ -136,6 +136,10 @@ struct LibraryView: View {
     }
 
     private func deleteTrack(_ track: Track) {
+        // Queue adjustment is persisted before the DB delete below runs (identity
+        // must be read off `track` while it's still live). If `library.delete`
+        // then throws, the row can survive pointing at already-adjusted playback
+        // state and possibly-removed files. Recovering from that is Phase 2d's job.
         playback.handleTrackDeleted(track)
         do {
             try library.delete(track)
