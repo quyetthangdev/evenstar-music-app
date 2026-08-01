@@ -140,4 +140,50 @@ final class PlaybackServiceQueueTests: XCTestCase {
         XCTAssertNil(service.currentTrack)
         XCTAssertTrue(service.queue.isEmpty)
     }
+
+    func testHandleDeletedCurrentTrackAdvances() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertEqual(service.currentTrack?.id, list[1].id)
+        XCTAssertEqual(service.queue.count, 2)
+    }
+
+    func testHandleDeletedLastTrackWhenItIsCurrentStopsPlayback() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(2, library: library)
+        service.play(list[1], in: list)
+
+        service.handleTrackDeleted(list[1])
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+    }
+
+    func testHandleDeletedFutureTrackAdjustsQueueButKeepsCurrent() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+
+        service.handleTrackDeleted(list[2])
+
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertEqual(service.queue.count, 2)
+    }
+
+    func testHandleDeletedPastTrackAdjustsIndex() throws {
+        let (service, _, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        XCTAssertEqual(service.queueIndex, 2)
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertEqual(service.currentTrack?.id, list[2].id)
+        XCTAssertEqual(service.queueIndex, 1)  // shifted because one earlier item was removed
+        XCTAssertEqual(service.queue.count, 2)
+    }
 }

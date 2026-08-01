@@ -102,6 +102,33 @@ final class PlaybackService {
     /// Not for production callers.
     func tickForTesting() { tickPosition() }
 
+    /// Keeps the in-memory queue consistent when a track is deleted from the
+    /// library. No-op if `track` isn't in the queue. If it's the currently
+    /// playing track, advances to the next track (or stops if it was last).
+    /// Otherwise just removes it and shifts `queueIndex` if it sat before the
+    /// current position.
+    func handleTrackDeleted(_ track: Track) {
+        guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
+        let wasCurrent = (removalIndex == queueIndex)
+        queue.remove(at: removalIndex)
+
+        if wasCurrent {
+            if queueIndex >= queue.count {
+                stopPlayback()
+            } else {
+                // queueIndex stays; the new track at this index becomes current.
+                playCountedForCurrent = false
+                loadCurrentAndPlay()
+                persistImmediately()
+            }
+        } else if removalIndex < queueIndex {
+            queueIndex -= 1
+            persistImmediately()
+        } else {
+            persistImmediately()
+        }
+    }
+
     /// Restores the queue, current track, and position from the persisted
     /// `PlaybackState` row on app launch. Loads and seeks the current track
     /// but deliberately leaves `isPlaying == false` — the user resumes by

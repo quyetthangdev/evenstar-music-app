@@ -96,6 +96,13 @@ struct LibraryView: View {
                     .onTapGesture {
                         playback.play(track, in: tracks)
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            deleteTrack(track)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
             }
             .listStyle(.plain)
         }
@@ -126,5 +133,15 @@ struct LibraryView: View {
         }
         accessibleURLs = []
         inaccessibleFailures = []
+    }
+
+    private func deleteTrack(_ track: Track) {
+        playback.handleTrackDeleted(track)
+        do {
+            try library.delete(track)
+        } catch {
+            // 2a: log only. A polished alert is part of 2d.
+            print("Delete failed: \(error)")
+        }
     }
 }
