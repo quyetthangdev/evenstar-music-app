@@ -19,6 +19,7 @@ struct ArtworkThumbnail: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.12))
         .task(id: relativePath) {
+            image = nil
             image = await ArtworkStore.image(
                 for: relativePath,
                 maxPixel: size * UIScreen.main.scale

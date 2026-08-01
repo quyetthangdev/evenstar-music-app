@@ -23,7 +23,11 @@ enum ArtworkStore {
         return cache
     }()
 
-    private static let colors = NSCache<NSString, UIColor>()
+    private static let colors: NSCache<NSString, UIColor> = {
+        let cache = NSCache<NSString, UIColor>()
+        cache.countLimit = 256
+        return cache
+    }()
 
     /// - Parameter maxPixel: the longest edge, in pixels, the decoded image needs.
     ///   Pass the point size multiplied by the screen scale for a crisp result.
@@ -97,17 +101,24 @@ enum ArtworkStore {
         }
         guard success else { return nil }
 
-        var red = 0, green = 0, blue = 0
+        var red = 0.0, green = 0.0, blue = 0.0
+        var opaqueCount = 0
         for index in stride(from: 0, to: pixels.count, by: 4) {
-            red += Int(pixels[index])
-            green += Int(pixels[index + 1])
-            blue += Int(pixels[index + 2])
+            let alpha = Double(pixels[index + 3]) / 255
+            guard alpha > 0.01 else { continue }
+            // The buffer is premultiplied, so undo the scaling before averaging;
+            // otherwise a semi-transparent cover averages toward black.
+            red += Double(pixels[index]) / alpha
+            green += Double(pixels[index + 1]) / alpha
+            blue += Double(pixels[index + 2]) / alpha
+            opaqueCount += 1
         }
-        let count = width * height
+        guard opaqueCount > 0 else { return nil }
+        let divisor = Double(opaqueCount) * 255
         return UIColor(
-            red: CGFloat(red) / CGFloat(count) / 255,
-            green: CGFloat(green) / CGFloat(count) / 255,
-            blue: CGFloat(blue) / CGFloat(count) / 255,
+            red: min(red / divisor, 1),
+            green: min(green / divisor, 1),
+            blue: min(blue / divisor, 1),
             alpha: 1
         )
     }
