@@ -159,3 +159,56 @@ Báo cho tôi những gì bạn gặp. Tuỳ kết quả:
 
 - **Sạch hoặc chỉ lỗi nhỏ** → tag `phase2a-complete`, merge vào `main`, mở Phase 2b
 - **Có lỗi thật** → tôi chạy systematic-debugging trên từng cái, sửa, rồi mới tag
+
+---
+
+## Nhóm 5 — Hai control mới trên Now Playing  *(thêm 2026-08-02)*
+
+Phần này **quan trọng hơn mọi nhóm khác**, vì thanh âm lượng là thành phần duy nhất trong cả app **không có cách nào kiểm chứng tự động**. `MPVolumeView` không vẽ gì trên simulator — ảnh chụp không cho biết nó có tồn tại không, chứ đừng nói có chạy không. Bạn là tầng kiểm tra duy nhất của nó.
+
+Làm theo đúng thứ tự này. Mục 5.1 mà hỏng thì mọi quan sát khác về âm lượng đều vô nghĩa.
+
+### 5.1 Kéo được thanh âm lượng không?  ⚠️ nghi ngờ cao nhất
+Mở Now Playing, đặt ngón lên thanh âm lượng (dưới hàng nút), kéo ngang.
+
+- **Đúng:** âm lượng đổi theo ngón tay suốt quãng kéo
+- **Sai kiểu A — không nhúc nhích:** vùng bắt của thumb quá nhỏ. Đã sửa từ 1×1 lên 30×30 nhưng chưa ai xác nhận được
+- **Sai kiểu B — chạy khoảng 1cm rồi đứng:** đây là dự đoán P1. `DragGesture` của thẻ là `UIGestureRecognizer`, `UISlider` là `UIControl` dùng `touchesBegan/Moved` — khi cử chỉ của thẻ nhận diện, UIKit gửi `touchesCancelled` cho slider. Thẻ sẽ **không** thu về (kéo ngang nên `progress` gần như không đổi), nên nó trông như slider hỏng chứ không như xung đột cử chỉ
+
+Phân biệt A với B rất quan trọng — hai nguyên nhân khác hẳn nhau.
+
+### 5.2 Hai thanh có cùng màu không?
+So thanh tiến trình và thanh âm lượng, **cả chế độ sáng lẫn tối**.
+
+Nhìn riêng **phần chưa chạy tới** (bên phải). Nếu phần đó ở thanh âm lượng nhạt hơn rõ so với thanh tiến trình → vòng lặp tô màu không tìm thấy `UISlider`. Phần đã chạy (bên trái) có thể vẫn đúng nhờ `tintColor`, nên đừng chỉ nhìn nó.
+
+### 5.3 Hai thanh có cùng chiều rộng không?
+Cùng mép trái, cùng mép phải. Lệch nghĩa là `sizeThatFits` không ăn.
+
+Cũng để ý **độ dày**: thanh tiến trình 7pt, track của `UISlider` khoảng 4pt. Chúng **sẽ** khác nhau. Bạn quyết xem có chướng không — có cách sửa bằng API chính thức, tôi đã ghi lại.
+
+### 5.4 Kéo thanh tiến trình có làm thẻ thu về không?
+Bắt đầu trên thanh, kéo ngang, cố tình lệch lên xuống. **Thẻ không được thu về.**
+
+Đây là rủi ro đã treo từ khi player chuyển sang sheet rồi sang thẻ tự dựng. Giờ mới có dịp kiểm.
+
+### 5.5 Chạm một cái vào thanh tiến trình
+Nó sẽ **tua tới đúng chỗ đó**, không cần kéo. Không có undo.
+
+Vùng nhạy là dải 342×28pt. Apple Music thật ra **bắt buộc phải kéo**, không tua khi chạm — comment trong code nói ngược lại và tôi ghi nhận đó là sai. Bạn thấy chạm-để-tua tiện hay dễ bấm nhầm?
+
+### 5.6 Xem hoạt ảnh phình
+Chạm và giữ trên thanh tiến trình. Ba thứ phải xảy ra **như một chuyển động**: vạch cao từ 7 lên 12pt, hai nhãn thời gian đậm lên, và phần tô chạy tới điểm chạm (không nhảy cóc).
+
+### 5.7 iPhone SE + tên bài hai dòng  ⚠️ đã tính toán, chưa nhìn
+Nếu mượn được máy 4.7", phát một bài có **tên dài xuống hai dòng**, mở Now Playing.
+
+Thanh âm lượng có bị cắt mất ở đáy thẻ không? Khoản dự trù đã nâng 300 → 380 để chặn việc này, nhưng con số đó tính bằng tay chứ chưa ai nhìn thấy.
+
+### 5.8 VoiceOver
+Bật VoiceOver, mở Now Playing, vuốt tới thanh tiến trình. Nó phải đọc **"Playback position"** kèm thời gian, và vuốt lên/xuống phải tua được ±15 giây.
+
+`Slider` cũ có sẵn khả năng này; thanh tự dựng thì không, nên đã phải thêm lại bằng tay.
+
+### 5.9 Khoảng trống dưới thanh âm lượng
+Trên iPhone 12 sẽ còn khoảng **113pt trống** dưới thanh âm lượng — màn hình trông nặng phần trên. Nguyên nhân: `.offset(y:)` cố định không phân bổ được không gian. Apple Music đặt âm lượng gần đáy. Cho tôi biết có chướng mắt không.
