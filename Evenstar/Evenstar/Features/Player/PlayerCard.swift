@@ -37,6 +37,27 @@ struct PlayerCard: View {
     /// own slightly snappier spring.
     private static let settleSpring = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
+    /// The expanded artwork's actual side, derived from the space available
+    /// rather than trusting the `expandedArtwork` constant blindly.
+    ///
+    /// The constant alone put the title/scrubber/transport row below the
+    /// card's own bottom edge in landscape on an iPhone 12 — `expandedContent`
+    /// offset the content by a fixed `expandedArtworkTopGap + expandedArtwork
+    /// + 40`, which exceeded the card's full landscape height, so everything
+    /// below the artwork was clipped away and the expanded player had no
+    /// controls at all. See F2.
+    ///
+    /// `300` is a rough allowance for the title, scrubber and transport below
+    /// the artwork — a starting point, like the other constants here, not a
+    /// measured minimum.
+    private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
+        min(
+            Self.expandedArtwork,
+            fullSize.height - insets.top - Self.expandedArtworkTopGap - 300,
+            fullSize.width - 48
+        )
+    }
+
     var body: some View {
         // `outer` must NOT itself ignore the safe area: only a reader that
         // still respects it reports real `safeAreaInsets`. `ignoresSafeArea()`
@@ -48,11 +69,20 @@ struct PlayerCard: View {
         GeometryReader { outer in
             card(size: outer.size, insets: outer.safeAreaInsets)
                 .ignoresSafeArea()
+                // Attached here, rather than outside the reader, so the
+                // artwork's target size can be derived from the same
+                // `outer` geometry the card lays out with. See F2.
+                .task(id: playback.currentTrack?.id) {
+                    await loadArtwork(safeAreaSize: outer.size, insets: outer.safeAreaInsets)
+                }
         }
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(Self.settleSpring, value: playback.currentTrack == nil)
         .allowsHitTesting(playback.currentTrack != nil)
-        .task(id: playback.currentTrack?.id) { await loadArtwork() }
+        // Nothing is announced or focusable while the card is invisible —
+        // without this a screen reader can still reach the "—" title, the
+        // scrubber and the transport buttons of a card no one can see. See F4.
+        .accessibilityHidden(playback.currentTrack == nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
@@ -80,12 +110,13 @@ struct PlayerCard: View {
         // `insets.bottom` — so using `travel` there made the card trail the
         // finger by up to `insets.bottom`. See R2.
         let dragTravel = max(fullHeight - Self.collapsedHeight - insets.bottom, 1)
+        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
 
         return ZStack(alignment: .topLeading) {
             background
             miniChrome(width: fullWidth)
-            expandedContent(size: fullSize, topInset: insets.top)
-            artworkView(size: fullSize, topInset: insets.top)
+            expandedContent(size: fullSize, topInset: insets.top, artworkSide: artworkSide)
+            artworkView(size: fullSize, topInset: insets.top, artworkSide: artworkSide)
             grabber(topInset: insets.top)
         }
         .frame(width: fullWidth, height: height, alignment: .top)
@@ -161,25 +192,25 @@ struct PlayerCard: View {
             .allowsHitTesting(progress < 0.1)
     }
 
-    private func expandedContent(size: CGSize, topInset: CGFloat) -> some View {
+    private func expandedContent(size: CGSize, topInset: CGFloat, artworkSide: CGFloat) -> some View {
         NowPlayingContent(playback: playback)
             .padding(.horizontal, 24)
             .frame(width: size.width)
-            .offset(y: topInset + Self.expandedArtworkTopGap + Self.expandedArtwork + 40)
+            .offset(y: topInset + Self.expandedArtworkTopGap + artworkSide + 40)
             .opacity(max(0, (progress - 0.5) * 2))
             .allowsHitTesting(progress > 0.9)
     }
 
-    private func artworkView(size: CGSize, topInset: CGFloat) -> some View {
+    private func artworkView(size: CGSize, topInset: CGFloat, artworkSide: CGFloat) -> some View {
         let side = Self.collapsedArtwork
-            + (Self.expandedArtwork - Self.collapsedArtwork) * progress
+            + (artworkSide - Self.collapsedArtwork) * progress
         let collapsedCentre = CGPoint(
             x: 12 + Self.collapsedArtwork / 2,
             y: Self.collapsedHeight / 2
         )
         let expandedCentre = CGPoint(
             x: size.width / 2,
-            y: topInset + Self.expandedArtworkTopGap + Self.expandedArtwork / 2
+            y: topInset + Self.expandedArtworkTopGap + artworkSide / 2
         )
         let centre = CGPoint(
             x: collapsedCentre.x + (expandedCentre.x - collapsedCentre.x) * progress,
@@ -255,11 +286,28 @@ struct PlayerCard: View {
         }
     }
 
-    private func loadArtwork() async {
+    /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
+    ///   lays out with, so the decode target matches what `artworkView` will
+    ///   actually draw. See F2.
+    private func loadArtwork(safeAreaSize: CGSize, insets: EdgeInsets) async {
+        // Bail rather than clear: when the last track in the queue finishes,
+        // `currentTrack` goes nil and this re-fires with a nil id while the
+        // card is still mid collapse-and-fade. Clearing `artwork`/`tint` here
+        // would flash a bare placeholder for that whole animation. Leaving
+        // the last frame's artwork in place instead means it fades away with
+        // the rest of the card. See F3.
+        guard playback.currentTrack != nil else { return }
+
+        let fullSize = CGSize(
+            width: safeAreaSize.width + insets.leading + insets.trailing,
+            height: safeAreaSize.height + insets.top + insets.bottom
+        )
+        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
+
         let path = playback.currentTrack?.artworkRelativePath
         async let image = ArtworkStore.image(
             for: path,
-            maxPixel: Self.expandedArtwork * UIScreen.main.scale
+            maxPixel: artworkSide * UIScreen.main.scale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         let (loadedImage, loadedColour) = await (image, colour)

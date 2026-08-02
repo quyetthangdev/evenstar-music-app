@@ -87,15 +87,15 @@ Nhờ ai gọi vào máy khi đang phát nhạc. Sau khi cúp:
 
 Làm lại thí nghiệm tương tự với **rút tai nghe** đang cắm.
 
-### 2.4 Kéo thanh scrubber có làm đóng sheet không?  ⚠️ chưa kiểm chứng được
-Mở Now Playing, kéo thanh scrubber để tua bài — kéo vài lần, cả chậm lẫn nhanh.
+### 2.4 Kéo thanh scrubber có làm card co lại không?  ⚠️ chưa kiểm chứng được
+Chạm mini player để mở rộng thành Now Playing, rồi kéo thanh scrubber để tua bài — kéo vài lần, cả chậm lẫn nhanh.
 
-**Câu hỏi cụ thể:** có lần nào sheet bị đóng lại thay vì tua không?
+**Câu hỏi cụ thể:** có lần nào card bị co lại (collapse) thay vì tua không?
 
-Now Playing giờ là `.sheet`, nên kéo dọc ở vùng trống sẽ đóng nó. Kéo ngang để tua thì đúng, nhưng nếu ngón tay lệch dọc lúc bắt đầu, hệ thống có thể hiểu nhầm. Apple Music cũng có đặc tính này.
+Now Playing không còn là `.sheet` — nó chính là card đó ở đầu kia của phép biến hình, và cử chỉ kéo-để-đóng giờ là một `DragGesture` viết tay gắn trên toàn bộ card, không phải cử chỉ hệ thống của sheet nữa. Thanh scrubber là một view con nằm bên trong card, nên SwiftUI về nguyên tắc phải ưu tiên gesture của nó khi ngón tay chạm đúng track của slider — nhưng đó là điều cần xác nhận thật trên máy, không phải điều mặc định đúng. Thử kéo ngang trên track để tua, kéo dọc gần đó để card co lại, và vài lần bắt đầu chạm hơi lệch để xem gesture nào "thắng".
 
-- Nếu **không bao giờ** xảy ra → không cần làm gì
-- Nếu **thỉnh thoảng** xảy ra → cho tôi biết tần suất, có cách giới hạn cử chỉ của slider
+- Nếu slider luôn tua đúng, card không bao giờ co lại khi ngón tay đang ở trên track → không cần làm gì
+- Nếu card thỉnh thoảng co lại khi đang kéo slider → cho tôi biết tần suất, có cách giới hạn vùng kích hoạt gesture của card
 
 ---
 
@@ -111,13 +111,15 @@ Import 40–60 file cùng lúc, trong đó có file FLAC/WAV lớn. Bấm giờ.
 
 > Nguyên nhân đã biết: file được copy **đồng bộ trên main thread**, và mỗi file lại quét toàn bộ bảng Track để chống trùng.
 
-### 3.2 Cuộn danh sách lớn
+### 3.2 Cuộn danh sách lớn  ✅ đã sửa, cần xác nhận
 Import 300+ bài (có ảnh bìa), rồi vuốt cuộn thật mạnh. Mở Xcode → Debug gauge xem bộ nhớ.
 
 - Có giật khung hình không?
 - Bộ nhớ nhảy lên bao nhiêu?
 
-> Nguyên nhân đã biết: `ArtworkThumbnail` đọc file và **giải mã ảnh ở độ phân giải gốc** mỗi lần render row, không cache. Ảnh bìa album thường 1000×1000 đến 3000×3000 — giải mã một ảnh 3000×3000 tốn ~36 MB chỉ để vẽ một ô 44×44. Spec có yêu cầu dùng `NSCache` nhưng chưa làm.
+**Đã sửa:** `ArtworkStore` giờ giải mã ảnh đúng ở kích thước cần vẽ (downsample qua ImageIO) thay vì độ phân giải gốc, và cache kết quả bằng `NSCache` (~50 MB). Cuộn lại qua các dòng đã từng hiện ra trước đó phải mượt, vì ảnh đã nằm sẵn trong cache.
+
+Lưu ý liên quan bản sửa F1 đợt cuối: lần giải mã **đầu tiên** của mỗi dòng — tức lần đầu nó xuất hiện trên màn hình — vẫn là một lần decode ảnh thật, giờ được đảm bảo chạy ngoài main thread bằng `@concurrent`. Cái cần theo dõi khi cuộn mạnh lần đầu qua danh sách chưa từng thấy là độ mượt của *những dòng mới xuất hiện lần đầu*; cuộn lùi lại qua các dòng đã thấy rồi thì phải mượt hoàn toàn vì đó là cache hit.
 
 ### 3.3 Thời gian khởi động với thư viện lớn
 Sau 3.2: phát một bài → kill app từ App Switcher → mở lại → bấm giờ tới lúc mini player hiện ra.
@@ -134,7 +136,7 @@ Chạy nốt các mục còn lại trong Task 11 của plan:
 - [ ] Import 5 file → "Imported 5"
 - [ ] Import lại đúng 5 file đó → "5 duplicates skipped"
 - [ ] Chạm bài hát → mini player hiện, nhạc phát
-- [ ] Chạm mini player → Now Playing mở lên dạng sheet, kéo xuống đóng được; kéo scrubber, play/pause, next đều chạy
+- [ ] Chạm mini player → card mở rộng thành Now Playing toàn màn hình; kéo xuống co lại về mini player; kéo scrubber, play/pause, next đều chạy
 - [ ] Bài cuối kết thúc → mini player biến mất, màn hình khoá sạch
 - [ ] Khoá máy khi đang phát → màn hình khoá hiện tên/ca sĩ/album/ảnh bìa + điều khiển được
 - [ ] Bấm nút tai nghe (AirPods/EarPods) → play/pause chạy

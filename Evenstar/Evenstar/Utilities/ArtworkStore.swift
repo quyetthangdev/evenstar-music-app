@@ -11,9 +11,16 @@ import UIKit
 /// that inside a view's `body` repeats it on every render. Downsampling through
 /// ImageIO decodes only what is drawn.
 ///
-/// Every function here is `nonisolated async`, so the decode runs on the
-/// cooperative pool rather than the main actor. Nothing throws — every failure
-/// path returns nil, so a corrupt or missing image file can never crash a view.
+/// Every function here is `nonisolated async`, but under this project's
+/// `SWIFT_APPROACHABLE_CONCURRENCY` flags (SE-0461's
+/// `NonisolatedNonsendingByDefault`) that alone does *not* move work off the
+/// caller's executor — a `nonisolated async` function now runs on the
+/// caller's actor instead of hopping to the cooperative pool. A caller on the
+/// main actor (e.g. a `.task(id:)` closure, which is `@_inheritActorContext`)
+/// would therefore decode on the main thread. `@concurrent` is what makes the
+/// off-main hop explicit and guaranteed, regardless of who calls in. Nothing
+/// throws — every failure path returns nil, so a corrupt or missing image
+/// file can never crash a view.
 enum ArtworkStore {
 
     /// ~50 MB, as the parent design spec has required since Phase 2.
@@ -31,6 +38,7 @@ enum ArtworkStore {
 
     /// - Parameter maxPixel: the longest edge, in pixels, the decoded image needs.
     ///   Pass the point size multiplied by the screen scale for a crisp result.
+    @concurrent
     static func image(for relativePath: String?, maxPixel: CGFloat) async -> UIImage? {
         guard let relativePath else { return nil }
         let key = "\(relativePath)@\(Int(maxPixel))" as NSString
@@ -45,6 +53,7 @@ enum ArtworkStore {
 
     /// The average colour of the artwork, used to tint the expanded player's
     /// background. Derived from a 10px decode, so it costs almost nothing.
+    @concurrent
     static func dominantColor(for relativePath: String?) async -> Color? {
         guard let relativePath else { return nil }
         let key = relativePath as NSString
