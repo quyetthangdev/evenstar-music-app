@@ -25,6 +25,12 @@ struct PlayerCard: View {
     @State private var settled: Double = 0
     /// How far the in-flight drag has moved it. Zeroed when the drag settles.
     @State private var dragDelta: Double = 0
+    /// Whether a drag is in flight. Sizes the hit region — see the note at the
+    /// `.contentShape` call site for why that cannot be derived from
+    /// `progress`. Deliberately not folded into `dragDelta != 0`: a drag that
+    /// has clamped `progress` to 0 is still in flight and must keep the large
+    /// region, which is precisely the case that broke.
+    @State private var isDragging = false
 
     @State private var artwork: UIImage?
     @State private var tint: Color?
@@ -144,18 +150,76 @@ struct PlayerCard: View {
                 topTrailingRadius: Self.expandedCornerRadius * progress
             )
         )
-        // Hit-testing must bind to this card-sized view, not to the
-        // full-screen frame below it — otherwise the collapsed card claims
-        // the whole display or nothing behind it is reachable. See F1.
-        .contentShape(Rectangle())
+        // The card is laid out bottom-aligned in a full-screen frame, and
+        // hit-testing binds to *that* frame rather than to the card, so the
+        // region's size is ours to choose instead of being whatever the card
+        // currently measures.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // This line has now been wrong in BOTH directions, so read before you
+        // touch it.
+        //
+        // Attached to the full-screen frame with a plain `Rectangle()`, a
+        // collapsed card hit-tests the whole display and the library behind it
+        // becomes untappable: rows expand the player instead of playing, the
+        // toolbar `+` is unreachable, and the list neither scrolls nor swipes
+        // to delete — from launch, since restoring persisted state sets a
+        // current track. That was F1 (Critical).
+        //
+        // Attached to the card-sized view instead, the region SHRINKS WITH THE
+        // CARD. During a collapse the card's top edge rises past the finger,
+        // the finger falls outside the region, and the in-flight drag is
+        // dropped and re-recognised — frames "held back", continuous flicker.
+        // Expanding grows the card towards the finger and is unaffected, which
+        // is why only collapsing stuttered. Four probes ruled out drawing
+        // entirely: even a bare resizing `Rectangle` dropped frames.
+        //
+        // Both versions shared one assumption — that the region should track
+        // the card's size. It must not. It keys on whether a drag is in
+        // flight: while dragging (or whenever the card is off its collapsed
+        // rest) the region is the whole screen and cannot shrink out from
+        // under the finger; at collapsed rest it is exactly the bar, so the
+        // library stays fully usable. Do not re-derive this height from
+        // `progress` alone.
+        .contentShape(
+            BottomHitRegion(
+                height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight
+            )
+        )
         .gesture(drag(travel: dragTravel))
         .onTapGesture { if progress < 0.5 { expand() } }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         // At progress 0 this holds the card's bottom at the real safe-area
         // inset, matching where LibraryView's spacer stops the list; at
         // progress 1 it goes to 0 so the expanded card reaches the physical
         // bottom edge. See F3.
+        //
+        // It must stay *outside* the frame and the hit region above. Applied
+        // here it shortens the height proposed to that frame, so the frame's
+        // bottom edge lands exactly where the card's bottom edge is, and
+        // `BottomHitRegion` — which measures up from `rect.maxY` — lines up
+        // with the collapsed bar. Moved inside (padding the card itself), the
+        // frame would still span the full screen and the collapsed region
+        // would sit `insets.bottom` too low, missing the top of the bar.
         .padding(.bottom, insets.bottom * (1 - progress))
+    }
+
+    /// The bottom `height` points of whatever it is applied to.
+    ///
+    /// Used instead of `Rectangle()` so the hit region's height can be chosen
+    /// by state rather than inherited from the card's current size. See the
+    /// note at the `.contentShape` call site.
+    private struct BottomHitRegion: Shape {
+        var height: CGFloat
+
+        func path(in rect: CGRect) -> Path {
+            Path(
+                CGRect(
+                    x: rect.minX,
+                    y: rect.maxY - height,
+                    width: rect.width,
+                    height: height
+                )
+            )
+        }
     }
 
     // MARK: - Pieces
@@ -268,6 +332,10 @@ struct PlayerCard: View {
     private func drag(travel: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
+                // Guarded rather than assigned unconditionally: this fires on
+                // every touch move, and a redundant `@State` write would
+                // invalidate the view again for nothing.
+                if !isDragging { isDragging = true }
                 // No rubber-band past either end: `progress` (settled +
                 // dragDelta, clamped) is rigid at 0 and 1. An earlier version
                 // of this method shaved the excess off `delta` here to fake
@@ -278,6 +346,10 @@ struct PlayerCard: View {
                 dragDelta = -value.translation.height / travel
             }
             .onEnded { value in
+                // Cleared outside the `withAnimation` below: the hit region
+                // is not an animatable property, and the settle should hand
+                // the screen back as soon as the finger lifts.
+                isDragging = false
                 // Decide on the predicted end, not the current offset, so a
                 // quick flick settles the card even though the finger barely
                 // moved. Comparing raw distance is what makes hand-rolled
