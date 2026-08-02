@@ -5,8 +5,6 @@ import SwiftUI
 struct NowPlayingContent: View {
     let playback: PlaybackService
 
-    @State private var draggingPosition: TimeInterval?
-
     var body: some View {
         VStack(spacing: 24) {
             titleBlock
@@ -35,29 +33,11 @@ struct NowPlayingContent: View {
     }
 
     private var scrubber: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { draggingPosition ?? playback.position },
-                    set: { draggingPosition = $0 }
-                ),
-                in: 0...max(playback.duration, 0.001),
-                onEditingChanged: { editing in
-                    if !editing, let target = draggingPosition {
-                        playback.seek(to: target)
-                        draggingPosition = nil
-                    }
-                }
-            )
-            HStack {
-                Text(formatTime(draggingPosition ?? playback.position))
-                Spacer()
-                Text("-" + formatTime(max(0, playback.duration - (draggingPosition ?? playback.position))))
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-        }
+        ScrubberBar(
+            position: playback.position,
+            duration: playback.duration,
+            onSeek: { playback.seek(to: $0) }
+        )
     }
 
     private var transport: some View {
@@ -87,11 +67,5 @@ struct NowPlayingContent: View {
             .disabled(playback.queueIndex >= playback.queue.count - 1)
         }
         .padding(.top, 8)
-    }
-
-    private func formatTime(_ time: TimeInterval) -> String {
-        guard time.isFinite, time >= 0 else { return "0:00" }
-        let total = Int(time.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
