@@ -11,6 +11,7 @@ struct NowPlayingContent: View {
             scrubber
             transport
             SystemVolumeSlider()
+                .frame(maxWidth: .infinity)
                 .frame(height: 44)
         }
     }

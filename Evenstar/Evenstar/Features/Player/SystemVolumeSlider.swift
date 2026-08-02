@@ -13,15 +13,18 @@ import UIKit
 /// is expected, not a bug.
 struct SystemVolumeSlider: UIViewRepresentable {
 
-    /// Marked deprecated only to silence the deprecation on `showsRouteButton`
-    /// below, which iOS 13 retired in favour of `AVRoutePickerView`.
+    /// Marked deprecated to silence the deprecation on `showsRouteButton`,
+    /// which iOS 13 retired in favour of `AVRoutePickerView`.
     /// `AVRoutePickerView` is a *separate control*, not a switch for this one's
     /// button, so the deprecated property is still the only way to hide it —
-    /// and an AirPlay button here is out of scope for this task. Swift
-    /// suppresses the warning inside a declaration that carries the same
-    /// deprecation; SwiftUI reaches this through the protocol witness, so no
-    /// call site inherits it. Remove the attribute if the property is ever
-    /// dropped.
+    /// and an AirPlay button here is out of scope. SwiftUI reaches this method
+    /// through the protocol witness, so no call site inherits the deprecation.
+    ///
+    /// **The suppression is function-wide, not line-specific.** Any API
+    /// deprecated in iOS 13 or earlier that is called anywhere in this body
+    /// will also be silenced, and will pass the project's zero-warnings bar
+    /// without anyone noticing. Check deliberately before adding calls here,
+    /// and remove the attribute if `showsRouteButton` is ever dropped.
     @available(iOS, deprecated: 13.0, message: "See the note on this method.")
     func makeUIView(context: Context) -> MPVolumeView {
         let view = MPVolumeView(frame: .zero)
