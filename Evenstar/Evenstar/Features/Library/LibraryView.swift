@@ -30,7 +30,11 @@ struct LibraryView: View {
                     }
                     .safeAreaInset(edge: .bottom) {
                         Color.clear
-                            .frame(height: playback.currentTrack == nil ? 0 : PlayerCard.collapsedHeight)
+                            // `collapsedClearance`, not `collapsedHeight`: the
+                            // collapsed player is a pill floating above the
+                            // safe area, so the last row must clear the gap
+                            // beneath it as well as the bar itself.
+                            .frame(height: playback.currentTrack == nil ? 0 : PlayerCard.collapsedClearance)
                     }
                     .task {
                         await playback.restoreFromPersistedState()

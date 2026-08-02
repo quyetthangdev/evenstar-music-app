@@ -11,9 +11,19 @@ import SwiftUI
 struct PlayerCard: View {
     let playback: PlaybackService
 
-    /// Read by `LibraryView`'s safe-area inset as well, so the list scrolls
-    /// clear of the collapsed card. Do not duplicate this as a literal.
+    /// The collapsed bar's own height. `LibraryView` no longer reads this
+    /// directly — it reads `collapsedClearance`, which adds the gap below the
+    /// floating pill. Do not duplicate this as a literal.
     static let collapsedHeight: CGFloat = 64
+
+    /// How far the collapsed pill is inset from each screen edge.
+    private static let pillSideMargin: CGFloat = 12
+    /// The gap between the collapsed pill's bottom edge and the safe area.
+    private static let collapsedBottomGap: CGFloat = 12
+    /// A true pill: half the collapsed height, so the caps are semicircles.
+    private static let collapsedCornerRadius: CGFloat = collapsedHeight / 2
+    /// What the library must leave clear: the bar plus the gap beneath it.
+    static let collapsedClearance: CGFloat = collapsedHeight + collapsedBottomGap
 
     private static let collapsedArtwork: CGFloat = 40
     private static let expandedArtwork: CGFloat = 280
@@ -126,30 +136,68 @@ struct PlayerCard: View {
         let fullSize = CGSize(width: fullWidth, height: fullHeight)
         let travel = max(fullHeight - Self.collapsedHeight, 1)
         let height = Self.collapsedHeight + travel * progress
+        // The collapsed card is a floating pill inset from both screen edges;
+        // the expanded card still spans the display. `sideMargin` is 12 at
+        // progress 0 and exactly 0 at progress 1, so `cardWidth == fullWidth`
+        // when expanded and every layout inside the card is unchanged there.
+        let sideMargin = Self.pillSideMargin * (1 - progress)
+        let cardWidth = fullWidth - sideMargin * 2
+        // The size everything laid out *inside* the card measures against.
+        // Note this is deliberately NOT what `artworkSide` below is given —
+        // see the comment there.
+        let cardSize = CGSize(width: cardWidth, height: fullHeight)
+        // `fullSize`, never `cardSize`: this is the artwork's *expanded*
+        // target side, which must not vary with `progress`. Feeding it the
+        // interpolating `cardWidth` would make the artwork pulse through the
+        // morph, and `loadArtwork` computes its decode target by calling
+        // `artworkSide(fullSize:insets:)` from its own geometry — the two must
+        // agree or the decoded image no longer matches what is drawn.
+        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
         // Distinct from `travel` above: that one sizes the frame so it
         // still reaches exactly `fullHeight` at progress 1. This one is
         // only the pixel-to-progress divisor for the gesture below. The
         // card's top edge doesn't actually travel the full `travel`
-        // distance — F3's bottom padding shortens the visible range by
-        // `insets.bottom` — so using `travel` there made the card trail the
-        // finger by up to `insets.bottom`. See R2.
-        let dragTravel = max(fullHeight - Self.collapsedHeight - insets.bottom, 1)
-        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
+        // distance — the bottom padding shortens the visible range by
+        // `insets.bottom` (F3's safe-area inset) *plus* `collapsedBottomGap`
+        // (the floating pill's gap) — so using `travel` there made the card
+        // trail the finger by the sum of the two. Both terms must appear
+        // here and in that padding, or they drift apart again. See R2.
+        let dragTravel = max(
+            fullHeight - Self.collapsedHeight - insets.bottom - Self.collapsedBottomGap,
+            1
+        )
 
         return ZStack(alignment: .topLeading) {
             background
-            miniChrome(width: fullWidth)
-            expandedContent(size: fullSize, topInset: insets.top, artworkSide: artworkSide)
-            artworkView(size: fullSize, topInset: insets.top, artworkSide: artworkSide)
+            miniChrome(width: cardWidth)
+            expandedContent(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
+            artworkView(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
             grabber(topInset: insets.top)
         }
-        .frame(width: fullWidth, height: height, alignment: .top)
+        .frame(width: cardWidth, height: height, alignment: .top)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: Self.expandedCornerRadius * progress,
-                topTrailingRadius: Self.expandedCornerRadius * progress
+                // Collapsed the card is a pill — all four corners at
+                // `collapsedCornerRadius`. Expanded it is the Now Playing
+                // card: 38pt top corners, square bottom against the display
+                // edge. The top corners therefore interpolate 32 -> 38 and are
+                // never 0; the bottom two interpolate 32 -> 0.
+                topLeadingRadius: Self.collapsedCornerRadius
+                    + (Self.expandedCornerRadius - Self.collapsedCornerRadius) * progress,
+                bottomLeadingRadius: Self.collapsedCornerRadius * (1 - progress),
+                bottomTrailingRadius: Self.collapsedCornerRadius * (1 - progress),
+                topTrailingRadius: Self.collapsedCornerRadius
+                    + (Self.expandedCornerRadius - Self.collapsedCornerRadius) * progress
             )
         )
+        // Lifts the collapsed pill off the list behind it. Colour, radius and
+        // offset are deliberately CONSTANT and must not be interpolated with
+        // `progress`: this view moves every frame during a drag, and animating
+        // a shadow on it forces a fresh offscreen pass per frame. This shadow
+        // is the first thing to remove if drag performance regresses. It also
+        // needs no fade-out — when expanded the card fills the screen, so the
+        // shadow is occluded anyway.
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
         // The card is laid out bottom-aligned in a full-screen frame, and
         // hit-testing binds to *that* frame rather than to the card, so the
         // region's size is ours to choose instead of being whatever the card
@@ -180,17 +228,29 @@ struct PlayerCard: View {
         // under the finger; at collapsed rest it is exactly the bar, so the
         // library stays fully usable. Do not re-derive this height from
         // `progress` alone.
+        //
+        // The same reasoning governs the horizontal dimension, added with the
+        // floating pill: at collapsed rest the region is inset by
+        // `pillSideMargin` so the 12pt strips beside the pill fall through to
+        // the library — without it, tapping near a screen edge expands the
+        // player. But the inset must come from this same drag-state gate, NOT
+        // from the interpolated `sideMargin`: derived from `progress` it would
+        // narrow the region mid-drag and drop the finger sideways, exactly the
+        // failure described above in the vertical direction.
         .contentShape(
             BottomHitRegion(
-                height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight
+                height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight,
+                horizontalInset: isDragging || progress > 0 ? 0 : Self.pillSideMargin
             )
         )
         .gesture(drag(travel: dragTravel))
         .onTapGesture { if progress < 0.5 { expand() } }
         // At progress 0 this holds the card's bottom at the real safe-area
-        // inset, matching where LibraryView's spacer stops the list; at
-        // progress 1 it goes to 0 so the expanded card reaches the physical
-        // bottom edge. See F3.
+        // inset plus `collapsedBottomGap`, so the pill floats clear of the
+        // safe area and matches where LibraryView's `collapsedClearance`
+        // spacer stops the list; at progress 1 it goes to 0 so the expanded
+        // card reaches the physical bottom edge. See F3. `dragTravel` above
+        // must subtract exactly the same two terms — see the note there.
         //
         // It must stay *outside* the frame and the hit region above. Applied
         // here it shortens the height proposed to that frame, so the frame's
@@ -199,23 +259,25 @@ struct PlayerCard: View {
         // with the collapsed bar. Moved inside (padding the card itself), the
         // frame would still span the full screen and the collapsed region
         // would sit `insets.bottom` too low, missing the top of the bar.
-        .padding(.bottom, insets.bottom * (1 - progress))
+        .padding(.bottom, (insets.bottom + Self.collapsedBottomGap) * (1 - progress))
     }
 
-    /// The bottom `height` points of whatever it is applied to.
+    /// The bottom `height` points of whatever it is applied to, inset by
+    /// `horizontalInset` on each side.
     ///
-    /// Used instead of `Rectangle()` so the hit region's height can be chosen
+    /// Used instead of `Rectangle()` so the hit region's size can be chosen
     /// by state rather than inherited from the card's current size. See the
     /// note at the `.contentShape` call site.
     private struct BottomHitRegion: Shape {
         var height: CGFloat
+        var horizontalInset: CGFloat
 
         func path(in rect: CGRect) -> Path {
             Path(
                 CGRect(
-                    x: rect.minX,
+                    x: rect.minX + horizontalInset,
                     y: rect.maxY - height,
-                    width: rect.width,
+                    width: rect.width - horizontalInset * 2,
                     height: height
                 )
             )
@@ -268,7 +330,9 @@ struct PlayerCard: View {
     private func miniChrome(width: CGFloat) -> some View {
         MiniPlayerChrome(playback: playback)
             .padding(.leading, Self.collapsedArtwork + 24)
-            .padding(.trailing, 12)
+            // 16 rather than 12 so the forward button clears the pill's
+            // rounded right cap.
+            .padding(.trailing, 16)
             .frame(width: width, height: Self.collapsedHeight)
             .opacity(max(0, 1 - progress * 3))
             .allowsHitTesting(progress < 0.1)
