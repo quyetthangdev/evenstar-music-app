@@ -31,31 +31,26 @@ struct PlayerCard: View {
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
-    var body: some View {
-        GeometryReader { geo in
-            let travel = max(geo.size.height - Self.collapsedHeight, 1)
-            let height = Self.collapsedHeight + travel * progress
+    /// Spring shared by drag release and `collapse()`, including the fade
+    /// that now accompanies `collapse()` when the queue ends (F7) so the
+    /// card disappears on the same curve it moves on. `expand()` keeps its
+    /// own slightly snappier spring.
+    private static let settleSpring = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
-            ZStack(alignment: .topLeading) {
-                background
-                miniChrome(width: geo.size.width)
-                expandedContent(size: geo.size, topInset: geo.safeAreaInsets.top)
-                artworkView(size: geo.size, topInset: geo.safeAreaInsets.top)
-            }
-            .frame(width: geo.size.width, height: height, alignment: .top)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: Self.expandedCornerRadius * progress,
-                    topTrailingRadius: Self.expandedCornerRadius * progress
-                )
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .contentShape(Rectangle())
-            .gesture(drag(travel: travel))
-            .onTapGesture { if progress < 0.5 { expand() } }
+    var body: some View {
+        // `outer` must NOT itself ignore the safe area: only a reader that
+        // still respects it reports real `safeAreaInsets`. `ignoresSafeArea()`
+        // is applied to the card view produced from it instead, so the card
+        // can still visually reach the physical edges while the insets we
+        // read to lay it out stay correct. See F2 in the Phase 2a task-2
+        // review for why the naive `GeometryReader { }.ignoresSafeArea()`
+        // ordering zeroes the insets.
+        GeometryReader { outer in
+            card(size: outer.size, insets: outer.safeAreaInsets)
+                .ignoresSafeArea()
         }
-        .ignoresSafeArea()
         .opacity(playback.currentTrack == nil ? 0 : 1)
+        .animation(Self.settleSpring, value: playback.currentTrack == nil)
         .allowsHitTesting(playback.currentTrack != nil)
         .task(id: playback.currentTrack?.id) { await loadArtwork() }
         .onChange(of: playback.currentTrack?.id) { _, id in
@@ -63,10 +58,50 @@ struct PlayerCard: View {
         }
     }
 
+    /// - Parameter size: the *safe-area* size of the reader (not the full
+    ///   screen — see the note on `outer` above).
+    /// - Parameter insets: the reader's real safe-area insets.
+    private func card(size: CGSize, insets: EdgeInsets) -> some View {
+        let fullHeight = size.height + insets.top + insets.bottom
+        let travel = max(fullHeight - Self.collapsedHeight, 1)
+        let height = Self.collapsedHeight + travel * progress
+
+        return ZStack(alignment: .topLeading) {
+            background
+            miniChrome(width: size.width)
+            expandedContent(size: size, topInset: insets.top)
+            artworkView(size: size, topInset: insets.top)
+            grabber(topInset: insets.top)
+        }
+        .frame(width: size.width, height: height, alignment: .top)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: Self.expandedCornerRadius * progress,
+                topTrailingRadius: Self.expandedCornerRadius * progress
+            )
+        )
+        // Hit-testing must bind to this card-sized view, not to the
+        // full-screen frame below it — otherwise the collapsed card claims
+        // the whole display or nothing behind it is reachable. See F1.
+        .contentShape(Rectangle())
+        .gesture(drag(travel: travel))
+        .onTapGesture { if progress < 0.5 { expand() } }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // At progress 0 this holds the card's bottom at the real safe-area
+        // inset, matching where LibraryView's spacer stops the list; at
+        // progress 1 it goes to 0 so the expanded card reaches the physical
+        // bottom edge. See F3.
+        .padding(.bottom, insets.bottom * (1 - progress))
+    }
+
     // MARK: - Pieces
 
     private var background: some View {
         ZStack {
+            // Opaque base: the two layers above cross-fade via opacity, which
+            // composites rather than sums, so without this the card is
+            // translucent through the whole middle of the morph. See F4.
+            Color(.systemGroupedBackground)
             Rectangle()
                 .fill(.thinMaterial)
                 .opacity(1 - progress)
@@ -77,6 +112,20 @@ struct PlayerCard: View {
             )
             .opacity(progress)
         }
+    }
+
+    /// Hints that the expanded card can be dragged away, the way the
+    /// `.sheet` this replaced showed `.presentationDragIndicator(.visible)`.
+    /// Fades in with `progress` so it is invisible while collapsed. See F8.
+    private func grabber(topInset: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.secondary)
+            .opacity(0.4)
+            .frame(width: 36, height: 5)
+            .padding(.top, topInset + 8)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .opacity(progress)
+            .allowsHitTesting(false)
     }
 
     private func miniChrome(width: CGFloat) -> some View {
@@ -121,9 +170,17 @@ struct PlayerCard: View {
             } else {
                 ZStack {
                     Rectangle().fill(Color(.tertiarySystemFill))
+                    // `.font(size:)` isn't animatable, so during the expand
+                    // spring the glyph would otherwise jump to its final size
+                    // immediately while the surrounding frame is still
+                    // interpolating 40 -> 280. Render it at a fixed base size
+                    // and use `.scaleEffect`, which does animate, to track
+                    // `side` continuously. Ratio matches ArtworkThumbnail's
+                    // placeholder (size * 0.5). See F6.
                     Image(systemName: "music.note")
-                        .font(.system(size: side * 0.4))
+                        .font(.system(size: Self.expandedArtwork * 0.5))
                         .foregroundStyle(.secondary)
+                        .scaleEffect(side / Self.expandedArtwork)
                 }
             }
         }
@@ -138,12 +195,14 @@ struct PlayerCard: View {
     private func drag(travel: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
-                var delta = -value.translation.height / travel
-                let raw = settled + delta
-                // Past the top, damp the excess so the card feels tethered
-                // rather than rigid.
-                if raw > 1 { delta -= (raw - 1) * 0.8 }
-                dragDelta = delta
+                // No rubber-band past either end: `progress` (settled +
+                // dragDelta, clamped) is rigid at 0 and 1. An earlier version
+                // of this method shaved the excess off `delta` here to fake
+                // give, but that landed after the clamp already applied, so
+                // it had no visible effect at any input — the code and its
+                // comment disagreed. See F5; overshoot geometry was judged
+                // more risk than the interaction is worth for this pass.
+                dragDelta = -value.translation.height / travel
             }
             .onEnded { value in
                 // Decide on the predicted end, not the current offset, so a
@@ -151,7 +210,7 @@ struct PlayerCard: View {
                 // moved. Comparing raw distance is what makes hand-rolled
                 // sheets feel heavy.
                 let predicted = settled - value.predictedEndTranslation.height / travel
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                withAnimation(Self.settleSpring) {
                     settled = predicted > 0.5 ? 1 : 0
                     dragDelta = 0
                 }
@@ -166,7 +225,7 @@ struct PlayerCard: View {
     }
 
     private func collapse() {
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+        withAnimation(Self.settleSpring) {
             settled = 0
             dragDelta = 0
         }
