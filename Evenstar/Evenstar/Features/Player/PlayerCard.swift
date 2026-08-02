@@ -47,13 +47,31 @@ struct PlayerCard: View {
     /// below the artwork was clipped away and the expanded player had no
     /// controls at all. See F2.
     ///
-    /// `350` is a rough allowance for the title, scrubber, transport row and
+    /// `380` is a rough allowance for the title, scrubber, transport row and
     /// volume slider below the artwork — a starting point, like the other
-    /// constants here, not a measured minimum.
+    /// constants here, not a measured minimum. It was raised from 350 once
+    /// before, when the volume slider was added, but only by the slider's own
+    /// 44pt height — the extra `VStack(spacing: 24)` gap that came with a
+    /// fourth stack element (+24pt) was forgotten, leaving the allowance 18pt
+    /// short and clipping the slider on a two-line title on a 4.7" device.
+    /// Adding anything else to that stack means raising this by the new
+    /// element's height *plus* the `VStack` spacing, not just the element's
+    /// height — that omission is exactly the mistake being corrected here.
+    ///
+    /// This value is deliberately allowed to go negative for tall constants
+    /// against a short `fullSize.height` (e.g. landscape on a compact
+    /// device); see the note on the negative case at the call sites in
+    /// `expandedContent` and `loadArtwork` — SwiftUI clamps a negative frame
+    /// side to zero, but `expandedContent`'s offset consumes this *signed*
+    /// value directly, and that is the only reason landscape still reserves
+    /// its full content region instead of being pushed down and clipped.
+    /// Clamping this to zero at the source (e.g. wrapping the `min(...)` in
+    /// `max(0, …)`) would leave the artwork looking unchanged while silently
+    /// breaking landscape — do not do that.
     private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
         min(
             Self.expandedArtwork,
-            fullSize.height - insets.top - Self.expandedArtworkTopGap - 350,
+            fullSize.height - insets.top - Self.expandedArtworkTopGap - 380,
             fullSize.width - 48
         )
     }

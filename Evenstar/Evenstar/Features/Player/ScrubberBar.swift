@@ -49,6 +49,22 @@ struct ScrubberBar: View {
 
             labels
         }
+        // SwiftUI's `Slider` ships an adjustable accessibility element for
+        // free — a label, a spoken value, and increment/decrement actions.
+        // A `Capsule` plus a `DragGesture` ships none of that, so without
+        // this a VoiceOver user cannot seek at all and the bar is not
+        // announced; the two time labels below are read as loose text with
+        // nothing between them.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playback position")
+        .accessibilityValue(Self.formatTime(displayedPosition))
+        .accessibilityAdjustableAction { direction in
+            let step: TimeInterval = 15
+            let target = direction == .increment
+                ? displayedPosition + step
+                : displayedPosition - step
+            onSeek(min(max(target, 0), duration))
+        }
     }
 
     private var labels: some View {
@@ -101,6 +117,10 @@ struct ScrubberBar: View {
     static func formatTime(_ time: TimeInterval) -> String {
         guard time.isFinite, time >= 0 else { return "0:00" }
         let total = Int(time.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        let hours = total / 3600
+        guard hours > 0 else {
+            return String(format: "%d:%02d", total / 60, total % 60)
+        }
+        return String(format: "%d:%02d:%02d", hours, (total % 3600) / 60, total % 60)
     }
 }

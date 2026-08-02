@@ -57,4 +57,22 @@ final class ScrubberBarTests: XCTestCase {
         // assertion fails.
         XCTAssertEqual(ScrubberBar.time(forX: 100, width: 200, duration: .infinity), 0, accuracy: 0.0001)
     }
+
+    // MARK: - formatTime
+
+    func testFormatTimeJustUnderAnHourOmitsTheHourComponent() {
+        // 59:59 — one second short of rolling over. Without the `hours > 0`
+        // guard being exact, an off-by-one in the boundary could either grow
+        // a spurious "0:" prefix here or, worse, mask the real bug this pair
+        // exists to catch.
+        XCTAssertEqual(ScrubberBar.formatTime(3599), "59:59")
+    }
+
+    func testFormatTimeOverAnHourIncludesTheHourComponent() {
+        // 3800s = 1h 03m 20s. The pre-fix implementation divided straight
+        // into minutes:seconds and would render this as "63:20" instead of
+        // "1:03:20" — this assertion fails against that implementation and
+        // passes against the hour-aware one.
+        XCTAssertEqual(ScrubberBar.formatTime(3800), "1:03:20")
+    }
 }

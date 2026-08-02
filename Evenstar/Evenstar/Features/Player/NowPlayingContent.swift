@@ -10,9 +10,7 @@ struct NowPlayingContent: View {
             titleBlock
             scrubber
             transport
-            SystemVolumeSlider()
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
+            volume
         }
     }
 
@@ -70,5 +68,13 @@ struct NowPlayingContent: View {
             .disabled(playback.queueIndex >= playback.queue.count - 1)
         }
         .padding(.top, 8)
+    }
+
+    // The `.frame` modifiers this used to carry at the call site were a
+    // no-op — `.frame(maxWidth: .infinity)` cannot widen a wrapped `UIView`;
+    // see the note on `SystemVolumeSlider.sizeThatFits`, which now takes the
+    // width out of the decision instead.
+    private var volume: some View {
+        SystemVolumeSlider()
     }
 }
