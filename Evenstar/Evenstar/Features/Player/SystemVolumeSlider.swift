@@ -13,9 +13,31 @@ import UIKit
 /// is expected, not a bug.
 struct SystemVolumeSlider: UIViewRepresentable {
 
+    /// `showsRouteButton` was deprecated by iOS 13 in favour of
+    /// `AVRoutePickerView`, but it is still the only way to hide this
+    /// button: `AVRoutePickerView` is a *separate control*, not a switch for
+    /// this one's, and an AirPlay button here is out of scope.
+    ///
+    /// **The suppression below is function-wide, not line-specific.** Any
+    /// other API deprecated in iOS 13 or earlier that gets called anywhere
+    /// in this body will also be silenced, and will pass the project's
+    /// zero-warnings bar without anyone noticing. Check deliberately before
+    /// adding calls here, and remove the attribute if `showsRouteButton` is
+    /// ever dropped.
+    ///
+    /// KVC (`view.setValue(false, forKey: "showsRouteButton")`) was
+    /// considered as an alternative that avoids the attribute entirely, and
+    /// rejected: it turns a compile-time-checked property access into an
+    /// unchecked string key, so if Apple ever removes `showsRouteButton`
+    /// this call would fail to compile today but would crash at runtime —
+    /// `NSUnknownKeyException`, on a user's device, in the exact screen
+    /// they opened to change the volume — under KVC. A silenced warning,
+    /// caught by the human reviewing this file, is the safer failure mode
+    /// than a crash caught by a user.
+    @available(iOS, deprecated: 13.0, message: "showsRouteButton is the only way to hide MPVolumeView's route button; AVRoutePickerView is a separate control, not a switch for this one.")
     func makeUIView(context: Context) -> MPVolumeView {
         let view = TintedVolumeView(frame: .zero)
-        Self.hideRouteButton(on: view)
+        view.showsRouteButton = false
         view.setVolumeThumbImage(Self.invisibleThumb, for: .normal)
         view.setVolumeThumbImage(Self.invisibleThumb, for: .highlighted)
         view.tintColor = .label
@@ -53,28 +75,6 @@ struct SystemVolumeSlider: UIViewRepresentable {
     private static let invisibleThumb: UIImage = {
         UIGraphicsImageRenderer(size: CGSize(width: 30, height: 30)).image { _ in }
     }()
-
-    /// Hides the route (AirPlay) button. `showsRouteButton` — deprecated by
-    /// iOS 13 in favour of `AVRoutePickerView` — is still the only way to do
-    /// this: `AVRoutePickerView` is a *separate control*, not a switch for
-    /// this one's button, and an AirPlay button here is out of scope.
-    ///
-    /// This goes through `setValue(_:forKey:)` rather than
-    /// `view.showsRouteButton = false` directly. `@available(deprecated:)`
-    /// on a Swift declaration doesn't just silence the marked declaration's
-    /// own body — every *caller* of a deprecated declaration warns too,
-    /// unless that caller is itself marked deprecated. So annotating this
-    /// helper instead of `makeUIView` only relocates the warning to
-    /// `makeUIView`'s call site; it does not remove it. `MPVolumeView` is a
-    /// plain Objective-C class, so `showsRouteButton` is KVC-compliant —
-    /// setting it by key reaches the identical setter without the Swift
-    /// compiler ever seeing a reference to the deprecated declaration, so
-    /// nothing here or at the call site needs an `@available` attribute at
-    /// all. The trade-off is the usual one for KVC: the key name is
-    /// unchecked at compile time.
-    private static func hideRouteButton(on view: MPVolumeView) {
-        view.setValue(false, forKey: "showsRouteButton")
-    }
 }
 
 /// Tints the track to match `ScrubberBar`, after layout instead of at
