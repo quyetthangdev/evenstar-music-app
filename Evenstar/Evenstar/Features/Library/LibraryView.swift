@@ -13,31 +13,30 @@ struct LibraryView: View {
     @State private var inaccessibleFailures: [(url: URL, error: ImportError)] = []
     @State private var showImportSheet = false
     @State private var pickerErrorMessage: String?
-    @State private var showNowPlaying = false
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Library")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Image(systemName: "plus.circle")
+        ZStack {
+            NavigationStack {
+                content
+                    .navigationTitle("Library")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showFileImporter = true
+                            } label: {
+                                Image(systemName: "plus.circle")
+                            }
                         }
                     }
-                }
-                .safeAreaInset(edge: .bottom) {
-                    MiniPlayerBar(playback: playback)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if playback.currentTrack != nil { showNowPlaying = true }
-                        }
-                }
-                .task {
-                    await playback.restoreFromPersistedState()
-                }
+                    .safeAreaInset(edge: .bottom) {
+                        Color.clear
+                            .frame(height: playback.currentTrack == nil ? 0 : PlayerCard.collapsedHeight)
+                    }
+                    .task {
+                        await playback.restoreFromPersistedState()
+                    }
+            }
+            PlayerCard(playback: playback)
         }
         .fileImporter(
             isPresented: $showFileImporter,
@@ -77,14 +76,6 @@ struct LibraryView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(pickerErrorMessage ?? "")
-        }
-        .sheet(isPresented: $showNowPlaying) {
-            NowPlayingView(playback: playback)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .onChange(of: playback.currentTrack?.id) { _, newValue in
-            if newValue == nil { showNowPlaying = false }
         }
     }
 
