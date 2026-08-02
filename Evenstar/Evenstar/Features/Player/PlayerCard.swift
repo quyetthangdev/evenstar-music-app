@@ -63,17 +63,32 @@ struct PlayerCard: View {
     /// - Parameter insets: the reader's real safe-area insets.
     private func card(size: CGSize, insets: EdgeInsets) -> some View {
         let fullHeight = size.height + insets.top + insets.bottom
+        // Same reconstruction as the height, mirrored horizontally: `size`
+        // is the safe-area size, so in landscape (where the horizontal
+        // insets are nonzero) `size.width` alone is narrower than the
+        // screen. Every site that used to read `size.width` reads
+        // `fullWidth` instead. See R1.
+        let fullWidth = size.width + insets.leading + insets.trailing
+        let fullSize = CGSize(width: fullWidth, height: fullHeight)
         let travel = max(fullHeight - Self.collapsedHeight, 1)
         let height = Self.collapsedHeight + travel * progress
+        // Distinct from `travel` above: that one sizes the frame so it
+        // still reaches exactly `fullHeight` at progress 1. This one is
+        // only the pixel-to-progress divisor for the gesture below. The
+        // card's top edge doesn't actually travel the full `travel`
+        // distance — F3's bottom padding shortens the visible range by
+        // `insets.bottom` — so using `travel` there made the card trail the
+        // finger by up to `insets.bottom`. See R2.
+        let dragTravel = max(fullHeight - Self.collapsedHeight - insets.bottom, 1)
 
         return ZStack(alignment: .topLeading) {
             background
-            miniChrome(width: size.width)
-            expandedContent(size: size, topInset: insets.top)
-            artworkView(size: size, topInset: insets.top)
+            miniChrome(width: fullWidth)
+            expandedContent(size: fullSize, topInset: insets.top)
+            artworkView(size: fullSize, topInset: insets.top)
             grabber(topInset: insets.top)
         }
-        .frame(width: size.width, height: height, alignment: .top)
+        .frame(width: fullWidth, height: height, alignment: .top)
         .clipShape(
             UnevenRoundedRectangle(
                 topLeadingRadius: Self.expandedCornerRadius * progress,
@@ -84,7 +99,7 @@ struct PlayerCard: View {
         // full-screen frame below it — otherwise the collapsed card claims
         // the whole display or nothing behind it is reachable. See F1.
         .contentShape(Rectangle())
-        .gesture(drag(travel: travel))
+        .gesture(drag(travel: dragTravel))
         .onTapGesture { if progress < 0.5 { expand() } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         // At progress 0 this holds the card's bottom at the real safe-area
@@ -100,8 +115,17 @@ struct PlayerCard: View {
         ZStack {
             // Opaque base: the two layers above cross-fade via opacity, which
             // composites rather than sums, so without this the card is
-            // translucent through the whole middle of the morph. See F4.
+            // translucent through the whole middle of the morph (F4). Gated
+            // on progress rather than always-on, so the collapsed bar keeps
+            // its frosted look instead of sitting on a flat grey rectangle —
+            // `min(1, progress * 3)` reaches full opacity at progress ≈ 1/3,
+            // the same point miniChrome's `1 - progress * 3` fade reaches
+            // zero, and the material layer alone is fully opaque (1 - 0 = 1)
+            // at progress 0, so the base contributes nothing there and the
+            // list is genuinely visible, blurred, through the resting bar.
+            // See R3.
             Color(.systemGroupedBackground)
+                .opacity(min(1, progress * 3))
             Rectangle()
                 .fill(.thinMaterial)
                 .opacity(1 - progress)
