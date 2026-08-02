@@ -47,13 +47,13 @@ struct PlayerCard: View {
     /// below the artwork was clipped away and the expanded player had no
     /// controls at all. See F2.
     ///
-    /// `300` is a rough allowance for the title, scrubber and transport below
-    /// the artwork — a starting point, like the other constants here, not a
-    /// measured minimum.
+    /// `350` is a rough allowance for the title, scrubber, transport row and
+    /// volume slider below the artwork — a starting point, like the other
+    /// constants here, not a measured minimum.
     private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
         min(
             Self.expandedArtwork,
-            fullSize.height - insets.top - Self.expandedArtworkTopGap - 300,
+            fullSize.height - insets.top - Self.expandedArtworkTopGap - 350,
             fullSize.width - 48
         )
     }

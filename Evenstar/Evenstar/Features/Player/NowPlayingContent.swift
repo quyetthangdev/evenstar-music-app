@@ -10,6 +10,8 @@ struct NowPlayingContent: View {
             titleBlock
             scrubber
             transport
+            SystemVolumeSlider()
+                .frame(height: 44)
         }
     }
 
