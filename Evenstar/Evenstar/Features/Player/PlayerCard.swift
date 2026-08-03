@@ -14,31 +14,34 @@ struct PlayerCard: View {
     /// The collapsed bar's own height. Lists do not read this directly — they
     /// read `BottomBarMetrics.clearanceWithPlayer`, which adds everything below
     /// the floating pill. Do not duplicate this as a literal.
-    static let collapsedHeight: CGFloat = 64
+    static let collapsedHeight: CGFloat = 56
 
     /// How far the collapsed pill is inset from each screen edge.
     private static let pillSideMargin: CGFloat = 12
     /// A true pill: half the collapsed height, so the caps are semicircles.
     private static let collapsedCornerRadius: CGFloat = collapsedHeight / 2
 
-    private static let collapsedArtwork: CGFloat = 40
+    private static let collapsedArtwork: CGFloat = 36
     /// How far the collapsed artwork sits in from the pill's leading edge.
     ///
     /// Larger than it looks like it needs to be, because the pill's leading
     /// cap is a semicircle and the visible gap is therefore not uniform: at
     /// mid-height the pill's edge is at x = 0, but level with the artwork's
-    /// top and bottom edges (y = 12 and y = 52) the curve has already come in
-    /// to x ≈ 7. At a 12pt inset that left only ~5pt of daylight at the
-    /// artwork's corners while the middle showed a full 12pt, and the eye
-    /// judges the tightest point. 20pt puts the tightest point at ~13pt.
+    /// top and bottom edges the curve has already come in — at this height, to
+    /// x ≈ 6.6. The eye judges that tightest point, not the generous gap in
+    /// the middle, so the inset has to be set against it.
     ///
-    /// The artwork still clears the cap comfortably: its corner sits 23.3pt
-    /// from the cap's centre against a 32pt radius. Room remains to go
-    /// further, but not indefinitely — the corner only starts touching the
-    /// curve at an inset around 24pt, and past that the artwork clips.
-    private static let collapsedArtworkInset: CGFloat = 20
+    /// At 18 the tightest gap is ~11pt and the artwork's corner sits 20.6pt
+    /// from the cap's centre against a 28pt radius. Room remains to go further,
+    /// but not indefinitely — the corner starts touching the curve around 28,
+    /// and past that the artwork clips.
+    ///
+    /// These three numbers move together. Changing `collapsedHeight` or
+    /// `collapsedArtwork` changes where the curve is at the artwork's edge, so
+    /// the inset has to be re-derived rather than carried over.
+    private static let collapsedArtworkInset: CGFloat = 18
     /// Between the collapsed artwork's trailing edge and the title.
-    private static let collapsedArtworkGap: CGFloat = 12
+    private static let collapsedArtworkGap: CGFloat = 10
     private static let expandedArtwork: CGFloat = 280
     private static let expandedCornerRadius: CGFloat = 38
     /// Gap between the top safe area and the expanded artwork.

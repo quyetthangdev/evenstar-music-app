@@ -8,13 +8,17 @@ struct MiniPlayerChrome: View {
 
     var body: some View {
         if let current = playback.currentTrack {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+            // Scaled to the shorter pill: type one step down, and 32pt hit
+            // targets rather than 36. 32 is the floor here — below it the
+            // buttons drop under the 44pt Apple asks for by more than the
+            // surrounding pill can excuse.
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(current.title)
-                        .font(.subheadline)
+                        .font(.footnote)
                         .lineLimit(1)
                     Text(current.artistName)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -23,17 +27,17 @@ struct MiniPlayerChrome: View {
                     playback.togglePlayPause()
                 } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
+                        .font(.title3)
                         .contentTransition(.symbolEffect(.replace))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
                 Button {
                     playback.next()
                 } label: {
                     Image(systemName: "forward.fill")
-                        .font(.title3)
-                        .frame(width: 36, height: 36)
+                        .font(.body)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
                 .disabled(playback.queueIndex >= playback.queue.count - 1)
