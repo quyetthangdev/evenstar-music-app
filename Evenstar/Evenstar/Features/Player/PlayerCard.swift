@@ -26,6 +26,21 @@ struct PlayerCard: View {
     static let collapsedClearance: CGFloat = collapsedHeight + collapsedBottomGap
 
     private static let collapsedArtwork: CGFloat = 40
+    /// How far the collapsed artwork sits in from the pill's leading edge.
+    ///
+    /// Larger than it looks like it needs to be, because the pill's leading
+    /// cap is a semicircle and the visible gap is therefore not uniform: at
+    /// mid-height the pill's edge is at x = 0, but level with the artwork's
+    /// top and bottom edges (y = 12 and y = 52) the curve has already come in
+    /// to x ≈ 7. At a 12pt inset that left only ~5pt of daylight at the
+    /// artwork's corners while the middle showed a full 12pt, and the eye
+    /// judges the tightest point. 16pt puts the tightest point at ~9pt.
+    ///
+    /// The artwork still clears the cap comfortably: its corner sits 25.6pt
+    /// from the cap's centre against a 32pt radius.
+    private static let collapsedArtworkInset: CGFloat = 16
+    /// Between the collapsed artwork's trailing edge and the title.
+    private static let collapsedArtworkGap: CGFloat = 12
     private static let expandedArtwork: CGFloat = 280
     private static let expandedCornerRadius: CGFloat = 38
     /// Gap between the top safe area and the expanded artwork.
@@ -329,7 +344,12 @@ struct PlayerCard: View {
 
     private func miniChrome(width: CGFloat) -> some View {
         MiniPlayerChrome(playback: playback)
-            .padding(.leading, Self.collapsedArtwork + 24)
+            // Derived rather than a literal so the text cannot drift out of
+            // step with the artwork: this is where the artwork ends, plus the
+            // gap. The old `collapsedArtwork + 24` folded the inset and the
+            // gap into one number, so moving the artwork silently changed the
+            // gap instead of moving the text with it.
+            .padding(.leading, Self.collapsedArtworkInset + Self.collapsedArtwork + Self.collapsedArtworkGap)
             // 16 rather than 12 so the forward button clears the pill's
             // rounded right cap.
             .padding(.trailing, 16)
@@ -351,7 +371,7 @@ struct PlayerCard: View {
         let side = Self.collapsedArtwork
             + (artworkSide - Self.collapsedArtwork) * progress
         let collapsedCentre = CGPoint(
-            x: 12 + Self.collapsedArtwork / 2,
+            x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
             y: Self.collapsedHeight / 2
         )
         let expandedCentre = CGPoint(
