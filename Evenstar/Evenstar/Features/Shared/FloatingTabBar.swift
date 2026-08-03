@@ -51,6 +51,11 @@ struct FloatingTabBar: View {
     /// actually being up rather than guessing from `isSearching`. The two are
     /// not the same: search opens without the keyboard.
     @Binding var isEditing: Bool
+    /// Drives the morph between the three-tab bar and the minimised circle,
+    /// set by a caller watching scroll direction. Never true at the same time
+    /// as `isSearching` — see `trailingButton`, which clears this before
+    /// handing off to `onOpenSearch`.
+    @Binding var isMinimised: Bool
 
     /// Called when the trailing button opens search.
     let onOpenSearch: () -> Void
@@ -58,8 +63,47 @@ struct FloatingTabBar: View {
     /// a tab means go there explicitly. The bar does not know the tab history —
     /// `RootView` owns it — so it says what it wants rather than deciding.
     let onCloseSearch: (LibraryTab?) -> Void
+    /// Called when the minimised circle is tapped. Restores the full bar —
+    /// it does not navigate, even though it is drawn with the current tab's
+    /// icon. See the type-level doc for why.
+    let onRestore: () -> Void
 
     @FocusState private var queryFocused: Bool
+
+    /// `isMinimised`/`onRestore` default so every existing call site — today
+    /// only `RootView` — keeps compiling untouched. `RootView` starts driving
+    /// scroll-based minimising in a later task; until then the bar simply
+    /// never receives `isMinimised = true` and behaves exactly as before.
+    /// The synthesized memberwise init cannot supply these defaults itself
+    /// (`@Binding` has no `init(wrappedValue:)`), hence the explicit init.
+    init(
+        selection: Binding<LibraryTab>,
+        isSearching: Binding<Bool>,
+        query: Binding<String>,
+        isEditing: Binding<Bool>,
+        isMinimised: Binding<Bool> = .constant(false),
+        onOpenSearch: @escaping () -> Void,
+        onCloseSearch: @escaping (LibraryTab?) -> Void,
+        onRestore: @escaping () -> Void = {}
+    ) {
+        self._selection = selection
+        self._isSearching = isSearching
+        self._query = query
+        self._isEditing = isEditing
+        self._isMinimised = isMinimised
+        self.onOpenSearch = onOpenSearch
+        self.onCloseSearch = onCloseSearch
+        self.onRestore = onRestore
+    }
+
+    /// "The leading capsule is a circle." True for either morph that shrinks
+    /// the four-tab pill down to one glyph. Everything that only cares about
+    /// the capsule's *shape* reads this instead of `isSearching` directly, so
+    /// minimising reuses the exact same collapse path rather than a second
+    /// one. What still must stay keyed to `isSearching` alone — the search
+    /// field's width, the trailing button's glyph/label, and the bar's
+    /// height — does not go near this value.
+    private var isCollapsed: Bool { isSearching || isMinimised }
 
     private static let symbolSize: CGFloat = 17
     /// The selected item's backing. Drawn over the material rather than
@@ -184,8 +228,8 @@ struct FloatingTabBar: View {
                     - BottomBarMetrics.tabBarHeight
             )
             .animation(
-                Self.searchSpring.delay(isSearching ? 0 : Self.stagger),
-                value: isSearching
+                Self.searchSpring.delay(isCollapsed ? 0 : Self.stagger),
+                value: isCollapsed
             )
 
             // Fixed, so the gap between the leading capsule and whatever
@@ -240,24 +284,33 @@ struct FloatingTabBar: View {
             // level, since those flip for the whole row at once.
             tabsRow
                 .frame(width: expandedWidth, alignment: .leading)
-                .allowsHitTesting(!isSearching)
-                .accessibilityHidden(isSearching)
+                .allowsHitTesting(!isCollapsed)
+                .accessibilityHidden(isCollapsed)
 
+            // Two circles occupy the same spot and cross-fade, exactly like
+            // `tabsRow`/`homeButton` above: mutual exclusion (`isCollapsed`'s
+            // two branches) guarantees at most one of them is ever opaque, so
+            // there is nothing to arbitrate between them.
             homeButton
                 .opacity(isSearching ? 1 : 0)
                 .allowsHitTesting(isSearching)
                 .accessibilityHidden(!isSearching)
+
+            restoreButton
+                .opacity(isMinimised ? 1 : 0)
+                .allowsHitTesting(isMinimised)
+                .accessibilityHidden(!isMinimised)
         }
         // `maxWidth` rather than `width`: closed it takes everything the HStack
-        // will give, open it is exactly as wide as it is tall, which is what
-        // makes the capsule resolve to a circle.
+        // will give, open (searching or minimised) it is exactly as wide as it
+        // is tall, which is what makes the capsule resolve to a circle.
         //
         // `alignment: .leading` is required, not tidy-up. `.frame(maxWidth:)`
         // centres its content, and this content is deliberately wider than the
         // frame while collapsed — centred, it overhangs equally on both sides
         // and the home glyph, which sits at the content's leading edge, ends up
         // outside the clip entirely. The circle renders empty.
-        .frame(maxWidth: isSearching ? barHeight : .infinity, alignment: .leading)
+        .frame(maxWidth: isCollapsed ? barHeight : .infinity, alignment: .leading)
         .frame(height: barHeight)
         .background(.regularMaterial, in: Capsule())
         // Load-bearing, not cosmetic: `tabsRow` is deliberately wider than this
@@ -281,6 +334,28 @@ struct FloatingTabBar: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Về \(LibraryTab.songs.label)")
+    }
+
+    /// The minimised circle. Shows the **currently selected tab's** icon
+    /// rather than a fixed glyph — it says where you are, which a fixed icon
+    /// cannot — but tapping it does not navigate there. It restores the full
+    /// bar. Nothing else on screen offers a way back other than scrolling up,
+    /// and a circle that looks tappable and only navigates would be a trap.
+    ///
+    /// The accessibility label says what the tap *does*, not where the icon
+    /// points: read on its own, a bare tab glyph announces a destination, and
+    /// this button does not go there.
+    private var restoreButton: some View {
+        Button {
+            onRestore()
+        } label: {
+            Image(systemName: selection.symbol)
+                .font(.system(size: Self.symbolSize))
+                .foregroundStyle(.secondary)
+                .frame(width: barHeight, height: barHeight)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Hiện thanh điều hướng")
     }
 
     /// Zero-wide when closed, so it takes up no room and contributes no gap;
@@ -336,12 +411,14 @@ struct FloatingTabBar: View {
                 // tab is current.
                 .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
                 // Scaled about its own centre, so it grows where it belongs
-                // instead of sliding in from anywhere.
-                .scaleEffect(isSearching ? Self.tabRevealScale : 1)
-                .opacity(isSearching ? 0 : 1)
+                // instead of sliding in from anywhere. Keyed on `isCollapsed`,
+                // not `isSearching` alone — this is the tab reveal, and it
+                // must run identically whichever mode collapsed the pill.
+                .scaleEffect(isCollapsed ? Self.tabRevealScale : 1)
+                .opacity(isCollapsed ? 0 : 1)
                 .animation(
-                    Self.searchSpring.delay(Self.tabRevealDelay(index, isSearching: isSearching)),
-                    value: isSearching
+                    Self.searchSpring.delay(Self.tabRevealDelay(index, isCollapsed: isCollapsed)),
+                    value: isCollapsed
                 )
             }
         }
@@ -351,9 +428,10 @@ struct FloatingTabBar: View {
     /// shrinking past them and anything left behind would be clipped mid-fade.
     /// Expanding, they arrive one after another, trailing the capsule's own
     /// delay so the first tab is not already there when the pill starts to
-    /// grow.
-    private static func tabRevealDelay(_ index: Int, isSearching: Bool) -> Double {
-        isSearching ? 0 : stagger + Double(index) * tabRevealStep
+    /// grow. Applies the same whether the pill is expanding out of search or
+    /// out of minimised — both grow through the identical clip.
+    private static func tabRevealDelay(_ index: Int, isCollapsed: Bool) -> Double {
+        isCollapsed ? 0 : stagger + Double(index) * tabRevealStep
     }
 
     private var searchRow: some View {
@@ -384,6 +462,13 @@ struct FloatingTabBar: View {
             if isSearching {
                 onCloseSearch(nil)
             } else {
+                // Mutual exclusion enforced here, not hoped for from the
+                // caller: minimised and searching both drive the leading
+                // capsule, so opening search restores the bar first. This
+                // binding write happens before `onOpenSearch()` sets
+                // `isSearching`, in the same action, so the two flags are
+                // never both true in any render this view produces.
+                isMinimised = false
                 onOpenSearch()
             }
         } label: {
@@ -422,6 +507,7 @@ private struct FloatingTabBarPreview: View {
     @State private var isSearching = false
     @State private var query = ""
     @State private var isEditing = false
+    @State private var isMinimised = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -432,11 +518,29 @@ private struct FloatingTabBarPreview: View {
             )
             .ignoresSafeArea()
 
+            // Stands in for the real trigger — `RootView`'s scroll detection,
+            // Task 3 — so the minimised mode can be seen in the canvas.
+            // Wrapped in the same spring the bar itself uses, matching how
+            // `RootView` will drive `isMinimised` in Task 4: unlike
+            // `isSearching`, nothing inside `FloatingTabBar` owns this
+            // transition's timing on the caller's behalf.
+            VStack {
+                Button(isMinimised ? "Restore" : "Minimise") {
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        isMinimised.toggle()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                Spacer()
+            }
+            .padding(.top, 60)
+
             FloatingTabBar(
                 selection: $selection,
                 isSearching: $isSearching,
                 query: $query,
                 isEditing: $isEditing,
+                isMinimised: $isMinimised,
                 // Unwrapped, matching `RootView` — the bar owns its own timing,
                 // and a `withAnimation` here would flatten the stagger.
                 onOpenSearch: {
@@ -447,6 +551,11 @@ private struct FloatingTabBarPreview: View {
                     selection = destination ?? .albums
                     isSearching = false
                     query = ""
+                },
+                onRestore: {
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        isMinimised = false
+                    }
                 }
             )
             .padding(.bottom, BottomBarMetrics.tabBarBottomGap)

@@ -36,4 +36,9 @@ enum BottomBarMetrics {
 
     /// What a list must leave clear with no track — the pill is hidden.
     static let clearanceTabBarOnly = tabBarBottomGap + tabBarHeight
+
+    /// Horizontal inset of the collapsed player once it has joined the tab row:
+    /// past the leading circle and its gap. The player slots exactly between
+    /// the two circles.
+    static let minimisedPlayerInset = sideMargin + tabBarHeight + tabBarSearchGap
 }
