@@ -28,6 +28,20 @@ final class LibraryGroupingTests: XCTestCase {
         XCTAssertEqual(Set(albums.map(\.artist)), ["Alpha", "Beta"])
     }
 
+    func testSameTitledAlbumsOrderDeterministicallyByArtist() {
+        // Title alone is not a unique key (`AlbumKey` is title *and* artist),
+        // and the array comes from `Dictionary.map`, whose order is
+        // arbitrary, then `sorted(by:)`, which is not guaranteed stable — so
+        // without an artist tie-break two same-titled albums could swap
+        // order between launches.
+        let tracks = [
+            track("y", artist: "Zeta", album: "Greatest Hits"),
+            track("x", artist: "Alpha", album: "Greatest Hits")
+        ]
+        let albums = LibraryGrouping.albums(from: tracks)
+        XCTAssertEqual(albums.map(\.artist), ["Alpha", "Zeta"])
+    }
+
     func testAlbumIdCannotCollideAcrossSeparatorShapedNames() {
         // AlbumKey.id is "\(title)\u{0}\(artist)" — title first. Data must match
         // that field order: album "X" + artist "Y-Z" vs album "X-Y" + artist "Z"

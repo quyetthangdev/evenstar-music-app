@@ -27,6 +27,20 @@ struct ArtistDetailView: View {
         .listStyle(.plain)
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
+        // See the note in `SongsView`: this hides the system tab bar
+        // and must sit on the tab's content, not on the `TabView`.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear
+                // Never 0: the floating tab bar is always present, so
+                // the last row must clear it whether or not a track is
+                // loaded.
+                .frame(
+                    height: playback.currentTrack == nil
+                        ? BottomBarMetrics.clearanceTabBarOnly
+                        : BottomBarMetrics.clearanceWithPlayer
+                )
+        }
     }
 }
 

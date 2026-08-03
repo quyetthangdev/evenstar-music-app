@@ -36,7 +36,16 @@ enum LibraryGrouping {
                            artist: key.artist,
                            tracks: sortedAlbumTracks(value))
             }
-            .sorted { ordered($0.title, $1.title) }
+            .sorted { lhs, rhs in
+                // Tie-break on artist, matching `AlbumKey`: two albums can
+                // share a title (a compilation splits into one album per
+                // track artist — see the note above), and `sorted` is not
+                // guaranteed stable, so title alone leaves their order to
+                // vary between launches.
+                if ordered(lhs.title, rhs.title) { return true }
+                if ordered(rhs.title, lhs.title) { return false }
+                return ordered(lhs.artist, rhs.artist)
+            }
     }
 
     static func artists(from tracks: [Track]) -> [ArtistGroup] {

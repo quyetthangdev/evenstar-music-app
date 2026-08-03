@@ -14,6 +14,14 @@ struct ArtistsView: View {
         NavigationStack {
             content
                 .navigationTitle("Nghệ sĩ")
+                // Hoisted above the empty/non-empty branch in `content` so it
+                // stays attached to the navigation path even if the library
+                // empties while an artist detail screen is pushed — a
+                // destination declared only inside one branch leaves the
+                // hierarchy with the branch, stranding a value on the path.
+                .navigationDestination(for: ArtistGroup.self) { artist in
+                    ArtistDetailView(artist: artist)
+                }
                 // See the note in `SongsView`: this hides the system tab bar
                 // and must sit on the tab's content, not on the `TabView`.
                 .toolbar(.hidden, for: .tabBar)
@@ -36,9 +44,9 @@ struct ArtistsView: View {
         let artists = LibraryGrouping.artists(from: tracks)
         if artists.isEmpty {
             ContentUnavailableView(
-                "No Artists",
+                "Chưa có nghệ sĩ",
                 systemImage: "music.mic",
-                description: Text("Import music to see your artists here.")
+                description: Text("Nhập nhạc để thấy nghệ sĩ ở đây.")
             )
         } else {
             ScrollView {
@@ -52,9 +60,6 @@ struct ArtistsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
-            }
-            .navigationDestination(for: ArtistGroup.self) { artist in
-                ArtistDetailView(artist: artist)
             }
         }
     }
