@@ -142,8 +142,15 @@ an artist named `X` with album `Y-Z` cannot collide with artist `X-Y`, album
 `Z`.
 
 Ordering: albums and artists sort by name using `localizedStandard`
-comparison, matching the existing track sort. Tracks within an album sort by
-title; a `trackNumber` field does not exist and is not being added.
+comparison, matching the existing track sort.
+
+Tracks within an album sort by `discNumber`, then `trackNumber`, then title.
+Both fields already exist on `Track` and are populated by the importer, so an
+album must present in its real running order, not alphabetically — an
+alphabetical album listing is wrong in a way users notice immediately. Both are
+`Int?`; a track missing a number sorts after every numbered track rather than
+being treated as 0, so a single untagged file cannot jump to the top of an
+otherwise correct album.
 
 Search matches title, artist, or album with `localizedStandardContains`, which
 is both case- and diacritic-insensitive. **This matters for Vietnamese**: a
@@ -156,6 +163,12 @@ whitespace-only query returns no results rather than everything.
 **SongsView** — today's `LibraryView` with the `ZStack` and `PlayerCard`
 removed. Keeps the toolbar `+`, `fileImporter`, import progress sheet, error
 alert, and empty state. Unchanged behaviour.
+
+One thing does **not** stay with it: `.task { await
+playback.restoreFromPersistedState() }` moves to `RootView`. Restoring the
+saved queue is an app-launch concern, not a tab's. Left on Bài hát it would
+merely happen to work because that tab is selected first, and would silently
+stop working the day the default tab changes or the view is rebuilt.
 
 **AlbumsView** — `LazyVGrid`, two columns, artwork over album title over artist
 name. Artwork comes from the group's first track via the existing
@@ -217,6 +230,8 @@ New unit tests cover `LibraryGrouping` only; the views are verified by hand.
 - search is case-insensitive
 - an empty or whitespace-only query returns nothing
 - grouping an empty library returns empty, not a crash
+- an album's tracks order by disc, then track number, then title
+- a track with no `trackNumber` sorts after every numbered track, not first
 
 ## Known limitation
 
