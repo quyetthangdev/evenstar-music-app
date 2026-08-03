@@ -29,10 +29,13 @@ final class LibraryGroupingTests: XCTestCase {
     }
 
     func testAlbumIdCannotCollideAcrossSeparatorShapedNames() {
-        // "X" + "Y-Z" vs "X-Y" + "Z" must not produce the same id.
+        // AlbumKey.id is "\(title)\u{0}\(artist)" — title first. Data must match
+        // that field order: album "X" + artist "Y-Z" vs album "X-Y" + artist "Z"
+        // both collapse to "X-Y-Z" under a printable "-" separator, but stay
+        // distinct ("X\0Y-Z" vs "X-Y\0Z") under the real NUL separator.
         let tracks = [
-            track("a", artist: "X", album: "Y-Z"),
-            track("b", artist: "X-Y", album: "Z")
+            track("a", artist: "Y-Z", album: "X"),
+            track("b", artist: "Z", album: "X-Y")
         ]
         let ids = Set(LibraryGrouping.albums(from: tracks).map(\.id))
         XCTAssertEqual(ids.count, 2)
@@ -57,6 +60,18 @@ final class LibraryGroupingTests: XCTestCase {
         XCTAssertEqual(ordered, ["zzz", "aaa"])
     }
 
+    func testUnnumberedDiscsSortAfterNumberedOnes() {
+        // Same nil-sorts-last rule, but for discNumber specifically — a
+        // low trackNumber must not let a nil-disc track jump ahead of a
+        // properly disc-numbered one.
+        let tracks = [
+            track("aaa", disc: nil, number: 1),
+            track("zzz", disc: 1, number: 9)
+        ]
+        let ordered = LibraryGrouping.sortedAlbumTracks(tracks).map(\.title)
+        XCTAssertEqual(ordered, ["zzz", "aaa"])
+    }
+
     func testArtistsGroupByNameAndGatherEveryTrack() {
         let tracks = [
             track("a", artist: "Alpha"),
@@ -69,8 +84,12 @@ final class LibraryGroupingTests: XCTestCase {
     }
 
     func testGroupingSortsByLocalizedStandardOrder() {
-        let tracks = [track("x", album: "b"), track("y", album: "A")]
-        XCTAssertEqual(LibraryGrouping.albums(from: tracks).map(\.title), ["A", "b"])
+        // Plain string comparison orders "Track 10" before "Track 9" (because
+        // "1" < "9"); localizedStandardCompare compares the embedded numbers
+        // numerically and puts "Track 9" first. The two disagree here, so this
+        // is the pair that can actually catch a regression to plain `<`.
+        let tracks = [track("x", album: "Track 10"), track("y", album: "Track 9")]
+        XCTAssertEqual(LibraryGrouping.albums(from: tracks).map(\.title), ["Track 9", "Track 10"])
     }
 
     func testSearchMatchesTitleArtistAndAlbum() {
