@@ -244,11 +244,32 @@ struct FloatingTabBar: View {
             // bottom.
             Color.clear.frame(width: BottomBarMetrics.tabBarSearchGap, height: barHeight)
 
+            // The row's one flexible element while collapsed by either mode.
+            // With `leadingCapsule` clamped to `barHeight` and `trailingButton`
+            // fixed, *something* between them has to be greedy or the HStack
+            // shrinks to its intrinsic width and the outer `.frame(width:
+            // geo.size.width, alignment: .bottom)` — `.bottom` only pins the
+            // vertical axis — centres that short row instead of pinning the
+            // two circles to the leading and trailing edges. `searchCapsule`
+            // already played this role for search; keying its width on
+            // `isCollapsed` instead of `isSearching` lets minimising reuse it
+            // rather than adding a second flexible element that would have to
+            // be kept in lockstep with this one.
+            //
+            // The width this resolves to is not incidental: with `leadingCapsule`
+            // at `tabBarHeight` (56) and this gap at `tabBarSearchGap` (8) on
+            // each side, this capsule spans exactly
+            // `[64, W − 64]` in the bar's own (post-`sideMargin`) coordinate
+            // space — the same span Task 2 slots the collapsed player pill
+            // into via `BottomBarMetrics.minimisedPlayerInset`. Landing on a
+            // different span here would leave the player visibly out of line
+            // with the two circles, with nothing in a build or a test to
+            // catch it.
             searchCapsule
-                .padding(.trailing, isSearching ? BottomBarMetrics.tabBarSearchGap : 0)
+                .padding(.trailing, isCollapsed ? BottomBarMetrics.tabBarSearchGap : 0)
                 .animation(
-                    Self.searchSpring.delay(isSearching ? Self.stagger : 0),
-                    value: isSearching
+                    Self.searchSpring.delay(isCollapsed ? Self.stagger : 0),
+                    value: isCollapsed
                 )
 
             trailingButton
@@ -359,11 +380,20 @@ struct FloatingTabBar: View {
     }
 
     /// Zero-wide when closed, so it takes up no room and contributes no gap;
-    /// flexible when open. `.clipShape` matters at zero width — without it the
-    /// field and its icon spill out of a capsule that has no room for them.
+    /// flexible whenever the row is collapsed — by search **or** by
+    /// minimising, so this stays the row's one flexible slot in either mode
+    /// rather than a second one being added. `.clipShape` matters at zero
+    /// width — without it the field and its icon spill out of a capsule that
+    /// has no room for them.
+    ///
+    /// Content, visibility, hit-testing and accessibility all stay keyed to
+    /// `isSearching` alone: while minimised this is reserved, invisible
+    /// space — there is no field to show or interact with, only room held
+    /// open for the collapsed player (Task 2) to occupy from outside this
+    /// view.
     private var searchCapsule: some View {
         searchRow
-            .frame(maxWidth: isSearching ? .infinity : 0)
+            .frame(maxWidth: isCollapsed ? .infinity : 0)
             .frame(height: barHeight)
             .background(.regularMaterial, in: Capsule())
             .clipShape(Capsule())
