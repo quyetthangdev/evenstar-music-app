@@ -25,7 +25,11 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(nowPlaying.updates.last?.isPlaying, true)
     }
 
-    func testPausePausesPlaybackAndPushesNowPlaying() throws {
+    /// `pause()` defers the Now Playing push to the next main-actor turn so the
+    /// glyph renders first, so the lock-screen assertion has to yield before it
+    /// looks. `isPlaying`/`pauseCallCount` are still checked synchronously —
+    /// those must land in the tap itself.
+    func testPausePausesPlaybackAndPushesNowPlaying() async throws {
         let (service, player, nowPlaying, track) = try makeStack()
         service.play(track, in: [track])
 
@@ -33,6 +37,7 @@ final class PlaybackServiceTests: XCTestCase {
 
         XCTAssertFalse(service.isPlaying)
         XCTAssertEqual(player.pauseCallCount, 1)
+        await Task.yield()
         XCTAssertEqual(nowPlaying.updates.last?.isPlaying, false)
     }
 

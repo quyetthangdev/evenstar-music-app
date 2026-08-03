@@ -79,13 +79,18 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         XCTAssertFalse(service.isPlaying)
     }
 
-    func testPersistWritesStateOnPause() throws {
+    /// `pause()` defers the disk write to the next main-actor turn so the
+    /// play/pause glyph renders first, so this yields before reading the row.
+    /// The assertion is unchanged: pausing at 17s must still land 17s (not the
+    /// 0 that `play()`'s own persist wrote) in the persisted state.
+    func testPersistWritesStateOnPause() async throws {
         let (service, player, library) = try makeStack()
         let tracks = try seed(2, library: library)
         service.play(tracks[0], in: tracks)
         player.currentTime = 17
 
         service.pause()
+        await Task.yield()
 
         XCTAssertEqual(library.playbackState.currentTrackID, tracks[0].id)
         XCTAssertEqual(library.playbackState.positionSeconds, 17, accuracy: 0.01)

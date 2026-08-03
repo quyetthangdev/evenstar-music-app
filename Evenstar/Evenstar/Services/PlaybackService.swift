@@ -63,8 +63,7 @@ final class PlaybackService {
         isPlaying = false
         position = player.currentTime
         stopPositionUpdates()
-        pushNowPlaying()
-        persistImmediately()
+        deferSideEffects()
     }
 
     func resume() {
@@ -73,8 +72,7 @@ final class PlaybackService {
         player.play()
         isPlaying = true
         startPositionUpdates()
-        pushNowPlaying()
-        persistImmediately()
+        deferSideEffects()
     }
 
     func seek(to target: TimeInterval) {
@@ -340,6 +338,19 @@ final class PlaybackService {
         state.positionSeconds = position
         try? library.save()
         lastPersistAt = .now
+    }
+
+    /// Runs the lock-screen push and the disk write after the current
+    /// main-actor turn, so SwiftUI renders the new play/pause glyph before
+    /// either starts. Only for the tap path (`pause()`/`resume()`): assigning
+    /// `nowPlayingInfo` ships the artwork across XPC to the media server and
+    /// `persistImmediately()` does a SwiftData write, and both otherwise land
+    /// inside the perceived button latency.
+    private func deferSideEffects() {
+        Task { @MainActor in
+            pushNowPlaying()
+            persistImmediately()
+        }
     }
 
     private func pushNowPlaying() {
