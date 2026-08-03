@@ -1,8 +1,18 @@
 import SwiftUI
 
-enum LibraryTab: String, CaseIterable, Identifiable {
+enum LibraryTab: String, Identifiable {
     case songs, albums, artists, search
     var id: String { rawValue }
+
+    /// The three that share the pill. Search is deliberately absent: it lives
+    /// in its own circular button beside the pill.
+    ///
+    /// `CaseIterable` is deliberately NOT adopted. With it, `allCases` reads
+    /// as the obvious way to lay out "the tabs", and using it would draw
+    /// search twice — once in the pill and once in its own button. Leaving the
+    /// conformance off makes that mistake impossible rather than merely
+    /// warned against. Adding a destination means adding it here.
+    static let pillTabs: [LibraryTab] = [.songs, .albums, .artists]
 
     var label: String {
         switch self {
@@ -23,27 +33,56 @@ enum LibraryTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// The floating pill tab bar beneath the collapsed Now Playing pill.
+/// The floating tab bar beneath the collapsed Now Playing pill: a pill holding
+/// three destinations, and a separate circular search button beside it.
 ///
-/// Labels are never hidden behind a size class or Dynamic Type check — a
-/// four-item bar has the room, and unlabelled symbols are worse for someone
-/// opening the app for the first time.
+/// Labels in the pill are never hidden behind a size class or Dynamic Type
+/// check — three items have the room, and unlabelled symbols are worse for
+/// someone opening the app for the first time. The search button is the one
+/// exception, and it carries an explicit accessibility label to compensate.
 struct FloatingTabBar: View {
     @Binding var selection: LibraryTab
 
+    private static let symbolSize: CGFloat = 17
+    /// The selected item's backing. Drawn over the material rather than
+    /// replacing it, so it reads as a slightly darker patch of the same
+    /// surface. `.primary` rather than a fixed grey so it inverts with the
+    /// colour scheme: a 10% black wash in light mode, 10% white in dark, both
+    /// separating the selected item from the bar around it.
+    private static let selectionWash = 0.10
+
     var body: some View {
+        HStack(spacing: BottomBarMetrics.tabBarSearchGap) {
+            pill
+            searchButton
+        }
+        .padding(.horizontal, BottomBarMetrics.sideMargin)
+    }
+
+    private var pill: some View {
         HStack(spacing: 0) {
-            ForEach(LibraryTab.allCases) { tab in
+            ForEach(LibraryTab.pillTabs) { tab in
                 Button {
                     selection = tab
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 20))
+                            .font(.system(size: Self.symbolSize))
                         Text(tab.label)
                             .font(.caption2)
                     }
                     .foregroundStyle(selection == tab ? .primary : .secondary)
+                    // Padding then background then the flexible frame, in that
+                    // order: the wash hugs the icon and label, while the
+                    // button still fills its share of the width so the whole
+                    // column stays tappable rather than only the wash.
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .background {
+                        if selection == tab {
+                            Capsule().fill(Color.primary.opacity(Self.selectionWash))
+                        }
+                    }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
@@ -56,9 +95,40 @@ struct FloatingTabBar: View {
                 .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
             }
         }
+        .frame(maxWidth: .infinity)
         .frame(height: BottomBarMetrics.tabBarHeight)
         .background(.regularMaterial, in: Capsule())
-        .padding(.horizontal, BottomBarMetrics.sideMargin)
+    }
+
+    /// Square frame at the bar's own height, clipped to a circle, so the button
+    /// is exactly as tall as the pill it sits beside and stays circular
+    /// wherever `tabBarHeight` goes.
+    private var searchButton: some View {
+        Button {
+            selection = .search
+        } label: {
+            Image(systemName: LibraryTab.search.symbol)
+                .font(.system(size: Self.symbolSize))
+                .foregroundStyle(selection == .search ? .primary : .secondary)
+                .frame(
+                    width: BottomBarMetrics.tabBarHeight,
+                    height: BottomBarMetrics.tabBarHeight
+                )
+                .background {
+                    ZStack {
+                        Circle().fill(.regularMaterial)
+                        if selection == .search {
+                            Circle().fill(Color.primary.opacity(Self.selectionWash))
+                        }
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        // The only item in the bar with no visible text. Without this,
+        // VoiceOver falls back to the symbol's own description — "magnifying
+        // glass" — instead of the destination's name.
+        .accessibilityLabel(LibraryTab.search.label)
+        .accessibilityAddTraits(selection == .search ? [.isButton, .isSelected] : .isButton)
     }
 }
 

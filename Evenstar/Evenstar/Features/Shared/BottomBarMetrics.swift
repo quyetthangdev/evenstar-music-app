@@ -17,6 +17,8 @@ enum BottomBarMetrics {
     static let tabBarBottomGap: CGFloat = 12
     /// Between the tab bar's top edge and the collapsed player's bottom edge.
     static let playerTabGap: CGFloat = 8
+    /// Between the tab pill and the detached circular search button.
+    static let tabBarSearchGap: CGFloat = 8
 
     /// Safe-area bottom up to the collapsed player pill's bottom edge.
     static let playerBottomOffset = tabBarBottomGap + tabBarHeight + playerTabGap
