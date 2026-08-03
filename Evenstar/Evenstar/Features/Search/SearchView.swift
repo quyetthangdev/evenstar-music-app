@@ -11,6 +11,11 @@ struct SearchView: View {
     /// field of its own.
     let query: String
 
+    /// Owned by `RootView`, which drives both the tab bar and the player from
+    /// it. Written here only by `minimisesBottomBar` on this screen's results
+    /// list.
+    @Binding var isMinimised: Bool
+
     var body: some View {
         NavigationStack {
             content
@@ -71,6 +76,9 @@ struct SearchView: View {
                         }
                 }
                 .listStyle(.plain)
+                // On the scrollable container itself rather than on the branch
+                // above it, so what the modifier observes is unambiguous.
+                .minimisesBottomBar($isMinimised)
             }
         }
     }
@@ -103,7 +111,7 @@ struct SearchView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
-    return SearchView(query: "biển")
+    return SearchView(query: "biển", isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
         .modelContainer(container)

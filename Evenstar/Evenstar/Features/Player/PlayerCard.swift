@@ -19,15 +19,11 @@ struct PlayerCard: View {
     /// `collapsedBottomOffset`, and — through that offset — `dragTravel`.
     let minimised: Double
 
-    /// `minimised` defaults so `RootView`, today the only call site, keeps
-    /// compiling untouched; it starts passing a real value in a later task,
-    /// which removes this default. An explicit init is needed because the
-    /// synthesized memberwise one cannot supply the default alongside the
-    /// non-defaulted `playback`.
-    init(playback: PlaybackService, minimised: Double = 0) {
-        self.playback = playback
-        self.minimised = minimised
-    }
+    // No explicit init. The one that stood here defaulted `minimised` to 0 so
+    // `RootView` kept compiling while it was out of scope; it now passes a real
+    // value, and a default of 0 would mean any future call site silently gets a
+    // player that never joins the tab row — no compiler error, no failing test,
+    // nothing visible. The synthesized memberwise init requires both arguments.
 
     /// The collapsed bar's own height. Lists do not read this directly — they
     /// read `BottomBarMetrics.clearanceWithPlayer`, which adds everything below

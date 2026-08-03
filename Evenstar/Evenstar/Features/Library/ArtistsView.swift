@@ -5,6 +5,13 @@ struct ArtistsView: View {
     @Environment(PlaybackService.self) private var playback
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
+    /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
+    /// grid, and **passed on to `ArtistDetailView`** — that screen is a pushed
+    /// destination declared here, so this is the only route the flag has to
+    /// reach it. Đợt A shipped a Critical defect by treating the four tab roots
+    /// and missing the two pushed detail screens.
+    @Binding var isMinimised: Bool
+
     private let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16)
@@ -20,7 +27,7 @@ struct ArtistsView: View {
                 // destination declared only inside one branch leaves the
                 // hierarchy with the branch, stranding a value on the path.
                 .navigationDestination(for: ArtistGroup.self) { artist in
-                    ArtistDetailView(artist: artist)
+                    ArtistDetailView(artist: artist, isMinimised: $isMinimised)
                 }
                 // See the note in `SongsView`: this hides the system tab bar
                 // and must sit on the tab's content, not on the `TabView`.
@@ -61,6 +68,9 @@ struct ArtistsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
             }
+            // On the `ScrollView` itself rather than on the branch above it,
+            // so what the modifier observes is unambiguous.
+            .minimisesBottomBar($isMinimised)
         }
     }
 }
@@ -113,7 +123,7 @@ private struct ArtistCell: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
-    return ArtistsView()
+    return ArtistsView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
         .modelContainer(container)

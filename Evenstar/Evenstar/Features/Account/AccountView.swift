@@ -11,6 +11,10 @@ struct AccountView: View {
     @Environment(PlaybackService.self) private var playback
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
+    /// Owned by `RootView`, which drives both the tab bar and the player from
+    /// it. Written here only by `minimisesBottomBar` on this screen's list.
+    @Binding var isMinimised: Bool
+
     /// `nil` until the first sum finishes. Distinguishing "not measured yet"
     /// from "measured, and it is zero" is the difference between showing a
     /// progress spinner and telling a user with a full library that they have
@@ -31,6 +35,7 @@ struct AccountView: View {
                     row("Phiên bản", value: Self.versionText)
                 }
             }
+            .minimisesBottomBar($isMinimised)
             .navigationTitle("Tài khoản")
             // See the note in `SongsView`: this hides the system tab bar
             // and must sit on the tab's content, not on the `TabView`.
@@ -139,7 +144,7 @@ struct AccountView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
-    return AccountView()
+    return AccountView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
         .modelContainer(container)

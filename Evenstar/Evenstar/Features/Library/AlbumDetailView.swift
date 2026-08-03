@@ -4,6 +4,13 @@ import SwiftData
 struct AlbumDetailView: View {
     let album: AlbumGroup
 
+    /// Owned by `RootView` and threaded here through `AlbumsView`'s
+    /// `navigationDestination`. A pushed screen still scrolls under the same
+    /// floating bars as a tab root, so it minimises them the same way — Đợt A's
+    /// Critical defect was exactly this screen being left out of a bottom-bar
+    /// treatment the four tab roots got.
+    @Binding var isMinimised: Bool
+
     @Environment(PlaybackService.self) private var playback
 
     var body: some View {
@@ -37,6 +44,7 @@ struct AlbumDetailView: View {
             }
         }
         .listStyle(.plain)
+        .minimisesBottomBar($isMinimised)
         .navigationTitle(album.title)
         .navigationBarTitleDisplayMode(.inline)
         // See the note in `SongsView`: this hides the system tab bar
@@ -82,7 +90,7 @@ struct AlbumDetailView: View {
     ]
     let album = AlbumGroup(id: "Greatest Hits\u{0}Alpha", title: "Greatest Hits", artist: "Alpha", tracks: tracks)
     return NavigationStack {
-        AlbumDetailView(album: album)
+        AlbumDetailView(album: album, isMinimised: .constant(false))
     }
     .environment(playback)
 }

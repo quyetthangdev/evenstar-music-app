@@ -70,31 +70,14 @@ struct FloatingTabBar: View {
 
     @FocusState private var queryFocused: Bool
 
-    /// `isMinimised`/`onRestore` default so every existing call site — today
-    /// only `RootView` — keeps compiling untouched. `RootView` starts driving
-    /// scroll-based minimising in a later task; until then the bar simply
-    /// never receives `isMinimised = true` and behaves exactly as before.
-    /// The synthesized memberwise init cannot supply these defaults itself
-    /// (`@Binding` has no `init(wrappedValue:)`), hence the explicit init.
-    init(
-        selection: Binding<LibraryTab>,
-        isSearching: Binding<Bool>,
-        query: Binding<String>,
-        isEditing: Binding<Bool>,
-        isMinimised: Binding<Bool> = .constant(false),
-        onOpenSearch: @escaping () -> Void,
-        onCloseSearch: @escaping (LibraryTab?) -> Void,
-        onRestore: @escaping () -> Void = {}
-    ) {
-        self._selection = selection
-        self._isSearching = isSearching
-        self._query = query
-        self._isEditing = isEditing
-        self._isMinimised = isMinimised
-        self.onOpenSearch = onOpenSearch
-        self.onCloseSearch = onCloseSearch
-        self.onRestore = onRestore
-    }
+    // No explicit init. The one that stood here defaulted `isMinimised` to
+    // `.constant(false)` and `onRestore` to `{}` so `RootView` kept compiling
+    // while it was out of scope; both are now supplied for real, and keeping
+    // the defaults would mean the next view to build this bar — a new screen, a
+    // second root, a preview — silently gets one that can never minimise, with
+    // no compiler error and nothing on screen to notice. The synthesized
+    // memberwise init has no defaults to give, so omitting either argument is a
+    // build error instead.
 
     /// "The leading capsule is a circle." True for either morph that shrinks
     /// the four-tab pill down to one glyph. Everything that only cares about

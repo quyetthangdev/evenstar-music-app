@@ -8,6 +8,10 @@ struct SongsView: View {
     @Environment(PlaybackService.self) private var playback
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
+    /// Owned by `RootView`, which drives both the tab bar and the player from
+    /// it. Written here only by `minimisesBottomBar` on this screen's list.
+    @Binding var isMinimised: Bool
+
     @State private var showFileImporter = false
     @State private var accessibleURLs: [URL] = []
     @State private var inaccessibleFailures: [(url: URL, error: ImportError)] = []
@@ -106,6 +110,9 @@ struct SongsView: View {
                     }
             }
             .listStyle(.plain)
+            // On the scrollable container itself rather than on the branch
+            // above it, so what the modifier observes is unambiguous.
+            .minimisesBottomBar($isMinimised)
         }
     }
 
