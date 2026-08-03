@@ -145,12 +145,48 @@ struct FloatingTabBar: View {
     /// rather than one `withAnimation` at the call site — a single wrapper
     /// cannot give two subviews different timing.
     var body: some View {
-        HStack(spacing: 0) {
-            leadingCapsule
-                .animation(
-                    Self.searchSpring.delay(isSearching ? 0 : Self.stagger),
-                    value: isSearching
+        // Measured so the tabs can be laid out at the width the pill will
+        // *end* at, rather than at whatever width it happens to be mid-morph.
+        // See `leadingCapsule(expandedWidth:)` for why that matters.
+        //
+        // The outer fixed height keeps the reader from growing to fill the
+        // screen, and the inner `alignment: .bottom` keeps the bar's bottom
+        // edge still while its height changes — it is anchored to the bottom
+        // of the screen, so shrinking should move its top, not lift it.
+        GeometryReader { geo in
+            content(availableWidth: geo.size.width)
+                .frame(
+                    width: geo.size.width,
+                    height: BottomBarMetrics.tabBarHeight,
+                    alignment: .bottom
                 )
+        }
+        .frame(height: BottomBarMetrics.tabBarHeight)
+        .padding(.horizontal, BottomBarMetrics.sideMargin)
+        // Opening search deliberately does NOT raise the keyboard: the user
+        // sees the field and taps it when they want to type. Closing does have
+        // to drop focus explicitly, or the keyboard outlives the field that
+        // owns it — the field stays in the hierarchy at opacity 0 rather than
+        // being torn down, so it never loses focus on its own.
+        .onChange(of: isSearching) { _, searching in
+            if !searching { queryFocused = false }
+        }
+        .onChange(of: queryFocused) { _, focused in
+            isEditing = focused
+        }
+    }
+
+    private func content(availableWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            leadingCapsule(
+                expandedWidth: availableWidth
+                    - BottomBarMetrics.tabBarSearchGap
+                    - BottomBarMetrics.tabBarHeight
+            )
+            .animation(
+                Self.searchSpring.delay(isSearching ? 0 : Self.stagger),
+                value: isSearching
+            )
 
             // Fixed, so the gap between the leading capsule and whatever
             // follows never collapses. The search capsule's own trailing gap
@@ -174,18 +210,6 @@ struct FloatingTabBar: View {
             trailingButton
                 .animation(Self.searchSpring, value: isSearching)
         }
-        .padding(.horizontal, BottomBarMetrics.sideMargin)
-        // Opening search deliberately does NOT raise the keyboard: the user
-        // sees the field and taps it when they want to type. Closing does have
-        // to drop focus explicitly, or the keyboard outlives the field that
-        // owns it — the field stays in the hierarchy at opacity 0 rather than
-        // being torn down, so it never loses focus on its own.
-        .onChange(of: isSearching) { _, searching in
-            if !searching { queryFocused = false }
-        }
-        .onChange(of: queryFocused) { _, focused in
-            isEditing = focused
-        }
     }
 
     /// The three-tab pill, collapsing to a circular way home.
@@ -199,12 +223,23 @@ struct FloatingTabBar: View {
     /// The hidden row leaves hit-testing and accessibility too. Opacity alone
     /// keeps it tappable and readable by VoiceOver, so the tabs would still
     /// respond from behind the collapsed circle.
-    private var leadingCapsule: some View {
-        ZStack {
+    /// - Parameter expandedWidth: the width this capsule reaches when the bar
+    ///   is closed. The tabs are laid out at **that** width at all times, not
+    ///   at the capsule's current one, and the capsule clips them.
+    ///
+    ///   Laying them out in the live width is what made them slide: collapsed,
+    ///   four tabs sharing a 48pt circle are 12pt each and bunched at the left,
+    ///   and every one of their centres travels rightwards as the capsule
+    ///   grows. Pinned to the final width instead, each tab simply sits where
+    ///   it belongs and the expanding clip uncovers it, so it can scale up in
+    ///   place with nothing to slide.
+    private func leadingCapsule(expandedWidth: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
             // No opacity here: each tab fades and scales on its own schedule,
             // inside `tabsRow`. Hit-testing and accessibility stay at row
             // level, since those flip for the whole row at once.
             tabsRow
+                .frame(width: expandedWidth, alignment: .leading)
                 .allowsHitTesting(!isSearching)
                 .accessibilityHidden(isSearching)
 
@@ -216,11 +251,25 @@ struct FloatingTabBar: View {
         // `maxWidth` rather than `width`: closed it takes everything the HStack
         // will give, open it is exactly as wide as it is tall, which is what
         // makes the capsule resolve to a circle.
-        .frame(maxWidth: isSearching ? barHeight : .infinity)
+        //
+        // `alignment: .leading` is required, not tidy-up. `.frame(maxWidth:)`
+        // centres its content, and this content is deliberately wider than the
+        // frame while collapsed — centred, it overhangs equally on both sides
+        // and the home glyph, which sits at the content's leading edge, ends up
+        // outside the clip entirely. The circle renders empty.
+        .frame(maxWidth: isSearching ? barHeight : .infinity, alignment: .leading)
         .frame(height: barHeight)
         .background(.regularMaterial, in: Capsule())
+        // Load-bearing, not cosmetic: `tabsRow` is deliberately wider than this
+        // capsule while it is collapsed, and without the clip those tabs draw
+        // straight across the search field beside it.
+        .clipShape(Capsule())
     }
 
+    /// Sized to the collapsed circle rather than filling. In a leading-aligned
+    /// `ZStack` whose other child is deliberately over-wide, `maxWidth:
+    /// .infinity` would stretch this across that whole width and put the glyph
+    /// somewhere off in the middle of the search field.
     private var homeButton: some View {
         Button {
             onCloseSearch(.songs)
@@ -228,7 +277,7 @@ struct FloatingTabBar: View {
             Image(systemName: LibraryTab.songs.symbol)
                 .font(.system(size: Self.symbolSize))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: barHeight, height: barHeight)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Về \(LibraryTab.songs.label)")
