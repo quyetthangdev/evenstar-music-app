@@ -34,11 +34,13 @@ struct PlayerCard: View {
     /// top and bottom edges (y = 12 and y = 52) the curve has already come in
     /// to x ≈ 7. At a 12pt inset that left only ~5pt of daylight at the
     /// artwork's corners while the middle showed a full 12pt, and the eye
-    /// judges the tightest point. 16pt puts the tightest point at ~9pt.
+    /// judges the tightest point. 20pt puts the tightest point at ~13pt.
     ///
-    /// The artwork still clears the cap comfortably: its corner sits 25.6pt
-    /// from the cap's centre against a 32pt radius.
-    private static let collapsedArtworkInset: CGFloat = 16
+    /// The artwork still clears the cap comfortably: its corner sits 23.3pt
+    /// from the cap's centre against a 32pt radius. Room remains to go
+    /// further, but not indefinitely — the corner only starts touching the
+    /// curve at an inset around 24pt, and past that the artwork clips.
+    private static let collapsedArtworkInset: CGFloat = 20
     /// Between the collapsed artwork's trailing edge and the title.
     private static let collapsedArtworkGap: CGFloat = 12
     private static let expandedArtwork: CGFloat = 280
