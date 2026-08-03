@@ -86,7 +86,19 @@ struct FloatingTabBar: View {
     /// The morph between the tab row and the search field. Owned here rather
     /// than by each caller so the bar cannot animate on two different curves
     /// depending on which button was pressed.
-    static let searchSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+    ///
+    /// Written as `duration`/`bounce` rather than `response`/`dampingFraction`.
+    /// The two describe the same family of springs, but this pair says what it
+    /// does: `duration` is roughly how long the move takes, and `bounce` is how
+    /// far it overshoots before settling — 0 stops dead on arrival, 0.3 gives a
+    /// visible spring past the target and back. The older pair inverts that
+    /// second axis (higher damping means *less* bounce), which is what makes it
+    /// awkward to tune by feel.
+    ///
+    /// The bounce is what keeps the collapse from reading as a mechanical
+    /// slide. Raise it for more spring; much past 0.4 the bar starts to wobble
+    /// rather than settle.
+    static let searchSpring = Animation.spring(duration: 0.45, bounce: 0.32)
 
     /// How far the field's growth trails the tab pill's collapse, and the
     /// reverse on the way back. Short enough that the bar still feels like one
