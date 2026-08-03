@@ -38,19 +38,21 @@ struct RootView: View {
                 isSearching: $isSearching,
                 query: $query,
                 isEditing: $isEditing,
+                // No `withAnimation` here on purpose. The bar staggers its own
+                // pieces — the tab pill collapsing before the field grows, and
+                // the reverse on the way out — with per-slot `.animation`
+                // modifiers. A `withAnimation` around this would hand every
+                // slot the same transaction and flatten that timing back into
+                // one simultaneous move.
                 onOpenSearch: {
                     tabBeforeSearch = tab
-                    withAnimation(FloatingTabBar.searchSpring) {
-                        tab = .search
-                        isSearching = true
-                    }
+                    tab = .search
+                    isSearching = true
                 },
                 onCloseSearch: { destination in
-                    withAnimation(FloatingTabBar.searchSpring) {
-                        tab = destination ?? tabBeforeSearch
-                        isSearching = false
-                        query = ""
-                    }
+                    tab = destination ?? tabBeforeSearch
+                    isSearching = false
+                    query = ""
                 }
             )
             .padding(.bottom, BottomBarMetrics.tabBarBottomGap)

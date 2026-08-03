@@ -88,16 +88,61 @@ struct FloatingTabBar: View {
     /// depending on which button was pressed.
     static let searchSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
 
+    /// How far the field's growth trails the tab pill's collapse, and the
+    /// reverse on the way back. Short enough that the bar still feels like one
+    /// gesture — much more and the two halves read as separate events.
+    private static let stagger = 0.10
+
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
     private var barHeight: CGFloat {
         isSearching ? BottomBarMetrics.searchBarHeight : BottomBarMetrics.tabBarHeight
     }
 
+    /// Three slots whose widths carry the whole morph.
+    ///
+    /// Closed: the leading capsule takes all the room as the three-tab pill,
+    /// the search capsule is zero-wide, and the trailing circle is the search
+    /// button. Open: the leading capsule shrinks to a circle holding the way
+    /// home, the search capsule grows into the gap it leaves, and the trailing
+    /// circle becomes the close button.
+    ///
+    /// The two are **staggered**, which is what makes it read as one thing
+    /// becoming another rather than everything sliding at once: opening, the
+    /// tab pill collapses first and the field grows into the space afterwards;
+    /// closing runs it backwards, the field folding away before the tabs
+    /// return. Hence `.animation` per slot with a delay keyed on the direction,
+    /// rather than one `withAnimation` at the call site — a single wrapper
+    /// cannot give two subviews different timing.
     var body: some View {
-        HStack(spacing: BottomBarMetrics.tabBarSearchGap) {
-            pill
+        HStack(spacing: 0) {
+            leadingCapsule
+                .animation(
+                    Self.searchSpring.delay(isSearching ? 0 : Self.stagger),
+                    value: isSearching
+                )
+
+            // Fixed, so the gap between the leading capsule and whatever
+            // follows never collapses. The search capsule's own trailing gap
+            // is conditional instead — at zero width it must contribute
+            // nothing, or the closed bar would carry a phantom 8pt.
+            //
+            // The height is not decoration. `Color` is greedy in any axis left
+            // unconstrained, so a width-only frame here stretches the whole
+            // `HStack` to the height of its container and the bar ends up
+            // centred in the middle of the screen instead of sitting at the
+            // bottom.
+            Color.clear.frame(width: BottomBarMetrics.tabBarSearchGap, height: barHeight)
+
+            searchCapsule
+                .padding(.trailing, isSearching ? BottomBarMetrics.tabBarSearchGap : 0)
+                .animation(
+                    Self.searchSpring.delay(isSearching ? Self.stagger : 0),
+                    value: isSearching
+                )
+
             trailingButton
+                .animation(Self.searchSpring, value: isSearching)
         }
         .padding(.horizontal, BottomBarMetrics.sideMargin)
         // Opening search deliberately does NOT raise the keyboard: the user
@@ -113,29 +158,62 @@ struct FloatingTabBar: View {
         }
     }
 
-    /// Both rows exist at all times, cross-fading, with the capsule's height
-    /// animating underneath them. Swapping them with `if`/`else` instead would
-    /// tear one subtree down and build the other, and SwiftUI cannot animate a
-    /// frame across that — the bar would jump between the two heights.
+    /// The three-tab pill, collapsing to a circular way home.
     ///
-    /// The hidden row is taken out of hit-testing and out of accessibility.
-    /// Opacity alone leaves it tappable and readable by VoiceOver, so the tabs
-    /// would still respond behind the search field and vice versa.
-    private var pill: some View {
+    /// Both rows exist at all times and cross-fade, with the capsule's frame
+    /// animating underneath them. Swapping them with `if`/`else` would tear one
+    /// subtree down and build the other, and SwiftUI cannot animate a frame
+    /// across that — the capsule would jump between its two widths instead of
+    /// collapsing.
+    ///
+    /// The hidden row leaves hit-testing and accessibility too. Opacity alone
+    /// keeps it tappable and readable by VoiceOver, so the tabs would still
+    /// respond from behind the collapsed circle.
+    private var leadingCapsule: some View {
         ZStack {
             tabsRow
                 .opacity(isSearching ? 0 : 1)
                 .allowsHitTesting(!isSearching)
                 .accessibilityHidden(isSearching)
 
-            searchRow
+            homeButton
                 .opacity(isSearching ? 1 : 0)
                 .allowsHitTesting(isSearching)
                 .accessibilityHidden(!isSearching)
         }
-        .frame(maxWidth: .infinity)
+        // `maxWidth` rather than `width`: closed it takes everything the HStack
+        // will give, open it is exactly as wide as it is tall, which is what
+        // makes the capsule resolve to a circle.
+        .frame(maxWidth: isSearching ? barHeight : .infinity)
         .frame(height: barHeight)
         .background(.regularMaterial, in: Capsule())
+    }
+
+    private var homeButton: some View {
+        Button {
+            onCloseSearch(.songs)
+        } label: {
+            Image(systemName: LibraryTab.songs.symbol)
+                .font(.system(size: Self.symbolSize))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Về \(LibraryTab.songs.label)")
+    }
+
+    /// Zero-wide when closed, so it takes up no room and contributes no gap;
+    /// flexible when open. `.clipShape` matters at zero width — without it the
+    /// field and its icon spill out of a capsule that has no room for them.
+    private var searchCapsule: some View {
+        searchRow
+            .frame(maxWidth: isSearching ? .infinity : 0)
+            .frame(height: barHeight)
+            .background(.regularMaterial, in: Capsule())
+            .clipShape(Capsule())
+            .opacity(isSearching ? 1 : 0)
+            .allowsHitTesting(isSearching)
+            .accessibilityHidden(!isSearching)
     }
 
     private var tabsRow: some View {
@@ -177,26 +255,11 @@ struct FloatingTabBar: View {
         }
     }
 
-    /// Searching: a way home on the left, the field filling the rest.
     private var searchRow: some View {
-        HStack(spacing: 10) {
-            Button {
-                onCloseSearch(.songs)
-            } label: {
-                Image(systemName: LibraryTab.songs.symbol)
-                    .font(.system(size: Self.symbolSize))
-                    .foregroundStyle(.secondary)
-                    // Inset from the capsule by the same amount the selected
-                    // tab's backing is, so this circle is concentric with the
-                    // pill's leading cap too.
-                    .frame(
-                        width: barHeight - Self.selectionInset * 2,
-                        height: barHeight - Self.selectionInset * 2
-                    )
-                    .background(Circle().fill(Color.primary.opacity(Self.selectionWash)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Về \(LibraryTab.songs.label)")
+        HStack(spacing: 8) {
+            Image(systemName: LibraryTab.search.symbol)
+                .font(.system(size: Self.symbolSize))
+                .foregroundStyle(.secondary)
 
             TextField("Bài hát, nghệ sĩ, album", text: $query)
                 .textFieldStyle(.plain)
@@ -273,18 +336,16 @@ private struct FloatingTabBarPreview: View {
                 isSearching: $isSearching,
                 query: $query,
                 isEditing: $isEditing,
+                // Unwrapped, matching `RootView` — the bar owns its own timing,
+                // and a `withAnimation` here would flatten the stagger.
                 onOpenSearch: {
-                    withAnimation(FloatingTabBar.searchSpring) {
-                        selection = .search
-                        isSearching = true
-                    }
+                    selection = .search
+                    isSearching = true
                 },
                 onCloseSearch: { destination in
-                    withAnimation(FloatingTabBar.searchSpring) {
-                        selection = destination ?? .albums
-                        isSearching = false
-                        query = ""
-                    }
+                    selection = destination ?? .albums
+                    isSearching = false
+                    query = ""
                 }
             )
             .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
