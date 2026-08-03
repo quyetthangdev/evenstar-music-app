@@ -4,7 +4,7 @@ enum LibraryTab: String, Identifiable {
     case songs, albums, artists, account, search
     var id: String { rawValue }
 
-    /// The three that share the pill. Search is deliberately absent: it lives
+    /// The four that share the pill. Search is deliberately absent: it lives
     /// in its own circular button beside the pill.
     ///
     /// `CaseIterable` is deliberately NOT adopted. With it, `allCases` reads
@@ -36,25 +36,33 @@ enum LibraryTab: String, Identifiable {
 }
 
 /// The floating tab bar beneath the collapsed Now Playing pill: a pill holding
-/// three destinations, and a separate circular search button beside it.
+/// four destinations, and a separate circular search button beside it.
 ///
 /// Labels in the pill are never hidden behind a size class or Dynamic Type
-/// check — three items have the room, and unlabelled symbols are worse for
+/// check — four items have the room, and unlabelled symbols are worse for
 /// someone opening the app for the first time. The search button is the one
 /// exception, and it carries an explicit accessibility label to compensate.
 struct FloatingTabBar: View {
     @Binding var selection: LibraryTab
-    /// Drives the morph between the three-tab bar and the search field.
+    /// Drives the morph between the four-tab bar and the search field.
     @Binding var isSearching: Bool
     @Binding var query: String
     /// Mirrors the field's focus outward, so callers can react to the keyboard
     /// actually being up rather than guessing from `isSearching`. The two are
     /// not the same: search opens without the keyboard.
     @Binding var isEditing: Bool
-    /// Drives the morph between the three-tab bar and the minimised circle,
-    /// set by a caller watching scroll direction. Never true at the same time
-    /// as `isSearching` — see `trailingButton`, which clears this before
-    /// handing off to `onOpenSearch`.
+    /// Drives the morph between the four-tab bar and the minimised circle,
+    /// set by a caller watching scroll direction.
+    ///
+    /// `RootView` passes a masked view of its real flag here, not the flag
+    /// itself: this reads `false` whenever `isSearching` is `true`, no matter
+    /// what the real state underneath holds, so `isCollapsed` and
+    /// `restoreButton` below can never see both flags true at once — see
+    /// `isMinimisedActive` in `RootView`. `trailingButton`'s
+    /// `isMinimised = false`, on the way into search, still clears the real
+    /// state through this same binding, so the flag does not snap back
+    /// minimised the instant search closes without a fresh scroll — but that
+    /// write is belt-and-braces now, not the guarantee.
     @Binding var isMinimised: Bool
 
     /// Called when the trailing button opens search.
@@ -158,7 +166,7 @@ struct FloatingTabBar: View {
 
     /// Three slots whose widths carry the whole morph.
     ///
-    /// Closed: the leading capsule takes all the room as the three-tab pill,
+    /// Closed: the leading capsule takes all the room as the four-tab pill,
     /// the search capsule is zero-wide, and the trailing circle is the search
     /// button. Open: the leading capsule shrinks to a circle holding the way
     /// home, the search capsule grows into the gap it leaves, and the trailing
@@ -260,7 +268,7 @@ struct FloatingTabBar: View {
         }
     }
 
-    /// The three-tab pill, collapsing to a circular way home.
+    /// The four-tab pill, collapsing to a circular way home.
     ///
     /// Both rows exist at all times and cross-fade, with the capsule's frame
     /// animating underneath them. Swapping them with `if`/`else` would tear one
@@ -292,9 +300,14 @@ struct FloatingTabBar: View {
                 .accessibilityHidden(isCollapsed)
 
             // Two circles occupy the same spot and cross-fade, exactly like
-            // `tabsRow`/`homeButton` above: mutual exclusion (`isCollapsed`'s
-            // two branches) guarantees at most one of them is ever opaque, so
-            // there is nothing to arbitrate between them.
+            // `tabsRow`/`homeButton` above. The two conditions below are
+            // genuinely mutually exclusive, not merely unreached: `isMinimised`
+            // is a binding `RootView` constructs from `isMinimisedActive`,
+            // which reads `false` whenever `isSearching` is `true` regardless
+            // of what the real state holds — see the doc comment on
+            // `isMinimised` above. At most one of these two is ever opaque
+            // because of that, not because of anything local to this view; do
+            // not "simplify" this back to a plain, unmasked `isMinimised`.
             homeButton
                 .opacity(isSearching ? 1 : 0)
                 .allowsHitTesting(isSearching)
@@ -386,7 +399,7 @@ struct FloatingTabBar: View {
     }
 
     /// Each tab scales up in place as the pill's edge reaches it, rather than
-    /// the row cross-fading as one — which put all three on screen while the
+    /// the row cross-fading as one — which put all four on screen while the
     /// pill was still a circle, in space it had not grown into yet.
     private var tabsRow: some View {
         HStack(spacing: 0) {
@@ -437,7 +450,7 @@ struct FloatingTabBar: View {
         }
     }
 
-    /// Collapsing, the three go together and get out of the way — the pill is
+    /// Collapsing, the four go together and get out of the way — the pill is
     /// shrinking past them and anything left behind would be clipped mid-fade.
     /// Expanding, they arrive one after another, trailing the capsule's own
     /// delay so the first tab is not already there when the pill starts to

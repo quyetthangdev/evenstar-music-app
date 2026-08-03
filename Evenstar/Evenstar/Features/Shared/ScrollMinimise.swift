@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// Minimises the floating tab bar while a screen's content scrolls down, and
-/// restores it scrolling up or back at the top. Applied to all seven
+/// restores it scrolling up or back at the top. Applied to all six
 /// scrollable screens via `View.minimisesBottomBar(_:)` below, so the
 /// threshold and direction logic exists exactly once rather than once per
-/// screen.
+/// screen. `SearchView` is deliberately not one of them — see the comment on
+/// its results list.
 private struct ScrollMinimiseModifier: ViewModifier {
     @Binding var isMinimised: Bool
 
@@ -12,7 +13,7 @@ private struct ScrollMinimiseModifier: ViewModifier {
     /// reversed. `@State` because it must persist across the many
     /// `onScrollGeometryChange` callbacks a single scroll gesture produces,
     /// but it is scoped to this one modifier instance: SwiftUI keys `@State`
-    /// to a view's position in the hierarchy, so each of the seven screens
+    /// to a view's position in the hierarchy, so each of the six screens
     /// that apply this modifier gets its own accumulator, entirely
     /// independent of the others and of the single `isMinimised` binding
     /// they all share.
@@ -63,6 +64,22 @@ private struct ScrollMinimiseModifier: ViewModifier {
                 } else if !scrollingDown, accumulatedTravel <= -Self.directionThreshold {
                     setMinimised(false)
                 }
+            }
+            // Resets the accumulator whenever `isMinimised` changes from
+            // outside this modifier — `onRestore`, most importantly. Without
+            // this, tapping the restore circle after scrolling 400pt down
+            // left `accumulatedTravel` still holding +400: the very next
+            // same-direction pixel — one point of finger jitter, or the tail
+            // of a list still decelerating under the tap — crossed the 50pt
+            // threshold instantly and re-minimised the bar before the restore
+            // had a chance to be seen. This also fires for the modifier's own
+            // writes above (`setMinimised`), which is harmless: a direction
+            // reversal already resets the accumulator to just that delta at
+            // `accumulatedTravel = sameDirectionAsBefore ? … : delta` above,
+            // so zeroing it a moment earlier, right as the bar itself flips,
+            // changes nothing about when the next crossing fires.
+            .onChange(of: isMinimised) { _, _ in
+                accumulatedTravel = 0
             }
     }
 

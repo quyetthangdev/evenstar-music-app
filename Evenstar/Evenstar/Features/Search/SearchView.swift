@@ -11,11 +11,6 @@ struct SearchView: View {
     /// field of its own.
     let query: String
 
-    /// Owned by `RootView`, which drives both the tab bar and the player from
-    /// it. Written here only by `minimisesBottomBar` on this screen's results
-    /// list.
-    @Binding var isMinimised: Bool
-
     var body: some View {
         NavigationStack {
             content
@@ -76,9 +71,21 @@ struct SearchView: View {
                         }
                 }
                 .listStyle(.plain)
-                // On the scrollable container itself rather than on the branch
-                // above it, so what the modifier observes is unambiguous.
-                .minimisesBottomBar($isMinimised)
+                // Deliberately NOT `.minimisesBottomBar`. This list is on
+                // screen only while `isSearching` is true, and by then the
+                // bar is already collapsed into its three-slot search form —
+                // there is no four-tab pill left to fold, so minimising here
+                // has no meaning of its own. It used to carry the modifier
+                // anyway, and scrolling the results set `isMinimised` true
+                // behind `isSearching`: the leading capsule showed both the
+                // home glyph and the restore glyph at once, the restore
+                // button stole the tap meant to close search, and the 56pt
+                // minimised player pill landed on top of the 48pt search
+                // field and blocked it. Out of scope by design, the same way
+                // `ImportProgressSheet` is never wired up: neither is one of
+                // the screens the scroll modifier applies to. Do not add this
+                // back "for coverage" — see Finding 1 of the whole-plan
+                // review (2026-08-03).
             }
         }
     }
@@ -111,7 +118,7 @@ struct SearchView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
-    return SearchView(query: "biển", isMinimised: .constant(false))
+    return SearchView(query: "biển")
         .environment(library)
         .environment(playback)
         .modelContainer(container)

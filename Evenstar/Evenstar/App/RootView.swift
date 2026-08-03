@@ -27,9 +27,35 @@ struct RootView: View {
     /// Owned here because it drives two siblings — `FloatingTabBar` and
     /// `PlayerCard` — and is set by a third place entirely, the scroll modifier
     /// on each screen. It is passed down as a `Binding` rather than put in the
-    /// environment or a singleton: the seven screens that write it are a fixed,
+    /// environment or a singleton: the six screens that write it are a fixed,
     /// known set, and a `Binding` says exactly which views take part.
+    ///
+    /// This flag alone does NOT mean minimised styling should render — see
+    /// `isMinimisedActive` below, which is what every renderer actually reads.
     @State private var isMinimised = false
+
+    /// Whether minimised styling should actually apply, as opposed to what
+    /// `isMinimised` merely holds.
+    ///
+    /// The two used to be treated as the same thing, and searching was the
+    /// case that broke it: `SearchView`'s results list is on screen only
+    /// while `isSearching` is true, and until Finding 1 of the whole-plan
+    /// review it carried the scroll modifier too, so every scroll while
+    /// searching set `isMinimised = true` behind `isSearching`. That call site
+    /// is gone now, but the same collision is reachable from any future
+    /// writer of `isMinimised` — a ninth screen, a new gesture — and nothing
+    /// stops `isMinimised` from being `true` while `isSearching` is also
+    /// `true` at the level of plain state. Rather than rely on every writer
+    /// remembering to clear one flag before setting the other — the guarantee
+    /// that just failed — this masks the read instead: both `FloatingTabBar`
+    /// and `PlayerCard` below are constructed from this, never from the raw
+    /// `isMinimised`, so a stray `true` underneath cannot reach either
+    /// renderer while search is open. `RootView` is the only place this can
+    /// live: it is the one place both flags are always in scope together, and
+    /// the one place that constructs both consumers, so a future writer of
+    /// `isMinimised` — wherever it lives — still has its effect filtered here
+    /// on the way to the screen.
+    private var isMinimisedActive: Bool { isMinimised && !isSearching }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -40,7 +66,10 @@ struct RootView: View {
                 AccountView(isMinimised: $isMinimised).tag(LibraryTab.account)
                 // The query lives here, not in the screen: the field that edits
                 // it is in the tab bar, which is a sibling of the `TabView`.
-                SearchView(query: query, isMinimised: $isMinimised).tag(LibraryTab.search)
+                // No `isMinimised` binding here: `SearchView` does not carry
+                // the scroll modifier — see the comment on its results list —
+                // so it has nothing to write.
+                SearchView(query: query).tag(LibraryTab.search)
             }
 
             FloatingTabBar(
@@ -48,18 +77,31 @@ struct RootView: View {
                 isSearching: $isSearching,
                 query: $query,
                 isEditing: $isEditing,
-                isMinimised: $isMinimised,
+                // A masked binding, not `$isMinimised` directly. Every read
+                // inside `FloatingTabBar` — `isCollapsed`, `restoreButton`'s
+                // opacity and hit-testing — sees `isMinimisedActive`, so the
+                // bar cannot render both the home glyph and the restore glyph
+                // opaque at once no matter what the real `isMinimised` holds.
+                // Writes still land on the real flag, so `trailingButton`'s
+                // `isMinimised = false` and `ScrollMinimise`'s writes on the
+                // six screens behave exactly as before.
+                isMinimised: Binding(
+                    get: { isMinimisedActive },
+                    set: { isMinimised = $0 }
+                ),
                 // No `withAnimation` here on purpose. The bar staggers its own
                 // pieces — the tab pill collapsing before the field grows, and
                 // the reverse on the way out — with per-slot `.animation`
                 // modifiers. A `withAnimation` around this would hand every
                 // slot the same transaction and flatten that timing back into
                 // one simultaneous move.
-                // Nothing here clears `isMinimised`: the bar writes it through
-                // the binding immediately before calling this, in the same
-                // action, so the two flags are never both true in any render.
-                // Restating it here would look like the enforcement while the
-                // real guarantee lived elsewhere.
+                // `trailingButton` still clears the real `isMinimised` before
+                // handing off to `onOpenSearch` below, so the flag does not
+                // snap back minimised the instant search closes without a
+                // fresh scroll — but that write is belt-and-braces now, not
+                // the guarantee. The guarantee that the two morphs never
+                // render at once is `isMinimisedActive` above: it holds
+                // whether or not this particular write ever ran.
                 onOpenSearch: {
                     tabBeforeSearch = tab
                     tab = .search
@@ -103,7 +145,14 @@ struct RootView: View {
             // driving it is a `Bool`; the card takes a `Double` so the move
             // between the two can be animated, which is what the modifier
             // below supplies.
-            PlayerCard(playback: playback, minimised: isMinimised ? 1 : 0)
+            //
+            // Reads `isMinimisedActive`, not `isMinimised` directly — the same
+            // masking `FloatingTabBar` gets above, for the same reason: this
+            // is the only call site that constructs `PlayerCard`, and the
+            // 56pt minimised inset must not apply while `isSearching` is
+            // true, or it lands on top of the 48pt search field. See
+            // `isMinimisedActive`'s doc comment.
+            PlayerCard(playback: playback, minimised: isMinimisedActive ? 1 : 0)
                 .opacity(isEditing ? 0 : 1)
                 .allowsHitTesting(!isEditing)
                 .accessibilityHidden(isEditing)
@@ -115,7 +164,11 @@ struct RootView: View {
                 // as search opens (see `onOpenSearch` above): without this, that
                 // path alone would snap the pill between the tab row and its own
                 // row in a single frame while the bar beside it morphs smoothly.
-                .animation(FloatingTabBar.searchSpring, value: isMinimised)
+                // Keyed on `isMinimisedActive`, matching the value actually fed
+                // to `minimised:` above — `isSearching` toggling can change
+                // that value even on a frame where the raw `isMinimised` does
+                // not, and the animation must key on what the card receives.
+                .animation(FloatingTabBar.searchSpring, value: isMinimisedActive)
         }
         // Restoring the saved queue is an app-launch concern, so it belongs on
         // the root and not on any one tab. On Bài hát it would work only by

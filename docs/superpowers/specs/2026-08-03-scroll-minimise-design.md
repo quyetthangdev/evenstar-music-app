@@ -109,8 +109,8 @@ minimised state restores the bar first, so the two morphs never run at once.
 ## Scroll detection
 
 `onScrollGeometryChange` — iOS 18, which is why the deployment target was
-raised. Wrapped in one `View` extension so eight screens share one
-implementation rather than eight copies of the same threshold logic:
+raised. Wrapped in one `View` extension so six screens share one
+implementation rather than six copies of the same threshold logic:
 
 ```swift
 extension View {
@@ -130,11 +130,20 @@ Rules, in order:
 The threshold exists so a few pixels of finger jitter cannot flip the bar. 50pt
 is the starting value.
 
-Applied to all eight scrollable screens: `SongsView`, `AlbumsView`,
-`ArtistsView`, `SearchView`, `AccountView`, `AlbumDetailView`,
-`ArtistDetailView`. Đợt A's Critical defect was a treatment applied to the four
-tab roots and missed on the two pushed detail screens — the same trap is
-present here, and the two detail screens are named explicitly for that reason.
+Applied to all six scrollable screens: `SongsView`, `AlbumsView`,
+`ArtistsView`, `AccountView`, `AlbumDetailView`, `ArtistDetailView`. Đợt A's
+Critical defect was a treatment applied to the four tab roots and missed on
+the two pushed detail screens — the same trap is present here, and the two
+detail screens are named explicitly for that reason.
+
+`SearchView` is deliberately excluded, the way `ImportProgressSheet` already
+is. Its results list is on screen only while the bar is already collapsed
+into its three-slot search form — there is no four-tab pill left to fold, so
+minimising has no meaning there. An earlier pass applied the modifier to it
+anyway: scrolling the results then set `isMinimised` true behind
+`isSearching`, which the leading capsule and the collapsed player both read
+independently, and both rendered as if the user had scrolled a library list
+while still searching. See the whole-plan review's Finding 1 (2026-08-03).
 
 ## Animation
 
@@ -150,7 +159,7 @@ visibly different springs would read as two unrelated systems.
    top-edge position and match it term for term against `dragTravel`.
 2. **Hit-testing across the minimised row.** Three tappable things now share
    one row, with the player's frame between two circles it must not cover.
-3. **Missing a screen.** Seven screens need the scroll modifier; Đợt A shipped
+3. **Missing a screen.** Six screens need the scroll modifier; Đợt A shipped
    a Critical defect by treating four when six needed it.
 4. **State collision.** Minimised and searching both drive the leading capsule.
    If both can be true, the bar has an undefined fourth state.
