@@ -19,6 +19,14 @@ enum BottomBarMetrics {
     static let playerTabGap: CGFloat = 8
     /// Between the tab pill and the detached circular search button.
     static let tabBarSearchGap: CGFloat = 8
+    /// The bar's height while searching — a little shorter, since a single
+    /// text field needs less room than an icon stacked over a label.
+    ///
+    /// The lists' clearance deliberately does **not** follow this. It stays
+    /// keyed to `tabBarHeight`, so entering search leaves a few extra points of
+    /// space rather than reflowing every list underneath. Reflowing content the
+    /// user is not looking at, to reclaim 8pt, is not a trade worth making.
+    static let searchBarHeight: CGFloat = 48
 
     /// Safe-area bottom up to the collapsed player pill's bottom edge.
     static let playerBottomOffset = tabBarBottomGap + tabBarHeight + playerTabGap

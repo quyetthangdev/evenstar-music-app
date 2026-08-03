@@ -42,6 +42,18 @@ enum LibraryTab: String, Identifiable {
 /// exception, and it carries an explicit accessibility label to compensate.
 struct FloatingTabBar: View {
     @Binding var selection: LibraryTab
+    /// Drives the morph between the three-tab bar and the search field.
+    @Binding var isSearching: Bool
+    @Binding var query: String
+
+    /// Called when the trailing button opens search.
+    let onOpenSearch: () -> Void
+    /// Called when search closes. `nil` means "back where you came from";
+    /// a tab means go there explicitly. The bar does not know the tab history —
+    /// `RootView` owns it — so it says what it wants rather than deciding.
+    let onCloseSearch: (LibraryTab?) -> Void
+
+    @FocusState private var queryFocused: Bool
 
     private static let symbolSize: CGFloat = 17
     /// The selected item's backing. Drawn over the material rather than
@@ -67,15 +79,58 @@ struct FloatingTabBar: View {
     /// this replaced.
     private static let selectionInset: CGFloat = 6
 
+    /// The morph between the tab row and the search field. Owned here rather
+    /// than by each caller so the bar cannot animate on two different curves
+    /// depending on which button was pressed.
+    static let searchSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    /// Shorter while searching: one text field needs less room than an icon
+    /// stacked over a label.
+    private var barHeight: CGFloat {
+        isSearching ? BottomBarMetrics.searchBarHeight : BottomBarMetrics.tabBarHeight
+    }
+
     var body: some View {
         HStack(spacing: BottomBarMetrics.tabBarSearchGap) {
             pill
-            searchButton
+            trailingButton
         }
         .padding(.horizontal, BottomBarMetrics.sideMargin)
+        // The field is in the hierarchy in both states so the pill's frame can
+        // animate through the change instead of one subtree being torn down and
+        // another built. Focus therefore has to be driven explicitly — an
+        // offscreen field neither takes nor gives up the keyboard on its own.
+        .onChange(of: isSearching) { _, searching in
+            queryFocused = searching
+        }
     }
 
+    /// Both rows exist at all times, cross-fading, with the capsule's height
+    /// animating underneath them. Swapping them with `if`/`else` instead would
+    /// tear one subtree down and build the other, and SwiftUI cannot animate a
+    /// frame across that — the bar would jump between the two heights.
+    ///
+    /// The hidden row is taken out of hit-testing and out of accessibility.
+    /// Opacity alone leaves it tappable and readable by VoiceOver, so the tabs
+    /// would still respond behind the search field and vice versa.
     private var pill: some View {
+        ZStack {
+            tabsRow
+                .opacity(isSearching ? 0 : 1)
+                .allowsHitTesting(!isSearching)
+                .accessibilityHidden(isSearching)
+
+            searchRow
+                .opacity(isSearching ? 1 : 0)
+                .allowsHitTesting(isSearching)
+                .accessibilityHidden(!isSearching)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: barHeight)
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    private var tabsRow: some View {
         HStack(spacing: 0) {
             ForEach(LibraryTab.pillTabs) { tab in
                 Button {
@@ -112,25 +167,61 @@ struct FloatingTabBar: View {
                 .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: BottomBarMetrics.tabBarHeight)
-        .background(.regularMaterial, in: Capsule())
     }
 
-    /// Square frame at the bar's own height, clipped to a circle, so the button
-    /// is exactly as tall as the pill it sits beside and stays circular
-    /// wherever `tabBarHeight` goes.
-    private var searchButton: some View {
+    /// Searching: a way home on the left, the field filling the rest.
+    private var searchRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                onCloseSearch(.songs)
+            } label: {
+                Image(systemName: LibraryTab.songs.symbol)
+                    .font(.system(size: Self.symbolSize))
+                    .foregroundStyle(.secondary)
+                    // Inset from the capsule by the same amount the selected
+                    // tab's backing is, so this circle is concentric with the
+                    // pill's leading cap too.
+                    .frame(
+                        width: barHeight - Self.selectionInset * 2,
+                        height: barHeight - Self.selectionInset * 2
+                    )
+                    .background(Circle().fill(Color.primary.opacity(Self.selectionWash)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Về \(LibraryTab.songs.label)")
+
+            TextField("Bài hát, nghệ sĩ, album", text: $query)
+                .textFieldStyle(.plain)
+                .focused($queryFocused)
+                .submitLabel(.search)
+                // A library search is over titles and names the user already
+                // has; autocorrecting "Biển" into a dictionary word, or
+                // capitalising a lowercase artist name, only fights them.
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+        }
+        .padding(.leading, Self.selectionInset)
+        .padding(.trailing, 16)
+    }
+
+    /// Opens search, then becomes the way out of it. Square frame at the bar's
+    /// own height clipped to a circle, so it stays circular at either height
+    /// and always matches the pill beside it.
+    private var trailingButton: some View {
         Button {
-            selection = .search
+            if isSearching {
+                onCloseSearch(nil)
+            } else {
+                onOpenSearch()
+            }
         } label: {
-            Image(systemName: LibraryTab.search.symbol)
+            Image(systemName: isSearching ? "xmark" : LibraryTab.search.symbol)
                 .font(.system(size: Self.symbolSize))
+                // The one glyph that changes meaning mid-animation, so it
+                // swaps on the same curve as the bar rather than popping.
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(selection == .search ? .primary : .secondary)
-                .frame(
-                    width: BottomBarMetrics.tabBarHeight,
-                    height: BottomBarMetrics.tabBarHeight
-                )
+                .frame(width: barHeight, height: barHeight)
                 .background {
                     ZStack {
                         Circle().fill(.regularMaterial)
@@ -141,10 +232,11 @@ struct FloatingTabBar: View {
                 }
         }
         .buttonStyle(.plain)
-        // The only item in the bar with no visible text. Without this,
-        // VoiceOver falls back to the symbol's own description — "magnifying
-        // glass" — instead of the destination's name.
-        .accessibilityLabel(LibraryTab.search.label)
+        // Never carries visible text, and its meaning flips, so the label has
+        // to flip with it. Without one, VoiceOver reads the symbol's own
+        // description — "magnifying glass", or "xmark" — instead of what the
+        // button does.
+        .accessibilityLabel(isSearching ? "Đóng tìm kiếm" : LibraryTab.search.label)
         .accessibilityAddTraits(selection == .search ? [.isButton, .isSelected] : .isButton)
     }
 }
@@ -155,6 +247,8 @@ struct FloatingTabBar: View {
 /// so the binding has somewhere to live.
 private struct FloatingTabBarPreview: View {
     @State private var selection: LibraryTab = .albums
+    @State private var isSearching = false
+    @State private var query = ""
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -165,8 +259,25 @@ private struct FloatingTabBarPreview: View {
             )
             .ignoresSafeArea()
 
-            FloatingTabBar(selection: $selection)
-                .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
+            FloatingTabBar(
+                selection: $selection,
+                isSearching: $isSearching,
+                query: $query,
+                onOpenSearch: {
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        selection = .search
+                        isSearching = true
+                    }
+                },
+                onCloseSearch: { destination in
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        selection = destination ?? .albums
+                        isSearching = false
+                        query = ""
+                    }
+                }
+            )
+            .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
         }
     }
 }

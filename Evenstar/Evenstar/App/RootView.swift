@@ -13,6 +13,11 @@ import SwiftUI
 struct RootView: View {
     @Environment(PlaybackService.self) private var playback
     @State private var tab: LibraryTab = .songs
+    @State private var isSearching = false
+    @State private var query = ""
+    /// Where closing search returns to. Captured on the way in, because by the
+    /// time the user closes, `tab` is already `.search` and the origin is gone.
+    @State private var tabBeforeSearch: LibraryTab = .songs
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -20,11 +25,31 @@ struct RootView: View {
                 SongsView().tag(LibraryTab.songs)
                 AlbumsView().tag(LibraryTab.albums)
                 ArtistsView().tag(LibraryTab.artists)
-                SearchView().tag(LibraryTab.search)
+                // The query lives here, not in the screen: the field that edits
+                // it is in the tab bar, which is a sibling of the `TabView`.
+                SearchView(query: query).tag(LibraryTab.search)
             }
 
-            FloatingTabBar(selection: $tab)
-                .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
+            FloatingTabBar(
+                selection: $tab,
+                isSearching: $isSearching,
+                query: $query,
+                onOpenSearch: {
+                    tabBeforeSearch = tab
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        tab = .search
+                        isSearching = true
+                    }
+                },
+                onCloseSearch: { destination in
+                    withAnimation(FloatingTabBar.searchSpring) {
+                        tab = destination ?? tabBeforeSearch
+                        isSearching = false
+                        query = ""
+                    }
+                }
+            )
+            .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
 
             // Order here is load-bearing: `PlayerCard` must be LAST so that
             // expanding it covers the tab bar — the expanded card is opaque and
@@ -35,7 +60,15 @@ struct RootView: View {
             // at its `.contentShape` call site before changing anything near
             // this. If that region ever grows back to the full screen at rest,
             // the tab bar becomes untappable from launch.
+            // Hidden while searching. The tab bar rides up with the keyboard,
+            // and the pill would ride with it — two floating surfaces stacked
+            // on top of the keyboard, over the results the user is reading.
+            // Playback is unaffected; only the card is out of the way.
             PlayerCard(playback: playback)
+                .opacity(isSearching ? 0 : 1)
+                .allowsHitTesting(!isSearching)
+                .accessibilityHidden(isSearching)
+                .animation(FloatingTabBar.searchSpring, value: isSearching)
         }
         // Restoring the saved queue is an app-launch concern, so it belongs on
         // the root and not on any one tab. On Bài hát it would work only by

@@ -5,13 +5,16 @@ struct SearchView: View {
     @Environment(PlaybackService.self) private var playback
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
-    @State private var query = ""
+    /// Read-only, and owned by `RootView`. The field that edits it lives in the
+    /// floating tab bar, which is a sibling of the `TabView` this screen sits
+    /// in — so this screen cannot own it, and must not add a second search
+    /// field of its own.
+    let query: String
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle("Tìm kiếm")
-                .searchable(text: $query, prompt: "Bài hát, nghệ sĩ, album")
                 // See the note in `SongsView`: this hides the system tab bar
                 // and must sit on the tab's content, not on the `TabView`.
                 .toolbar(.hidden, for: .tabBar)
@@ -100,7 +103,7 @@ struct SearchView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
-    return SearchView()
+    return SearchView(query: "biển")
         .environment(library)
         .environment(playback)
         .modelContainer(container)
