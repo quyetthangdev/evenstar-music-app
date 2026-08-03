@@ -28,6 +28,7 @@ struct RootView: View {
                 SongsView().tag(LibraryTab.songs)
                 AlbumsView().tag(LibraryTab.albums)
                 ArtistsView().tag(LibraryTab.artists)
+                AccountView().tag(LibraryTab.account)
                 // The query lives here, not in the screen: the field that edits
                 // it is in the tab bar, which is a sibling of the `TabView`.
                 SearchView(query: query).tag(LibraryTab.search)

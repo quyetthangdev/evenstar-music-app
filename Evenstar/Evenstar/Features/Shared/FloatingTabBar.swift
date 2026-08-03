@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum LibraryTab: String, Identifiable {
-    case songs, albums, artists, search
+    case songs, albums, artists, account, search
     var id: String { rawValue }
 
     /// The three that share the pill. Search is deliberately absent: it lives
@@ -12,13 +12,14 @@ enum LibraryTab: String, Identifiable {
     /// search twice — once in the pill and once in its own button. Leaving the
     /// conformance off makes that mistake impossible rather than merely
     /// warned against. Adding a destination means adding it here.
-    static let pillTabs: [LibraryTab] = [.songs, .albums, .artists]
+    static let pillTabs: [LibraryTab] = [.songs, .albums, .artists, .account]
 
     var label: String {
         switch self {
         case .songs:   "Bài hát"
         case .albums:  "Album"
         case .artists: "Nghệ sĩ"
+        case .account: "Tài khoản"
         case .search:  "Tìm kiếm"
         }
     }
@@ -28,6 +29,7 @@ enum LibraryTab: String, Identifiable {
         case .songs:   "music.note.list"
         case .albums:  "square.stack"
         case .artists: "music.mic"
+        case .account: "person.crop.circle"
         case .search:  "magnifyingglass"
         }
     }

@@ -1,0 +1,146 @@
+import SwiftUI
+import SwiftData
+
+/// What the library adds up to, plus what build this is.
+///
+/// Named "Tài khoản" because that is where an Apple Music sign-in will go in
+/// Phase 3. Until then it is deliberately only what is true today — counts,
+/// storage, version. No signed-out account row promising something that does
+/// not exist.
+struct AccountView: View {
+    @Environment(PlaybackService.self) private var playback
+    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+
+    /// `nil` until the first sum finishes. Distinguishing "not measured yet"
+    /// from "measured, and it is zero" is the difference between showing a
+    /// progress spinner and telling a user with a full library that they have
+    /// no files.
+    @State private var bytesOnDisk: Int64?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Thư viện") {
+                    row("Bài hát", value: "\(tracks.count)")
+                    row("Album", value: "\(LibraryGrouping.albums(from: tracks).count)")
+                    row("Nghệ sĩ", value: "\(LibraryGrouping.artists(from: tracks).count)")
+                    row("Dung lượng", value: storageText)
+                }
+
+                Section("Ứng dụng") {
+                    row("Phiên bản", value: Self.versionText)
+                }
+            }
+            .navigationTitle("Tài khoản")
+            // See the note in `SongsView`: this hides the system tab bar
+            // and must sit on the tab's content, not on the `TabView`.
+            .toolbar(.hidden, for: .tabBar)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear
+                    // Never 0: the floating tab bar is always present, so
+                    // the last row must clear it whether or not a track is
+                    // loaded.
+                    .frame(
+                        height: playback.currentTrack == nil
+                            ? BottomBarMetrics.clearanceTabBarOnly
+                            : BottomBarMetrics.clearanceWithPlayer
+                    )
+            }
+            // Keyed on the count so importing or deleting re-measures. It is a
+            // cheap proxy: editing a track's tags does not change what is on
+            // disk, and nothing else alters the file set.
+            .task(id: tracks.count) {
+                bytesOnDisk = await Self.bytesOnDisk(for: filePaths)
+            }
+        }
+    }
+
+    private func row(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var storageText: String {
+        guard let bytesOnDisk else { return "…" }
+        return bytesOnDisk.formatted(.byteCount(style: .file))
+    }
+
+    /// Audio and artwork both count — artwork is copied into the app's
+    /// container at import, so leaving it out would under-report what deleting
+    /// the library would actually reclaim.
+    ///
+    /// Collected here, on the main actor, as plain strings. `Track` is a
+    /// SwiftData `@Model`, which is neither `Sendable` nor safe to touch from
+    /// another executor, so the paths must be lifted out before the work hops
+    /// off.
+    private var filePaths: [String] {
+        tracks.map(\.relativePath) + tracks.compactMap(\.artworkRelativePath)
+    }
+
+    /// `@concurrent` rather than a bare `nonisolated async`.
+    ///
+    /// Under this project's `SWIFT_APPROACHABLE_CONCURRENCY` setting, a
+    /// `nonisolated async` function inherits its *caller's* executor — called
+    /// from a view's `.task`, it would stat every file on the main thread and
+    /// stutter the whole screen on a large library. `@concurrent` is what
+    /// actually forces the hop. Same reasoning as `ArtworkStore`.
+    ///
+    /// A file that cannot be measured contributes zero rather than failing the
+    /// total: a library missing one file should report slightly low, not
+    /// refuse to report at all.
+    @concurrent
+    private static func bytesOnDisk(for relativePaths: [String]) async -> Int64 {
+        var total: Int64 = 0
+        for path in relativePaths {
+            let url = FileLocation.absoluteURL(forRelative: path)
+            let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+            total += Int64(size ?? 0)
+        }
+        return total
+    }
+
+    private static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String
+        guard let build else { return short }
+        return "\(short) (\(build))"
+    }
+}
+
+#Preview {
+    let container: ModelContainer
+    do {
+        container = try ModelContainer(
+            for: Track.self, PlaybackState.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    } catch {
+        fatalError("Failed to create preview ModelContainer: \(error)")
+    }
+    let library = LibraryService(context: container.mainContext)
+    let playback = PlaybackService(
+        player: AVAudioPlayerWrapper(),
+        nowPlaying: NowPlayingService(),
+        library: library
+    )
+    let tracksToInsert = [
+        Track(title: "Sunrise", artistName: "Alpha", albumTitle: "Greatest Hits",
+              trackNumber: 1, discNumber: 1, durationSeconds: 180,
+              relativePath: "a.mp3", format: "mp3"),
+        Track(title: "Biển nhớ", artistName: "Beta", albumTitle: "Night Songs",
+              trackNumber: 1, discNumber: 1, durationSeconds: 220,
+              relativePath: "c.mp3", format: "mp3")
+    ]
+    for track in tracksToInsert {
+        container.mainContext.insert(track)
+    }
+    return AccountView()
+        .environment(library)
+        .environment(playback)
+        .modelContainer(container)
+}
