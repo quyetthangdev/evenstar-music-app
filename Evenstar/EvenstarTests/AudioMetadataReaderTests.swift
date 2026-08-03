@@ -148,13 +148,22 @@ final class AudioMetadataReaderTests: XCTestCase {
         writer.startSession(atSourceTime: .zero)
 
         let queue = DispatchQueue(label: "tagged-fixture-writer")
+        // `requestMediaDataWhenReady` takes a `@Sendable` block, but
+        // `AVAssetWriterInput` and `AVAssetReaderTrackOutput` are not
+        // `Sendable`, so capturing them directly warns. Wrapping the pair in a
+        // box marked unchecked is the honest form of what this code already
+        // relies on: AVFoundation calls the block only on `queue`, serially,
+        // and nothing else touches either object for the lifetime of the pump.
+        // The alternative — silencing the warning — would hide the same
+        // assumption instead of naming it.
+        let pump = FixturePump(input: writerInput, output: readerOutput)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            writerInput.requestMediaDataWhenReady(on: queue) {
-                while writerInput.isReadyForMoreMediaData {
-                    if let sampleBuffer = readerOutput.copyNextSampleBuffer() {
-                        writerInput.append(sampleBuffer)
+            pump.input.requestMediaDataWhenReady(on: queue) {
+                while pump.input.isReadyForMoreMediaData {
+                    if let sampleBuffer = pump.output.copyNextSampleBuffer() {
+                        pump.input.append(sampleBuffer)
                     } else {
-                        writerInput.markAsFinished()
+                        pump.input.markAsFinished()
                         continuation.resume()
                         return
                     }
@@ -203,4 +212,24 @@ final class AudioMetadataReaderTests: XCTestCase {
         }
     }
 
+}
+
+/// Carries the writer input and reader output into AVFoundation's `@Sendable`
+/// media-data block.
+///
+/// Neither type is `Sendable`, so capturing them straight into that block
+/// warns. The concurrency this code actually performs is safe and always has
+/// been — AVFoundation invokes the block serially on the one queue it was
+/// handed, and nothing else touches either object while the pump runs — but
+/// that is a fact about the call, not something the compiler can see. Stating
+/// it as an unchecked conformance names the assumption; suppressing the
+/// warning would have hidden it.
+private final class FixturePump: @unchecked Sendable {
+    let input: AVAssetWriterInput
+    let output: AVAssetReaderTrackOutput
+
+    init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput) {
+        self.input = input
+        self.output = output
+    }
 }
