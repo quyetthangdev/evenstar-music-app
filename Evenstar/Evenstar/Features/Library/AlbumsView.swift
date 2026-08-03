@@ -75,10 +75,6 @@ private struct AlbumCell: View {
     }
 }
 
-/// `NavigationLink(value:)` requires `Hashable`. `AlbumGroup` lives in
-/// `LibraryGrouping.swift`, which this task must not modify, so the
-/// conformance is added here instead. Identity follows `id` — the same
-/// title+artist key `LibraryGrouping` already uses to keep albums distinct.
 #Preview {
     let container: ModelContainer
     do {
