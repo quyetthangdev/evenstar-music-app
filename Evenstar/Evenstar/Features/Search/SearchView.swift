@@ -36,7 +36,20 @@ struct SearchView: View {
             // diacritic-insensitive — so this view never re-implements it.
             let results = LibraryGrouping.search(query, in: tracks)
             if results.isEmpty {
-                ContentUnavailableView.search(text: query)
+                // Hand-written rather than `ContentUnavailableView.search(text:)`.
+                // That convenience draws its title and description from the
+                // framework, resolved against the app's declared localizations —
+                // and this app declares none, with `developmentRegion = en`. So
+                // it renders an English "No Results" between a Vietnamese title
+                // above it and a Vietnamese prompt one state away, on a
+                // Vietnamese user's device, no matter what the system language
+                // is. Any other system-supplied string added here has the same
+                // problem until the project gains a `vi` localization.
+                ContentUnavailableView(
+                    "Không tìm thấy kết quả",
+                    systemImage: "magnifyingglass",
+                    description: Text("Không có bài hát, nghệ sĩ hay album nào khớp với “\(query)”.")
+                )
             } else {
                 List(results) { track in
                     SongRow(track: track)
