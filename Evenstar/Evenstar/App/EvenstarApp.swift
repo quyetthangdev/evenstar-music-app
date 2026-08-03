@@ -36,7 +36,7 @@ struct EvenstarApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LibraryView()
+            RootView()
                 .environment(library)
                 .environment(importService)
                 .environment(playback)

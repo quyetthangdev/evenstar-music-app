@@ -11,19 +11,15 @@ import SwiftUI
 struct PlayerCard: View {
     let playback: PlaybackService
 
-    /// The collapsed bar's own height. `LibraryView` no longer reads this
-    /// directly — it reads `collapsedClearance`, which adds the gap below the
-    /// floating pill. Do not duplicate this as a literal.
+    /// The collapsed bar's own height. Lists do not read this directly — they
+    /// read `BottomBarMetrics.clearanceWithPlayer`, which adds everything below
+    /// the floating pill. Do not duplicate this as a literal.
     static let collapsedHeight: CGFloat = 64
 
     /// How far the collapsed pill is inset from each screen edge.
     private static let pillSideMargin: CGFloat = 12
-    /// The gap between the collapsed pill's bottom edge and the safe area.
-    private static let collapsedBottomGap: CGFloat = 12
     /// A true pill: half the collapsed height, so the caps are semicircles.
     private static let collapsedCornerRadius: CGFloat = collapsedHeight / 2
-    /// What the library must leave clear: the bar plus the gap beneath it.
-    static let collapsedClearance: CGFloat = collapsedHeight + collapsedBottomGap
 
     private static let collapsedArtwork: CGFloat = 40
     /// How far the collapsed artwork sits in from the pill's leading edge.
@@ -175,12 +171,25 @@ struct PlayerCard: View {
         // only the pixel-to-progress divisor for the gesture below. The
         // card's top edge doesn't actually travel the full `travel`
         // distance — the bottom padding shortens the visible range by
-        // `insets.bottom` (F3's safe-area inset) *plus* `collapsedBottomGap`
-        // (the floating pill's gap) — so using `travel` there made the card
-        // trail the finger by the sum of the two. Both terms must appear
-        // here and in that padding, or they drift apart again. See R2.
+        // `insets.bottom` (F3's safe-area inset) *plus*
+        // `BottomBarMetrics.playerBottomOffset` (the tab bar, its gap below,
+        // and the gap between it and the pill) — so using `travel` there made
+        // the card trail the finger by the sum of the two. Both terms must
+        // appear here and in that padding, or they drift apart again — which
+        // has now happened twice. See R2.
+        //
+        // The derivation that keeps them honest, with the card bottom-aligned
+        // in a full-screen frame whose height this padding shortens:
+        //
+        //   top(p) = fullHeight − (insets.bottom + playerBottomOffset)(1−p)
+        //            − collapsedHeight − (fullHeight − collapsedHeight)p
+        //   top(0) = fullHeight − collapsedHeight − insets.bottom − playerBottomOffset
+        //   top(1) = 0
+        //
+        // Visible travel is top(0) − top(1), which is exactly the expression
+        // below, term for term. If you change one, change the other.
         let dragTravel = max(
-            fullHeight - Self.collapsedHeight - insets.bottom - Self.collapsedBottomGap,
+            fullHeight - Self.collapsedHeight - insets.bottom - BottomBarMetrics.playerBottomOffset,
             1
         )
 
@@ -263,11 +272,11 @@ struct PlayerCard: View {
         .gesture(drag(travel: dragTravel))
         .onTapGesture { if progress < 0.5 { expand() } }
         // At progress 0 this holds the card's bottom at the real safe-area
-        // inset plus `collapsedBottomGap`, so the pill floats clear of the
-        // safe area and matches where LibraryView's `collapsedClearance`
-        // spacer stops the list; at progress 1 it goes to 0 so the expanded
-        // card reaches the physical bottom edge. See F3. `dragTravel` above
-        // must subtract exactly the same two terms — see the note there.
+        // inset plus `BottomBarMetrics.playerBottomOffset`, so the pill floats
+        // clear of the floating tab bar and matches where every list's
+        // `clearanceWithPlayer` spacer stops; at progress 1 it goes to 0 so the
+        // expanded card reaches the physical bottom edge. See F3. `dragTravel`
+        // above must subtract exactly the same two terms — see the note there.
         //
         // It must stay *outside* the frame and the hit region above. Applied
         // here it shortens the height proposed to that frame, so the frame's
@@ -276,7 +285,7 @@ struct PlayerCard: View {
         // with the collapsed bar. Moved inside (padding the card itself), the
         // frame would still span the full screen and the collapsed region
         // would sit `insets.bottom` too low, missing the top of the bar.
-        .padding(.bottom, (insets.bottom + Self.collapsedBottomGap) * (1 - progress))
+        .padding(.bottom, (insets.bottom + BottomBarMetrics.playerBottomOffset) * (1 - progress))
     }
 
     /// The bottom `height` points of whatever it is applied to, inset by
