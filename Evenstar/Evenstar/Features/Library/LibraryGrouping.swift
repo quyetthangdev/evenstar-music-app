@@ -96,3 +96,35 @@ enum LibraryGrouping {
         var id: String { "\(title)\u{0}\(artist)" }
     }
 }
+
+// MARK: - Navigation identity
+//
+// `NavigationLink(value:)` and `navigationDestination(for:)` require `Hashable`,
+// so both groups need it to be pushable. It has to be written by hand: both
+// hold `[Track]`, and `Track` is a SwiftData `@Model` class conforming to
+// neither `Hashable` nor `Equatable`, so there is no synthesised conformance
+// to fall back on.
+//
+// These live here, beside the types, rather than in whichever view first needed
+// them. A conformance declared in a view file is a landmine: the second view to
+// need it cannot simply declare it too — a duplicate conformance is a hard
+// compile error, findable only by grepping the whole project for the first one.
+//
+// Keyed on `id` alone, which `AlbumKey`/artist name already make unique within
+// any one `albums(from:)` or `artists(from:)` result. The consequence to know:
+// two groups built from *different* `@Query` snapshots — say an import lands a
+// new track into an album whose detail screen is already pushed — compare equal
+// despite holding different `tracks`. That is inherent to pushing a value-type
+// snapshot rather than an id and re-looking-it-up, not a flaw in this
+// conformance, but it is the thing to revisit if a stale detail screen is ever
+// reported.
+
+extension AlbumGroup: Hashable {
+    static func == (lhs: AlbumGroup, rhs: AlbumGroup) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+extension ArtistGroup: Hashable {
+    static func == (lhs: ArtistGroup, rhs: ArtistGroup) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}

@@ -79,16 +79,6 @@ private struct AlbumCell: View {
 /// `LibraryGrouping.swift`, which this task must not modify, so the
 /// conformance is added here instead. Identity follows `id` — the same
 /// title+artist key `LibraryGrouping` already uses to keep albums distinct.
-extension AlbumGroup: Hashable {
-    static func == (lhs: AlbumGroup, rhs: AlbumGroup) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
 #Preview {
     let container: ModelContainer
     do {
