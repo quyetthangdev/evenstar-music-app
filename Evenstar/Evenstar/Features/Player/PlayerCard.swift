@@ -11,6 +11,24 @@ import SwiftUI
 struct PlayerCard: View {
     let playback: PlaybackService
 
+    /// 0 collapsed on its own row above the tab bar, 1 slotted into the tab
+    /// row between the leading circle and the search button. Interpolated
+    /// rather than a `Bool` so the card can animate between the two.
+    ///
+    /// Three things read it and **all three must**: `collapsedSideMargin`,
+    /// `collapsedBottomOffset`, and — through that offset — `dragTravel`.
+    let minimised: Double
+
+    /// `minimised` defaults so `RootView`, today the only call site, keeps
+    /// compiling untouched; it starts passing a real value in a later task,
+    /// which removes this default. An explicit init is needed because the
+    /// synthesized memberwise one cannot supply the default alongside the
+    /// non-defaulted `playback`.
+    init(playback: PlaybackService, minimised: Double = 0) {
+        self.playback = playback
+        self.minimised = minimised
+    }
+
     /// The collapsed bar's own height. Lists do not read this directly — they
     /// read `BottomBarMetrics.clearanceWithPlayer`, which adds everything below
     /// the floating pill. Do not duplicate this as a literal.
@@ -62,6 +80,38 @@ struct PlayerCard: View {
     @State private var tint: Color?
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
+
+    /// How far the collapsed pill is inset from each screen edge *at collapsed
+    /// rest*: `pillSideMargin` (12) on its own row, widening to
+    /// `BottomBarMetrics.minimisedPlayerInset` (76) as the pill slots into the
+    /// tab row between the leading circle and the search button.
+    ///
+    /// Deliberately free of `progress`. The card's own layout multiplies it by
+    /// `(1 - progress)` at the call site so an expanded card is unaffected; the
+    /// hit region must NOT, and reads this resting value directly behind its
+    /// drag-state gate — see the note at the `.contentShape` call site.
+    private var collapsedSideMargin: CGFloat {
+        Self.pillSideMargin
+            + (BottomBarMetrics.minimisedPlayerInset - Self.pillSideMargin) * CGFloat(minimised)
+    }
+
+    /// Safe-area bottom edge up to the collapsed pill's bottom edge:
+    /// `BottomBarMetrics.playerBottomOffset` (76) on its own row above the tab
+    /// bar, dropping to `BottomBarMetrics.tabBarBottomGap` (12) as the pill
+    /// joins that row.
+    ///
+    /// **This is the one expression both the bottom padding and `dragTravel`
+    /// read.** It exists as a single value precisely because those two have
+    /// drifted apart twice already, and it is now worse than a forgotten
+    /// constant: this distance changes continuously while the user scrolls, so
+    /// a `dragTravel` left reading the literal `playerBottomOffset` would lag
+    /// the finger by 64pt while minimised and by a fraction of that mid-morph.
+    /// Do not restate either half of it anywhere.
+    private var collapsedBottomOffset: CGFloat {
+        BottomBarMetrics.playerBottomOffset
+            + (BottomBarMetrics.tabBarBottomGap - BottomBarMetrics.playerBottomOffset)
+            * CGFloat(minimised)
+    }
 
     /// Spring shared by drag release and `collapse()`, including the fade
     /// that now accompanies `collapse()` when the queue ends (F7) so the
@@ -153,10 +203,13 @@ struct PlayerCard: View {
         let travel = max(fullHeight - Self.collapsedHeight, 1)
         let height = Self.collapsedHeight + travel * progress
         // The collapsed card is a floating pill inset from both screen edges;
-        // the expanded card still spans the display. `sideMargin` is 12 at
-        // progress 0 and exactly 0 at progress 1, so `cardWidth == fullWidth`
-        // when expanded and every layout inside the card is unchanged there.
-        let sideMargin = Self.pillSideMargin * (1 - progress)
+        // the expanded card still spans the display. `sideMargin` is
+        // `collapsedSideMargin` (12 normally, 76 fully minimised) at progress 0
+        // and exactly 0 at progress 1, so `cardWidth == fullWidth` when
+        // expanded and every layout inside the card is unchanged there —
+        // minimisation, like the pill margin it generalises, applies only while
+        // the card is collapsed.
+        let sideMargin = collapsedSideMargin * (1 - progress)
         let cardWidth = fullWidth - sideMargin * 2
         // The size everything laid out *inside* the card measures against.
         // Note this is deliberately NOT what `artworkSide` below is given —
@@ -174,25 +227,37 @@ struct PlayerCard: View {
         // only the pixel-to-progress divisor for the gesture below. The
         // card's top edge doesn't actually travel the full `travel`
         // distance — the bottom padding shortens the visible range by
-        // `insets.bottom` (F3's safe-area inset) *plus*
-        // `BottomBarMetrics.playerBottomOffset` (the tab bar, its gap below,
-        // and the gap between it and the pill) — so using `travel` there made
-        // the card trail the finger by the sum of the two. Both terms must
-        // appear here and in that padding, or they drift apart again — which
-        // has now happened twice. See R2.
+        // `insets.bottom` (F3's safe-area inset) *plus* `collapsedBottomOffset`
+        // (the tab bar, its gap below, and the gap between it and the pill —
+        // shrinking to just that first gap as the pill joins the tab row) — so
+        // using `travel` there made the card trail the finger by the sum of the
+        // two. Both terms must appear here and in that padding, or they drift
+        // apart again — which has now happened twice. See R2.
+        //
+        // The offset is no longer a constant somebody can forget to update in
+        // one of the two places: it moves continuously with `minimised` while
+        // the user scrolls. That is why it is written once, as
+        // `collapsedBottomOffset`, and read here and by the padding rather than
+        // restated. Substituting the literal `playerBottomOffset` back into
+        // either site puts the card 64pt behind the finger while minimised.
         //
         // The derivation that keeps them honest, with the card bottom-aligned
-        // in a full-screen frame whose height this padding shortens:
+        // in a full-screen frame whose height this padding shortens, writing
+        // `bottomOffset` for `collapsedBottomOffset`:
         //
-        //   top(p) = fullHeight − (insets.bottom + playerBottomOffset)(1−p)
+        //   top(p) = fullHeight − (insets.bottom + bottomOffset)(1−p)
         //            − collapsedHeight − (fullHeight − collapsedHeight)p
-        //   top(0) = fullHeight − collapsedHeight − insets.bottom − playerBottomOffset
+        //   top(0) = fullHeight − collapsedHeight − insets.bottom − bottomOffset
         //   top(1) = 0
         //
         // Visible travel is top(0) − top(1), which is exactly the expression
-        // below, term for term. If you change one, change the other.
+        // below, term for term, for *every* value of `bottomOffset` and hence
+        // of `minimised`. On an iPhone 17 (874 / 34 / 56): at minimised 0,
+        // bottomOffset 76, top(0) 708 and dragTravel 708; at minimised 1,
+        // bottomOffset 12, top(0) 772 and dragTravel 772. If you change one,
+        // change the other.
         let dragTravel = max(
-            fullHeight - Self.collapsedHeight - insets.bottom - BottomBarMetrics.playerBottomOffset,
+            fullHeight - Self.collapsedHeight - insets.bottom - collapsedBottomOffset,
             1
         )
 
@@ -260,26 +325,38 @@ struct PlayerCard: View {
         //
         // The same reasoning governs the horizontal dimension, added with the
         // floating pill: at collapsed rest the region is inset by
-        // `pillSideMargin` so the 12pt strips beside the pill fall through to
+        // `collapsedSideMargin` so the strips beside the pill fall through to
         // the library — without it, tapping near a screen edge expands the
         // player. But the inset must come from this same drag-state gate, NOT
         // from the interpolated `sideMargin`: derived from `progress` it would
         // narrow the region mid-drag and drop the finger sideways, exactly the
         // failure described above in the vertical direction.
+        //
+        // `collapsedSideMargin` widens 12 -> 76 with `minimised`, and the rest
+        // inset must follow it. Left at the bare `pillSideMargin`, a minimised
+        // player hit-tests the full width of the row and swallows both the
+        // leading circle and the search button — Đợt A's Critical defect, one
+        // layer down. Note this changes only the region's *horizontal extent at
+        // rest*: `minimised` is not `progress`, it does not move during a drag,
+        // and the `isDragging || progress > 0` gate on both dimensions is
+        // untouched, so the region is still the whole screen for the entire
+        // duration of a drag.
         .contentShape(
             BottomHitRegion(
                 height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight,
-                horizontalInset: isDragging || progress > 0 ? 0 : Self.pillSideMargin
+                horizontalInset: isDragging || progress > 0 ? 0 : collapsedSideMargin
             )
         )
         .gesture(drag(travel: dragTravel))
         .onTapGesture { if progress < 0.5 { expand() } }
         // At progress 0 this holds the card's bottom at the real safe-area
-        // inset plus `BottomBarMetrics.playerBottomOffset`, so the pill floats
-        // clear of the floating tab bar and matches where every list's
-        // `clearanceWithPlayer` spacer stops; at progress 1 it goes to 0 so the
-        // expanded card reaches the physical bottom edge. See F3. `dragTravel`
-        // above must subtract exactly the same two terms — see the note there.
+        // inset plus `collapsedBottomOffset`, so the pill floats clear of the
+        // floating tab bar and matches where every list's `clearanceWithPlayer`
+        // spacer stops — or, once minimised, drops onto the tab row itself; at
+        // progress 1 it goes to 0 so the expanded card reaches the physical
+        // bottom edge. See F3. `dragTravel` above subtracts exactly these same
+        // two terms, reading the very same `collapsedBottomOffset` — see the
+        // note there.
         //
         // It must stay *outside* the frame and the hit region above. Applied
         // here it shortens the height proposed to that frame, so the frame's
@@ -288,7 +365,7 @@ struct PlayerCard: View {
         // with the collapsed bar. Moved inside (padding the card itself), the
         // frame would still span the full screen and the collapsed region
         // would sit `insets.bottom` too low, missing the top of the bar.
-        .padding(.bottom, (insets.bottom + BottomBarMetrics.playerBottomOffset) * (1 - progress))
+        .padding(.bottom, (insets.bottom + collapsedBottomOffset) * (1 - progress))
     }
 
     /// The bottom `height` points of whatever it is applied to, inset by
