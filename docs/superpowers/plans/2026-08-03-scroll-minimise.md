@@ -227,6 +227,16 @@ Add `@State private var isMinimised = false`. Pass it to `FloatingTabBar`, and p
 
 `onRestore` sets it false inside `withAnimation(FloatingTabBar.searchSpring)`. `onOpenSearch` must clear it too — see Task 1 Step 3.
 
+- [ ] **Step 1b: Remove the temporary defaults — required, not optional**
+
+Tasks 1 and 2 each added a default so `RootView` kept compiling while it was off-limits to them: `FloatingTabBar.init` defaults `isMinimised` to `.constant(false)` and `onRestore` to `{}`; `PlayerCard.init` defaults `minimised` to `0`.
+
+Delete all three now that the real call site passes them.
+
+They are not harmless leftovers. A default that silently disables a feature means the next view to construct either type — a new screen, a second root, a preview — gets a bar that never minimises and a player that never moves, with **no compiler error, no test failure, and no visible signal at all**. The whole reason the defaults were acceptable was that they were temporary. Removing them turns a silent misconfiguration into a build error.
+
+If either `init` becomes trivial once its default is gone, delete the explicit `init` and let the memberwise one do the work.
+
 - [ ] **Step 2: Apply the modifier to all seven screens**
 
 `.minimisesBottomBar($isMinimised)` on each screen's scrollable content. The flag lives in `RootView`, so the screens need it passed in — add a `@Binding var isMinimised: Bool` to each rather than reaching for a singleton or an environment object.
@@ -261,5 +271,9 @@ Nothing below is checkable in the simulator — it has no imported tracks, and n
 5. Tapping the leading circle restores the bar.
 6. Tapping the minimised player opens Now Playing.
 7. **Dragging the minimised player up still tracks the finger exactly.** This is the twice-broken behaviour, now with a moving target.
+
+   **One known exception, so it is not misread as a fourth recurrence:** if the bar minimises or restores *while a player drag is already in flight* — a decelerating list still firing scroll events after the finger has moved to the pill — the card moves about 8% less than the finger for the length of one spring, then re-syncs. The padding animates; the divisor jumps on the next body evaluation. It is transient and self-correcting. Suppressing it would mean exposing `PlayerCard`'s private drag state so scroll handling could stand down, which was judged more machinery than a rare half-second warrants. If it turns out to be common in practice, that is the fix.
+
+8. **Landscape.** Rotate and repeat checks 1, 4 and 7. The player measures its horizontal inset from a different edge than the tab bar does — that mismatch is what made the minimised pill overhang and swallow both circles in landscape while portrait looked perfect.
 8. Opening search from the minimised state does not produce a half-minimised, half-searching bar.
 9. It happens on all seven screens, including inside an album and inside an artist.
