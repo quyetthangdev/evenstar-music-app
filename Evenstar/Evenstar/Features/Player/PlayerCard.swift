@@ -81,10 +81,16 @@ struct PlayerCard: View {
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
-    /// How far the collapsed pill is inset from each screen edge *at collapsed
-    /// rest*: `pillSideMargin` (12) on its own row, widening to
+    /// How far the collapsed pill is inset from each edge of the **safe area**
+    /// *at collapsed rest*: `pillSideMargin` (12) on its own row, widening to
     /// `BottomBarMetrics.minimisedPlayerInset` (76) as the pill slots into the
     /// tab row between the leading circle and the search button.
+    ///
+    /// Safe area, not screen: this is the space `FloatingTabBar` divides up,
+    /// and the pill has to land in the slot the bar reserved. `card(size:insets:)`
+    /// adds `insets.leading`/`insets.trailing` to convert it into the physical
+    /// coordinates this view actually lays out in — separately per side, since
+    /// those two are not equal in landscape. See the note there.
     ///
     /// Deliberately free of `progress`. The card's own layout multiplies it by
     /// `(1 - progress)` at the call site so an expanded card is unaffected; the
@@ -202,15 +208,43 @@ struct PlayerCard: View {
         let fullSize = CGSize(width: fullWidth, height: fullHeight)
         let travel = max(fullHeight - Self.collapsedHeight, 1)
         let height = Self.collapsedHeight + travel * progress
-        // The collapsed card is a floating pill inset from both screen edges;
-        // the expanded card still spans the display. `sideMargin` is
-        // `collapsedSideMargin` (12 normally, 76 fully minimised) at progress 0
-        // and exactly 0 at progress 1, so `cardWidth == fullWidth` when
-        // expanded and every layout inside the card is unchanged there —
-        // minimisation, like the pill margin it generalises, applies only while
-        // the card is collapsed.
-        let sideMargin = collapsedSideMargin * (1 - progress)
-        let cardWidth = fullWidth - sideMargin * 2
+        // The collapsed card is a floating pill inset from each edge of the
+        // SAFE AREA; the expanded card still spans the whole display.
+        //
+        // The safe area, not the physical screen, and the two are not the same
+        // space. This view reconstructs `fullWidth` and sits inside
+        // `.ignoresSafeArea()`, so its own coordinates start at the physical
+        // edge — but `FloatingTabBar`, whose row the pill has to slot into,
+        // applies its `.padding(.horizontal, sideMargin)` OUTSIDE its
+        // `GeometryReader` and never ignores the safe area, so the bar divides
+        // up the *safe-area* width. Measuring the pill from the physical edge
+        // therefore placed it `insets.leading`/`insets.trailing` outside the
+        // slot the bar had reserved for it. In portrait those insets are 0 and
+        // the two spaces coincide, which is why this looked correct; in
+        // landscape on an iPhone 17 they are 59, and the minimised pill
+        // overhung the leading circle and the search button by 59pt on each
+        // side — and, being last in `RootView`'s `ZStack`, ate their taps,
+        // including the only tap-to-restore affordance. Đợt A's Critical
+        // defect again, in a supported orientation.
+        //
+        // **Leading and trailing are computed separately and never averaged.**
+        // A single symmetric margin cannot express this: rotate a notched
+        // device one way and the notch's inset lands on one side while the
+        // other side gets only the rounded-corner allowance, so the two are
+        // genuinely unequal. Averaging them, or taking `max`, would centre the
+        // pill in a slot the bar has not centred and reintroduce the overhang
+        // on one side at half the size — harder to see and no less wrong.
+        //
+        // Both are scaled by `(1 - progress)` and so are exactly 0 at
+        // progress 1: `cardWidth == fullWidth` when expanded, the card still
+        // reaches both physical edges, and every layout inside it is unchanged
+        // there. Minimisation, like the pill margin it generalises, applies
+        // only while the card is collapsed.
+        let collapsedLeadingMargin = insets.leading + collapsedSideMargin
+        let collapsedTrailingMargin = insets.trailing + collapsedSideMargin
+        let leadingMargin = collapsedLeadingMargin * (1 - progress)
+        let trailingMargin = collapsedTrailingMargin * (1 - progress)
+        let cardWidth = fullWidth - leadingMargin - trailingMargin
         // The size everything laid out *inside* the card measures against.
         // Note this is deliberately NOT what `artworkSide` below is given —
         // see the comment there.
@@ -292,11 +326,29 @@ struct PlayerCard: View {
         // needs no fade-out — when expanded the card fills the screen, so the
         // shadow is occluded anyway.
         .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        // Positions the card horizontally. It cannot be centred in the frame
+        // below any more: with `leadingMargin` and `trailingMargin` unequal —
+        // which is exactly the landscape case this pair exists for — centring
+        // would split the difference and put the pill in neither the slot the
+        // bar reserved nor anywhere principled. Padding one side and aligning
+        // to the other states the asymmetry directly: the card's leading edge
+        // lands at `leadingMargin`, its trailing edge at `fullWidth -
+        // trailingMargin`, whatever those two happen to be. When they are
+        // equal (every portrait case) this is identical to the centring it
+        // replaces.
+        //
+        // Inside the flexible frame, not outside it, for the same reason the
+        // bottom padding is outside: this one must move the card *within* the
+        // full-width region, while that one must shorten the region itself.
+        .padding(.leading, leadingMargin)
         // The card is laid out bottom-aligned in a full-screen frame, and
         // hit-testing binds to *that* frame rather than to the card, so the
         // region's size is ours to choose instead of being whatever the card
-        // currently measures.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // currently measures. The frame still spans the full width — only the
+        // alignment moved, from `.bottom` to `.bottomLeading`, so the padding
+        // above resolves against the leading edge rather than being centred
+        // away.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         // This line has now been wrong in BOTH directions, so read before you
         // touch it.
         //
@@ -338,13 +390,22 @@ struct PlayerCard: View {
         // leading circle and the search button — Đợt A's Critical defect, one
         // layer down. Note this changes only the region's *horizontal extent at
         // rest*: `minimised` is not `progress`, it does not move during a drag,
-        // and the `isDragging || progress > 0` gate on both dimensions is
+        // and the `isDragging || progress > 0` gate on all three dimensions is
         // untouched, so the region is still the whole screen for the entire
         // duration of a drag.
+        //
+        // The two sides are passed separately and read the *collapsed* margins,
+        // not `leadingMargin`/`trailingMargin`: those carry the `(1 - progress)`
+        // factor, and a region that narrows with `progress` would drop the
+        // finger sideways mid-drag — the failure described above, in the
+        // horizontal direction. These two are functions of `minimised` and the
+        // safe area only. They must match the card's own edges exactly, or the
+        // region and the pill disagree about where the pill is.
         .contentShape(
             BottomHitRegion(
                 height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight,
-                horizontalInset: isDragging || progress > 0 ? 0 : collapsedSideMargin
+                leadingInset: isDragging || progress > 0 ? 0 : collapsedLeadingMargin,
+                trailingInset: isDragging || progress > 0 ? 0 : collapsedTrailingMargin
             )
         )
         .gesture(drag(travel: dragTravel))
@@ -369,21 +430,34 @@ struct PlayerCard: View {
     }
 
     /// The bottom `height` points of whatever it is applied to, inset by
-    /// `horizontalInset` on each side.
+    /// `leadingInset` and `trailingInset` on the respective sides.
     ///
     /// Used instead of `Rectangle()` so the hit region's size can be chosen
     /// by state rather than inherited from the card's current size. See the
     /// note at the `.contentShape` call site.
+    ///
+    /// The two insets are separate rather than one `horizontalInset` because
+    /// the safe area they now include is not symmetric: in landscape on a
+    /// notched device one side carries the notch's inset and the other does
+    /// not. A single number would have to average them and would leave the
+    /// region overhanging the tab bar's circles on one side.
+    ///
+    /// `path(in:)` has no access to the environment, so `leadingInset` is
+    /// applied at `rect.minX` — correct under a left-to-right layout, which is
+    /// the only direction this app currently ships. If it is ever localised
+    /// right-to-left the card's own `.padding(.leading, …)` would flip and this
+    /// would not, so the two would have to be reconciled here.
     private struct BottomHitRegion: Shape {
         var height: CGFloat
-        var horizontalInset: CGFloat
+        var leadingInset: CGFloat
+        var trailingInset: CGFloat
 
         func path(in rect: CGRect) -> Path {
             Path(
                 CGRect(
-                    x: rect.minX + horizontalInset,
+                    x: rect.minX + leadingInset,
                     y: rect.maxY - height,
-                    width: rect.width - horizontalInset * 2,
+                    width: rect.width - leadingInset - trailingInset,
                     height: height
                 )
             )
