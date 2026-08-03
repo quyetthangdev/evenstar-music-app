@@ -51,6 +51,22 @@ struct FloatingTabBar: View {
     /// separating the selected item from the bar around it.
     private static let selectionWash = 0.10
 
+    /// How far the selected item's capsule sits inside the pill, on every side.
+    ///
+    /// A uniform inset is what makes the two shapes **concentric**, which is
+    /// how the real thing looks. The pill is `tabBarHeight` tall, so its caps
+    /// have radius `tabBarHeight / 2` = 28 and its leading cap is centred at
+    /// (28, 28). Inset the inner capsule by 6 on every side and it is 44 tall,
+    /// radius 22, with its leading cap centred at (6 + 22, 6 + 22) — the same
+    /// point. The two curves stay parallel instead of drifting apart.
+    ///
+    /// This only holds if the selected item's backing fills its whole slot and
+    /// is then inset. Sizing it to hug the icon and label instead — padding
+    /// around the content — makes its width depend on how long each label is
+    /// and pulls its leading edge away from the pill's curve, which is what
+    /// this replaced.
+    private static let selectionInset: CGFloat = 6
+
     var body: some View {
         HStack(spacing: BottomBarMetrics.tabBarSearchGap) {
             pill
@@ -72,18 +88,19 @@ struct FloatingTabBar: View {
                             .font(.caption2)
                     }
                     .foregroundStyle(selection == tab ? .primary : .secondary)
-                    // Padding then background then the flexible frame, in that
-                    // order: the wash hugs the icon and label, while the
-                    // button still fills its share of the width so the whole
-                    // column stays tappable rather than only the wash.
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 12)
+                    // Fill the slot first, then inset the backing — see
+                    // `selectionInset`. Doing it the other way round (padding
+                    // the content and letting the capsule hug it) sizes the
+                    // backing to the label's length and breaks the concentric
+                    // curve at the pill's leading edge.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background {
                         if selection == tab {
-                            Capsule().fill(Color.primary.opacity(Self.selectionWash))
+                            Capsule()
+                                .fill(Color.primary.opacity(Self.selectionWash))
+                                .padding(Self.selectionInset)
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
                 // `.isButton` is restated alongside `.isSelected` only so
