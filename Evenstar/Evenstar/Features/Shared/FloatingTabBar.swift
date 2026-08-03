@@ -105,6 +105,22 @@ struct FloatingTabBar: View {
     /// gesture — much more and the two halves read as separate events.
     private static let stagger = 0.10
 
+    /// How far each tab's reveal trails the one before it as the pill grows
+    /// back. The pill expands from its leading edge, so its trailing edge
+    /// sweeps past Bài hát, then Album, then Nghệ sĩ — and each tab should
+    /// arrive as the edge reaches it, not before, or it appears in space the
+    /// pill has not covered yet.
+    ///
+    /// Chosen to sit roughly where the sweeping edge is, not derived from it:
+    /// reading the capsule's live width mid-animation would need a
+    /// `GeometryReader` feeding state back into the same layout pass. Tune by
+    /// eye — larger if the tabs still arrive early.
+    private static let tabRevealStep = 0.08
+
+    /// What each tab grows from. Small enough to read as arriving, large
+    /// enough that the glyph never looks like a dot.
+    private static let tabRevealScale = 0.55
+
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
     private var barHeight: CGFloat {
@@ -183,8 +199,10 @@ struct FloatingTabBar: View {
     /// respond from behind the collapsed circle.
     private var leadingCapsule: some View {
         ZStack {
+            // No opacity here: each tab fades and scales on its own schedule,
+            // inside `tabsRow`. Hit-testing and accessibility stay at row
+            // level, since those flip for the whole row at once.
             tabsRow
-                .opacity(isSearching ? 0 : 1)
                 .allowsHitTesting(!isSearching)
                 .accessibilityHidden(isSearching)
 
@@ -228,9 +246,12 @@ struct FloatingTabBar: View {
             .accessibilityHidden(!isSearching)
     }
 
+    /// Each tab scales up in place as the pill's edge reaches it, rather than
+    /// the row cross-fading as one — which put all three on screen while the
+    /// pill was still a circle, in space it had not grown into yet.
     private var tabsRow: some View {
         HStack(spacing: 0) {
-            ForEach(LibraryTab.pillTabs) { tab in
+            ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
                     selection = tab
                 } label: {
@@ -263,8 +284,25 @@ struct FloatingTabBar: View {
                 // it. `.isSelected` is what makes VoiceOver announce which
                 // tab is current.
                 .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
+                // Scaled about its own centre, so it grows where it belongs
+                // instead of sliding in from anywhere.
+                .scaleEffect(isSearching ? Self.tabRevealScale : 1)
+                .opacity(isSearching ? 0 : 1)
+                .animation(
+                    Self.searchSpring.delay(Self.tabRevealDelay(index, isSearching: isSearching)),
+                    value: isSearching
+                )
             }
         }
+    }
+
+    /// Collapsing, the three go together and get out of the way — the pill is
+    /// shrinking past them and anything left behind would be clipped mid-fade.
+    /// Expanding, they arrive one after another, trailing the capsule's own
+    /// delay so the first tab is not already there when the pill starts to
+    /// grow.
+    private static func tabRevealDelay(_ index: Int, isSearching: Bool) -> Double {
+        isSearching ? 0 : stagger + Double(index) * tabRevealStep
     }
 
     private var searchRow: some View {
