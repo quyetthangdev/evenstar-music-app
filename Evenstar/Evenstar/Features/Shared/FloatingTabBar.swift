@@ -45,6 +45,10 @@ struct FloatingTabBar: View {
     /// Drives the morph between the three-tab bar and the search field.
     @Binding var isSearching: Bool
     @Binding var query: String
+    /// Mirrors the field's focus outward, so callers can react to the keyboard
+    /// actually being up rather than guessing from `isSearching`. The two are
+    /// not the same: search opens without the keyboard.
+    @Binding var isEditing: Bool
 
     /// Called when the trailing button opens search.
     let onOpenSearch: () -> Void
@@ -96,12 +100,16 @@ struct FloatingTabBar: View {
             trailingButton
         }
         .padding(.horizontal, BottomBarMetrics.sideMargin)
-        // The field is in the hierarchy in both states so the pill's frame can
-        // animate through the change instead of one subtree being torn down and
-        // another built. Focus therefore has to be driven explicitly — an
-        // offscreen field neither takes nor gives up the keyboard on its own.
+        // Opening search deliberately does NOT raise the keyboard: the user
+        // sees the field and taps it when they want to type. Closing does have
+        // to drop focus explicitly, or the keyboard outlives the field that
+        // owns it — the field stays in the hierarchy at opacity 0 rather than
+        // being torn down, so it never loses focus on its own.
         .onChange(of: isSearching) { _, searching in
-            queryFocused = searching
+            if !searching { queryFocused = false }
+        }
+        .onChange(of: queryFocused) { _, focused in
+            isEditing = focused
         }
     }
 
@@ -249,6 +257,7 @@ private struct FloatingTabBarPreview: View {
     @State private var selection: LibraryTab = .albums
     @State private var isSearching = false
     @State private var query = ""
+    @State private var isEditing = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -263,6 +272,7 @@ private struct FloatingTabBarPreview: View {
                 selection: $selection,
                 isSearching: $isSearching,
                 query: $query,
+                isEditing: $isEditing,
                 onOpenSearch: {
                     withAnimation(FloatingTabBar.searchSpring) {
                         selection = .search
