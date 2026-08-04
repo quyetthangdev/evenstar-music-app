@@ -115,11 +115,15 @@ struct PlayerCard: View {
             * CGFloat(minimised)
     }
 
-    /// Spring shared by drag release and `collapse()`, including the fade
-    /// that now accompanies `collapse()` when the queue ends (F7) so the
-    /// card disappears on the same curve it moves on. `expand()` keeps its
-    /// own slightly snappier spring.
-    private static let settleSpring = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    // The spring that used to live here is now `BottomBarStyle.settle`, shared
+    // with `expand()` and with the fade that accompanies `collapse()` when the
+    // queue ends (F7), so the card disappears on the same curve it moves on.
+    //
+    // `expand()` used to define its own inline, described in a comment as
+    // "slightly snappier". Converted to the same units the rest of the app uses
+    // — 0.42/0.14 against 0.45/0.15 — the two differed by three hundredths of a
+    // second, and the "snappier" one was the slower. The distinction was not
+    // real, so there is now one spring.
 
     /// The expanded artwork's actual side, derived from the space available
     /// rather than trusting the `expandedArtwork` constant blindly.
@@ -179,7 +183,7 @@ struct PlayerCard: View {
                 }
         }
         .opacity(playback.currentTrack == nil ? 0 : 1)
-        .animation(Self.settleSpring, value: playback.currentTrack == nil)
+        .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         .allowsHitTesting(playback.currentTrack != nil)
         // Nothing is announced or focusable while the card is invisible —
         // without this a screen reader can still reach the "—" title, the
@@ -604,7 +608,7 @@ struct PlayerCard: View {
                 // moved. Comparing raw distance is what makes hand-rolled
                 // sheets feel heavy.
                 let predicted = settled - value.predictedEndTranslation.height / travel
-                withAnimation(Self.settleSpring) {
+                withAnimation(BottomBarStyle.settle) {
                     settled = predicted > 0.5 ? 1 : 0
                     dragDelta = 0
                 }
@@ -612,14 +616,14 @@ struct PlayerCard: View {
     }
 
     private func expand() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+        withAnimation(BottomBarStyle.settle) {
             settled = 1
             dragDelta = 0
         }
     }
 
     private func collapse() {
-        withAnimation(Self.settleSpring) {
+        withAnimation(BottomBarStyle.settle) {
             settled = 0
             dragDelta = 0
         }

@@ -43,7 +43,7 @@ struct ScrubberBar: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .highPriorityGesture(drag(width: geo.size.width))
-                .animation(.easeOut(duration: 0.15), value: isDragging)
+                .animation(BottomBarStyle.control, value: isDragging)
             }
             .frame(height: Self.touchHeight)
 
@@ -76,7 +76,7 @@ struct ScrubberBar: View {
         .font(.caption)
         .foregroundStyle(isDragging ? Color.primary : Color.secondary)
         .monospacedDigit()
-        .animation(.easeOut(duration: 0.15), value: isDragging)
+        .animation(BottomBarStyle.control, value: isDragging)
     }
 
     /// `minimumDistance: 0` so a tap seeks, as Apple Music does. Combined with

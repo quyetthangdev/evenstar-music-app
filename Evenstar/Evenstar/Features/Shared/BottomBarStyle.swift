@@ -53,6 +53,30 @@ enum BottomBarStyle {
     /// staging a second performance inside it.
     static let content = Animation.spring(duration: 0.34, bounce: 0.20)
 
+    /// A surface settling after the user let go of it, or moving to an end
+    /// state they asked for: the player card released mid-drag, collapsing when
+    /// the queue empties, expanding on a tap.
+    ///
+    /// Longer and much calmer than `morph`. That one is a surface rearranging
+    /// itself while the user watches; this one finishes a gesture the user was
+    /// steering, and overshoot there fights the hand that just let go rather
+    /// than decorating it.
+    ///
+    /// This replaced two springs that claimed to be different and were not:
+    /// `response: 0.42, dampingFraction: 0.86` for the settle and
+    /// `response: 0.45, dampingFraction: 0.85` for the expand — 0.42/0.14 and
+    /// 0.45/0.15 in these units, a difference of three hundredths of a second
+    /// and one hundredth of bounce. A comment described the second as
+    /// "snappier"; it was in fact the slower of the two.
+    static let settle = Animation.spring(duration: 0.42, bounce: 0.14)
+
+    /// A control inside one of these surfaces reacting to touch — the
+    /// scrubber swelling under a finger.
+    ///
+    /// A curve, not a spring: it is a state change on a small element, not a
+    /// mass arriving somewhere, and a bounce on a 5pt height change is noise.
+    static let control = Animation.easeOut(duration: 0.15)
+
     // MARK: - Surface
 
     /// What lifts a floating surface off the content behind it.
