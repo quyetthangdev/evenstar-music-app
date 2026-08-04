@@ -6,6 +6,11 @@ import SwiftUI
 struct MiniPlayerChrome: View {
     let playback: PlaybackService
 
+    /// Counts taps on Next so the tap effect retriggers on every press. A
+    /// `Bool` would fire once and then sit at `true`, doing nothing for the
+    /// second tap.
+    @State private var nextTaps = 0
+
     var body: some View {
         if let current = playback.currentTrack {
             // Scaled to the shorter pill: type one step down, and 32pt hit
@@ -33,11 +38,17 @@ struct MiniPlayerChrome: View {
                 }
                 .buttonStyle(.plain)
                 Button {
+                    nextTaps += 1
                     playback.next()
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.body)
                         .frame(width: 32, height: 32)
+                        // Fires on the tap, not on the track changing:
+                        // `playback.next()` at the end of a queue stops rather
+                        // than advancing, and the button should still
+                        // acknowledge the press it received.
+                        .transportTapEffect(trigger: nextTaps, direction: 1)
                 }
                 .buttonStyle(.plain)
                 .disabled(playback.queueIndex >= playback.queue.count - 1)

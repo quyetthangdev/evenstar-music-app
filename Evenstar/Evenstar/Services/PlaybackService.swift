@@ -90,7 +90,12 @@ final class PlaybackService {
             queueIndex += 1
             playCountedForCurrent = false
             loadCurrentAndPlay()
-            persistImmediately()
+            // Deferred for the same reason `pause()`/`resume()` defer theirs:
+            // a SwiftData write between the tap and the next render is felt as
+            // button latency. `loadCurrentAndPlay` has already pushed the new
+            // track to the lock screen synchronously, so nothing user-visible
+            // waits on this.
+            deferPersist()
         } else {
             stopPlayback()
         }
@@ -256,6 +261,7 @@ final class PlaybackService {
                 isPlaying = false
             }
             pushNowPlaying()
+            loadArtworkIntoNowPlaying(for: track)
             return
         }
         stopPlayback()
@@ -353,6 +359,12 @@ final class PlaybackService {
         }
     }
 
+    /// The persist half alone, for callers that have already pushed to the lock
+    /// screen synchronously and only need the disk write moved off the tap.
+    private func deferPersist() {
+        Task { @MainActor in persistImmediately() }
+    }
+
     private func pushNowPlaying() {
         guard let metadata = currentMetadata else { return }
         nowPlaying.update(
@@ -366,19 +378,62 @@ final class PlaybackService {
         )
     }
 
+    /// Everything except the artwork — all of it already in memory, so it costs
+    /// nothing to build while the user's finger is still on the button.
+    ///
+    /// The artwork used to be read and decoded here, synchronously, on every
+    /// track change. That put a file read and a full-size `UIImage` decode
+    /// between a tap on Next and anything happening on screen. It arrives
+    /// separately now; see `loadArtworkIntoNowPlaying`.
     private func metadata(from track: Track) -> TrackMetadata {
-        var artwork: UIImage? = nil
-        if let path = track.artworkRelativePath,
-           let data = try? Data(contentsOf: FileLocation.absoluteURL(forRelative: path)) {
-            artwork = UIImage(data: data)
-        }
-        return TrackMetadata(
+        TrackMetadata(
             title: track.title,
             artist: track.artistName,
             album: track.albumTitle,
-            artwork: artwork,
+            artwork: nil,
             durationSeconds: track.durationSeconds
         )
+    }
+
+    /// Fills the artwork in behind the tap and pushes again.
+    ///
+    /// The lock screen gets title, artist and album immediately and the picture
+    /// a moment later, which is the right trade: the text is what tells the user
+    /// the track changed, and it no longer waits on a decode.
+    ///
+    /// Guarded on the track's id, because a user holding Next changes track
+    /// faster than a decode finishes — without it, a late decode would put the
+    /// previous track's cover under the current track's title.
+    private func loadArtworkIntoNowPlaying(for track: Track) {
+        let path = track.artworkRelativePath
+        let id = track.id
+        Task { @MainActor in
+            guard let image = await Self.decodeArtwork(path) else { return }
+            guard currentTrack?.id == id, let current = currentMetadata else { return }
+            currentMetadata = TrackMetadata(
+                title: current.title,
+                artist: current.artist,
+                album: current.album,
+                artwork: image,
+                durationSeconds: current.durationSeconds
+            )
+            pushNowPlaying()
+        }
+    }
+
+    /// `@concurrent`, not a bare `nonisolated async`. Under this project's
+    /// `SWIFT_APPROACHABLE_CONCURRENCY` setting the latter inherits its
+    /// caller's executor, so called from the main actor it would decode on the
+    /// main thread and change nothing. Same reasoning as `ArtworkStore`.
+    ///
+    /// Takes a path rather than a `Track`: `Track` is a SwiftData `@Model`,
+    /// neither `Sendable` nor safe to touch from another executor.
+    @concurrent
+    private static func decodeArtwork(_ relativePath: String?) async -> UIImage? {
+        guard let relativePath,
+              let data = try? Data(contentsOf: FileLocation.absoluteURL(forRelative: relativePath))
+        else { return nil }
+        return UIImage(data: data)
     }
 
     private func activateSessionIfNeeded() {
