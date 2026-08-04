@@ -13,7 +13,7 @@ import CoreGraphics
 /// Both formulas must read these values. Never restate the arithmetic.
 enum BottomBarMetrics {
     static let sideMargin: CGFloat = 12
-    static let tabBarHeight: CGFloat = 56
+    static let tabBarHeight: CGFloat = 50
     static let tabBarBottomGap: CGFloat = 12
     /// Between the tab bar's top edge and the collapsed player's bottom edge.
     static let playerTabGap: CGFloat = 8

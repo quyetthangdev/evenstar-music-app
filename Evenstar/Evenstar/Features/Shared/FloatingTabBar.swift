@@ -132,10 +132,13 @@ struct FloatingTabBar: View {
     ///
     /// A uniform inset is what makes the two shapes **concentric**, which is
     /// how the real thing looks. The pill is `tabBarHeight` tall, so its caps
-    /// have radius `tabBarHeight / 2` = 28 and its leading cap is centred at
-    /// (28, 28). Inset the inner capsule by 6 on every side and it is 44 tall,
-    /// radius 22, with its leading cap centred at (6 + 22, 6 + 22) — the same
+    /// have radius `tabBarHeight / 2` = 25 and its leading cap is centred at
+    /// (25, 25). Inset the inner capsule by 6 on every side and it is 38 tall,
+    /// radius 19, with its leading cap centred at (6 + 19, 6 + 19) — the same
     /// point. The two curves stay parallel instead of drifting apart.
+    ///
+    /// The inset survives a change in `tabBarHeight` for free: both radii shrink
+    /// by the same amount, so the centres stay coincident whatever the height.
     ///
     /// This only holds if the selected item's backing fills its whole slot and
     /// is then inset. Sizing it to hug the icon and label instead — padding
