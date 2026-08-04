@@ -142,69 +142,23 @@ struct FloatingTabBar: View {
     /// and the glyph lands somewhere neither of them is.
     private static let activeGlyphID = "active-tab-glyph"
 
-    /// The wash's slide between tabs. Its own spring, not `searchSpring`.
-    ///
-    /// They are different motions with different jobs: the bar's morph is
-    /// scenery rearranging itself and should get out of the way, while this is
-    /// direct feedback for a tap the user just made and can afford to be more
-    /// alive. The higher bounce is what gives it the liquid overshoot — it
-    /// arrives past the new tab and comes back — which a calmer curve reads as
-    /// merely sliding.
-    private static let selectionSpring = Animation.spring(duration: 0.38, bounce: 0.34)
-
-    /// The morph between the tab row and the search field. Owned here rather
-    /// than by each caller so the bar cannot animate on two different curves
-    /// depending on which button was pressed.
-    ///
-    /// Written as `duration`/`bounce` rather than `response`/`dampingFraction`.
-    /// The two describe the same family of springs, but this pair says what it
-    /// does: `duration` is roughly how long the move takes, and `bounce` is how
-    /// far it overshoots before settling — 0 stops dead on arrival, 0.3 gives a
-    /// visible spring past the target and back. The older pair inverts that
-    /// second axis (higher damping means *less* bounce), which is what makes it
-    /// awkward to tune by feel.
-    ///
-    /// The two axes are not independent in the way the names suggest. Bounce
-    /// is a *proportion* of the duration, so shortening the spring makes the
-    /// same `bounce` read as flatter — the overshoot is still there, but it
-    /// happens over less time and the eye reads less of it. Dropping 0.45 to
-    /// 0.32 therefore took springiness out on its own, before `bounce` was
-    /// touched at all; 0.30 here is close to the original number but over a
-    /// shorter spring, which nets out springier per second and quicker
-    /// overall.
-    ///
-    /// Much past 0.4 it wobbles rather than settles — and well before that it
-    /// starts to *arrive* hard: a high bounce over a short duration returns
-    /// from its overshoot fast, which reads as a snap at the end rather than a
-    /// settle. Softening that means easing back on `bounce` and giving the
-    /// spring slightly longer to land, which is why these two moved together.
-    ///
-    /// Raise `duration` and everything below has to move with it — see
-    /// `stagger`.
-    static let searchSpring = Animation.spring(duration: 0.36, bounce: 0.24)
-
     /// How far the field's growth trails the tab pill's collapse, and the
     /// reverse on the way back. Short enough that the bar still feels like one
     /// gesture — much more and the two halves read as separate events.
     ///
-    /// It is a fraction of `searchSpring`'s duration, not an absolute time.
-    /// Shortening the spring without shortening this leaves the delay
+    /// It is a fraction of `BottomBarStyle.morph`'s duration, not an absolute
+    /// time. Shortening that spring without shortening this leaves the delay
     /// occupying most of the animation, so the field straggles in after the
     /// movement it was meant to be part of.
     ///
     /// It doubles as the tab row's fade delay on the way back in, so the tabs
     /// do not start appearing before the capsule has begun to grow.
-    private static let stagger = 0.07
-
-    /// The tab row's shrink-and-fade, on **one** animation so the two move
-    /// together rather than as two events. A spring, not a curve, because the
-    /// shrink is meant to have some give — the opacity rides along and simply
-    /// clamps at either end, which costs nothing.
     ///
-    /// Slightly quicker and calmer than `searchSpring`: the capsule collapsing
-    /// around them is the main gesture, and the glyphs should feel carried by
-    /// it rather than staging a second performance inside it.
-    private static let tabRevealSpring = Animation.spring(duration: 0.34, bounce: 0.20)
+    /// The three springs this file used to define — the morph, the wash's
+    /// slide, and the content's shrink — now live in `BottomBarStyle`, so the
+    /// collapsed player and anything added down here later move on the same
+    /// curves as this bar rather than on their own.
+    private static let stagger = 0.07
 
     /// What the tabs shrink to as the pill closes, and grow from as it opens.
     ///
@@ -275,7 +229,7 @@ struct FloatingTabBar: View {
                     - BottomBarMetrics.tabBarHeight
             )
             .animation(
-                Self.searchSpring.delay(isCollapsed ? 0 : Self.stagger),
+                BottomBarStyle.morph.delay(isCollapsed ? 0 : Self.stagger),
                 value: isCollapsed
             )
 
@@ -315,12 +269,12 @@ struct FloatingTabBar: View {
             searchCapsule
                 .padding(.trailing, isCollapsed ? BottomBarMetrics.tabBarSearchGap : 0)
                 .animation(
-                    Self.searchSpring.delay(isCollapsed ? Self.stagger : 0),
+                    BottomBarStyle.morph.delay(isCollapsed ? Self.stagger : 0),
                     value: isCollapsed
                 )
 
             trailingButton
-                .animation(Self.searchSpring, value: isSearching)
+                .animation(BottomBarStyle.morph, value: isSearching)
         }
     }
 
@@ -393,6 +347,9 @@ struct FloatingTabBar: View {
         // capsule while it is collapsed, and without the clip those tabs draw
         // straight across the search field beside it.
         .clipShape(Capsule())
+        // After the clip, so the shadow falls outside the capsule instead of
+        // being clipped away with the overhanging tabs.
+        .floatingBarShadow()
     }
 
     /// Sized to the collapsed circle rather than filling. In a leading-aligned
@@ -472,6 +429,11 @@ struct FloatingTabBar: View {
             .frame(height: barHeight)
             .background(.regularMaterial, in: Capsule())
             .clipShape(Capsule())
+            // Before the opacity, so the shadow fades out with the capsule
+            // rather than lingering under an invisible surface — and it costs
+            // nothing while minimised, where this is invisible anyway and the
+            // player's own shadow is doing the lifting in this slot.
+            .floatingBarShadow()
             .opacity(isSearching ? 1 : 0)
             .allowsHitTesting(isSearching)
             .accessibilityHidden(!isSearching)
@@ -484,7 +446,7 @@ struct FloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
-                    withAnimation(Self.selectionSpring) { selection = tab }
+                    withAnimation(BottomBarStyle.selection) { selection = tab }
                 } label: {
                     VStack(spacing: 4) {
                         // The active tab's glyph is the one that survives the
@@ -572,7 +534,7 @@ struct FloatingTabBar: View {
                 .scaleEffect(isCollapsed ? Self.tabRevealScale : 1)
                 .opacity(isCollapsed ? 0 : 1)
                 .animation(
-                    Self.tabRevealSpring.delay(isCollapsed ? 0 : Self.stagger),
+                    BottomBarStyle.content.delay(isCollapsed ? 0 : Self.stagger),
                     value: isCollapsed
                 )
             }
@@ -631,6 +593,7 @@ struct FloatingTabBar: View {
                             Circle().fill(Color.primary.opacity(Self.selectionWash))
                         }
                     }
+                    .floatingBarShadow()
                 }
         }
         .buttonStyle(.plain)
@@ -671,7 +634,7 @@ private struct FloatingTabBarPreview: View {
             // transition's timing on the caller's behalf.
             VStack {
                 Button(isMinimised ? "Restore" : "Minimise") {
-                    withAnimation(FloatingTabBar.searchSpring) {
+                    withAnimation(BottomBarStyle.morph) {
                         isMinimised.toggle()
                     }
                 }
@@ -698,7 +661,7 @@ private struct FloatingTabBarPreview: View {
                     query = ""
                 },
                 onRestore: {
-                    withAnimation(FloatingTabBar.searchSpring) {
+                    withAnimation(BottomBarStyle.morph) {
                         isMinimised = false
                     }
                 }

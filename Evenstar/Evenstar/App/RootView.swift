@@ -118,7 +118,7 @@ struct RootView: View {
                 // morph uses, so the two bottom-bar transitions read as one
                 // system. `ScrollMinimise` wraps its own writes identically.
                 onRestore: {
-                    withAnimation(FloatingTabBar.searchSpring) {
+                    withAnimation(BottomBarStyle.morph) {
                         isMinimised = false
                     }
                 }
@@ -156,7 +156,7 @@ struct RootView: View {
                 .opacity(isEditing ? 0 : 1)
                 .allowsHitTesting(!isEditing)
                 .accessibilityHidden(isEditing)
-                .animation(FloatingTabBar.searchSpring, value: isEditing)
+                .animation(BottomBarStyle.morph, value: isEditing)
                 // Every other writer of `isMinimised` — the scroll modifier and
                 // `onRestore` above — already wraps its write in this spring,
                 // and for those this modifier is a no-op restating the same
@@ -168,7 +168,7 @@ struct RootView: View {
                 // to `minimised:` above — `isSearching` toggling can change
                 // that value even on a frame where the raw `isMinimised` does
                 // not, and the animation must key on what the card receives.
-                .animation(FloatingTabBar.searchSpring, value: isMinimisedActive)
+                .animation(BottomBarStyle.morph, value: isMinimisedActive)
         }
         // Restoring the saved queue is an app-launch concern, so it belongs on
         // the root and not on any one tab. On Bài hát it would work only by

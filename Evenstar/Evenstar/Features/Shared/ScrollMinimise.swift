@@ -94,7 +94,7 @@ private struct ScrollMinimiseModifier: ViewModifier {
     /// restart from happening at all.
     private func setMinimised(_ value: Bool) {
         guard isMinimised != value else { return }
-        withAnimation(FloatingTabBar.searchSpring) {
+        withAnimation(BottomBarStyle.morph) {
             isMinimised = value
         }
     }

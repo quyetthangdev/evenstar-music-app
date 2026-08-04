@@ -314,14 +314,18 @@ struct PlayerCard: View {
                     + (Self.expandedCornerRadius - Self.collapsedCornerRadius) * progress
             )
         )
-        // Lifts the collapsed pill off the list behind it. Colour, radius and
-        // offset are deliberately CONSTANT and must not be interpolated with
-        // `progress`: this view moves every frame during a drag, and animating
-        // a shadow on it forces a fresh offscreen pass per frame. This shadow
-        // is the first thing to remove if drag performance regresses. It also
-        // needs no fade-out — when expanded the card fills the screen, so the
+        // Lifts the collapsed pill off the list behind it, with the same shadow
+        // the tab bar's surfaces use — they share a screen, and while minimised
+        // they share a row, so a lift on one and none on the other is visible
+        // immediately. Shared rather than restated so a surface added later
+        // cannot land with a slightly different one.
+        //
+        // Its colour, radius and offset are constant by design and must not be
+        // interpolated with `progress`: this view moves every frame during a
+        // drag, and animating a shadow forces a fresh offscreen pass each time.
+        // No fade-out is needed — expanded, the card fills the screen and the
         // shadow is occluded anyway.
-        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .floatingBarShadow()
         // Positions the card horizontally. It cannot be centred in the frame
         // below any more: with `leadingMargin` and `trailingMargin` unequal —
         // which is exactly the landscape case this pair exists for — centring
