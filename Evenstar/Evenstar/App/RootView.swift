@@ -147,8 +147,27 @@ struct RootView: View {
                 hasTrack: playback.currentTrack != nil,
                 onOpenSearch: {
                     tabBeforeSearch = tab
-                    tab = .search
+                    // The bar morphs first; the tab switches on the next turn.
+                    //
+                    // `TabView` builds a tab's content lazily, so the first
+                    // switch to `.search` constructs `SearchView` and runs its
+                    // `@Query` over the whole library. Done in the same turn as
+                    // `isSearching`, that work lands between the tap and the
+                    // frame that would have shown the morph starting — so the
+                    // bar visibly stalls, once per launch.
+                    //
+                    // Every tab pays that cost on its first open. Search is
+                    // simply the only one with an animation attached, which is
+                    // what makes the delay visible rather than reading as an
+                    // ordinary tab switch.
+                    //
+                    // Splitting the two lets the morph start on the tap's own
+                    // frame. For one turn the bar is in search mode over the
+                    // previous tab's content, which is a frame nobody sees and
+                    // is the right way round anyway: the old screen stays until
+                    // the field is ready to replace it.
                     isSearching = true
+                    Task { @MainActor in tab = .search }
                 },
                 onCloseSearch: { destination in
                     tab = destination ?? tabBeforeSearch
