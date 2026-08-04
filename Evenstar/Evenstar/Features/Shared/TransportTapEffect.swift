@@ -46,9 +46,9 @@ extension View {
 
 /// A transport arrow that hands over to a fresh copy of itself when tapped.
 ///
-/// Two glyphs, not one. The outgoing copy slides the way the arrow points and
-/// fades out; a second copy comes in from the opposite side, fading up as the
-/// first goes, and springs into place.
+/// Two glyphs, not one. A fresh copy arrives from the side the arrow points at,
+/// fading up and springing into place, while the copy it replaces is pushed off
+/// the far side, fading out.
 ///
 /// This replaced a single glyph that slid out and wrapped around via a
 /// `MoveKeyframe`. A wrap has to teleport — keyframes interpolate, so the jump
@@ -70,8 +70,12 @@ struct TransportArrow: View {
     /// the slide is clipped to.
     let side: CGFloat
     let trigger: Int
-    /// `1` for a control that moves forward, `-1` for one that moves back, so
-    /// the glyph travels the way its own arrow points.
+    /// `1` for a control that moves forward, `-1` for one that moves back.
+    ///
+    /// This is the side the *replacement* arrives from, not the side the old
+    /// glyph leaves towards. Tapping Next brings the new glyph in from the
+    /// right and pushes the old one off to the left, the way the next item in a
+    /// list arrives; Previous mirrors it.
     let direction: CGFloat
     let travel: CGFloat
 
@@ -109,7 +113,8 @@ struct TransportArrow: View {
                 view.offset(x: leg.offset).opacity(leg.opacity)
             } keyframes: { _ in
                 KeyframeTrack(\.offset) {
-                    SpringKeyframe(direction * travel, duration: 0.30, spring: Self.slide)
+                    // Away from the side the replacement comes from.
+                    SpringKeyframe(-direction * travel, duration: 0.30, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
                     LinearKeyframe(0, duration: 0.16)
@@ -128,9 +133,10 @@ struct TransportArrow: View {
                 view.offset(x: leg.offset).opacity(leg.opacity)
             } keyframes: { _ in
                 KeyframeTrack(\.offset) {
-                    // Jumps behind, on the side the outgoing copy is leaving
-                    // from, while still transparent — so the jump is unseen.
-                    MoveKeyframe(-direction * travel)
+                    // Jumps to the side it is arriving from — the direction the
+                    // arrow points — while still transparent, so the jump is
+                    // unseen.
+                    MoveKeyframe(direction * travel)
                     SpringKeyframe(0, duration: 0.30, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
