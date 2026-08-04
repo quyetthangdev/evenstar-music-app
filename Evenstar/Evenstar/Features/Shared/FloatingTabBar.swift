@@ -182,14 +182,23 @@ struct FloatingTabBar: View {
     /// do not start appearing before the capsule has begun to grow.
     private static let stagger = 0.07
 
-    /// The tab row's fade. Not the spring — an opacity that overshoots has
-    /// nowhere to overshoot to, since it clamps at 1, so a spring there spends
-    /// its bounce doing nothing visible and only delays the arrival.
+    /// The tab row's shrink-and-fade, on **one** animation so the two move
+    /// together rather than as two events. A spring, not a curve, because the
+    /// shrink is meant to have some give — the opacity rides along and simply
+    /// clamps at either end, which costs nothing.
     ///
-    /// Short on purpose. The tabs' arrival is carried by the capsule's
-    /// growing clip, not by this; the fade is only here so the collapse does
-    /// not hard-cut a glyph at the clip's edge.
-    private static let fadeCurve = Animation.easeOut(duration: 0.14)
+    /// Slightly quicker and calmer than `searchSpring`: the capsule collapsing
+    /// around them is the main gesture, and the glyphs should feel carried by
+    /// it rather than staging a second performance inside it.
+    private static let tabRevealSpring = Animation.spring(duration: 0.34, bounce: 0.20)
+
+    /// What the tabs shrink to as the pill closes, and grow from as it opens.
+    ///
+    /// Far enough from 1 that the shrink actually reads — an earlier pass sat
+    /// at 0.92 and, paired with a fade, was invisible. Not so far that the
+    /// glyphs fly away: the capsule is closing over them, and they should look
+    /// like they are being tucked in, not thrown.
+    private static let tabRevealScale = 0.75
 
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
@@ -493,21 +502,21 @@ struct FloatingTabBar: View {
                 // not `isSearching` alone — this is the tab reveal, and it
                 // must run identically whichever mode collapsed the pill.
                 //
-                // No scale, and no per-tab stagger. The capsule is already
-                // pinned to its expanded width and clipped, so its growing
-                // edge uncovers each tab exactly where it belongs, in order,
-                // for free. **The reveal is the clip.** The fade only keeps
-                // the collapse from hard-cutting glyphs at that edge.
+                // Shrink and fade on **one** animation, so a tab gets smaller
+                // and dimmer at the same time rather than doing one and then
+                // the other. An earlier pass split them across two curves with
+                // two delays; it read as fussy, and the near-1 scale it used
+                // was invisible next to the fade anyway.
                 //
-                // Earlier versions scaled each tab up on its own delay. That
-                // was invented here, not observed: no description of the real
-                // iOS 26 bar mentions tabs zooming or arriving one by one —
-                // they describe the container shrinking and the content being
-                // revealed. On a bar that morphs on nearly every scroll, the
-                // extra motion read as fussy rather than lively.
+                // Still no per-tab stagger. The capsule is pinned to its
+                // expanded width and clipped, so its edge already uncovers the
+                // tabs in order as it sweeps — the ordering comes free from the
+                // clip, and delaying each tab on top of that double-counts the
+                // same effect.
+                .scaleEffect(isCollapsed ? Self.tabRevealScale : 1)
                 .opacity(isCollapsed ? 0 : 1)
                 .animation(
-                    Self.fadeCurve.delay(isCollapsed ? 0 : Self.stagger),
+                    Self.tabRevealSpring.delay(isCollapsed ? 0 : Self.stagger),
                     value: isCollapsed
                 )
             }
