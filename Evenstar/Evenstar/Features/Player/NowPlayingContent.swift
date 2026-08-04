@@ -35,16 +35,43 @@ struct NowPlayingContent: View {
     }
 
     private var titleBlock: some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
+            // `reservesSpace` is the whole answer to a long title. Without it
+            // the block is one line tall for most tracks and two for the rest,
+            // so everything below — the scrubber, the transport row, the volume
+            // slider — shifts by a line depending on which track is playing, and
+            // `PlayerCard.artworkSide`'s fixed allowance has to be sized for a
+            // case it cannot see. With it the block is always two lines, so the
+            // layout is identical for every track and a title longer than that
+            // truncates instead of pushing the controls down.
             Text(playback.currentTrack?.title ?? "—")
                 .font(.title2.bold())
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
+                .lineLimit(2, reservesSpace: true)
             Text(metadataSubtitle)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+        // Leading, and greedy, so both lines start at the same x whatever their
+        // length — a centred block makes the artist appear to move when the
+        // title wraps.
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Runs a transport command on the next main-actor turn, so the tap's own
+    /// acknowledgement renders first.
+    ///
+    /// SwiftUI renders a button's action *after* it returns, so anything
+    /// synchronous in there sits between the tap and the first frame of the tap
+    /// effect. `next()` loads an `AVAudioPlayer` from disk; `previous()` seeks,
+    /// which persists. Neither can be made free, and neither needs to happen
+    /// inside that frame: audio starting one turn later is inaudible, while the
+    /// animation starting one turn later is the thing being complained about.
+    ///
+    /// Ordering is safe — main-actor tasks run in the order they are enqueued —
+    /// so holding Next still advances one track per tap, in order.
+    private func acknowledge(_ command: @escaping () -> Void) {
+        Task { @MainActor in command() }
     }
 
     private var metadataSubtitle: String {
@@ -65,7 +92,7 @@ struct NowPlayingContent: View {
         HStack(spacing: 48) {
             Button {
                 previousTaps += 1
-                playback.previous()
+                acknowledge { playback.previous() }
             } label: {
                 Image(systemName: "backward.fill")
                     .font(.title2)
@@ -80,7 +107,7 @@ struct NowPlayingContent: View {
 
             Button {
                 playPauseTaps += 1
-                playback.togglePlayPause()
+                acknowledge { playback.togglePlayPause() }
             } label: {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
@@ -101,7 +128,7 @@ struct NowPlayingContent: View {
 
             Button {
                 nextTaps += 1
-                playback.next()
+                acknowledge { playback.next() }
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.title2)

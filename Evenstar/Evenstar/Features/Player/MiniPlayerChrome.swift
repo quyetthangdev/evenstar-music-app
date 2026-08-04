@@ -10,6 +10,14 @@ struct MiniPlayerChrome: View {
     /// `Bool` would fire once and then sit at `true`, doing nothing for the
     /// second tap.
     @State private var nextTaps = 0
+    @State private var playPauseTaps = 0
+
+    /// See `NowPlayingContent.acknowledge`: SwiftUI renders a button's action
+    /// after it returns, so synchronous playback work sits between the tap and
+    /// the first frame of its acknowledgement.
+    private func acknowledge(_ command: @escaping () -> Void) {
+        Task { @MainActor in command() }
+    }
 
     var body: some View {
         if let current = playback.currentTrack {
@@ -29,17 +37,21 @@ struct MiniPlayerChrome: View {
                 }
                 Spacer()
                 Button {
-                    playback.togglePlayPause()
+                    playPauseTaps += 1
+                    acknowledge { playback.togglePlayPause() }
                 } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title3)
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: 32, height: 32)
+                        // Halo only, no slide — play/pause toggles in place and
+                        // has no direction. See `NowPlayingContent`.
+                        .transportTapEffect(trigger: playPauseTaps, direction: 1, travel: 0)
                 }
                 .buttonStyle(.plain)
                 Button {
                     nextTaps += 1
-                    playback.next()
+                    acknowledge { playback.next() }
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.body)

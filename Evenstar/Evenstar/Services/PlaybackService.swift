@@ -81,7 +81,10 @@ final class PlaybackService {
         player.currentTime = clamped
         position = clamped
         pushNowPlaying()
-        persistImmediately()
+        // Deferred like every other tap path's write. This one is reached from
+        // the scrubber on release and from `previous()` restarting a track, and
+        // in both the user is waiting to see something move.
+        deferPersist()
     }
 
     /// How far into a track Previous stops meaning "the one before" and starts
