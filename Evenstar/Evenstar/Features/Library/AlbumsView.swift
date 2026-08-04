@@ -48,7 +48,7 @@ struct AlbumsView: View {
 
     @ViewBuilder
     private var content: some View {
-        let albums = LibraryGrouping.albums(from: tracks)
+        let albums = paddedForScrollTesting(LibraryGrouping.albums(from: tracks))
         if albums.isEmpty {
             ContentUnavailableView(
                 "Chưa có album",
@@ -73,6 +73,43 @@ struct AlbumsView: View {
             .minimisesBottomBar($isMinimised)
         }
     }
+
+    // MARK: - Scroll-testing scaffold
+    //
+    // TEMPORARY. Delete this section and the call in `content` once the bottom
+    // bar's scroll-minimising has been checked on a tab other than the first,
+    // which is the only thing it exists for. It is not a feature, and it puts
+    // albums that do not exist in front of anyone running a debug build.
+    //
+    // Debug-only and behind a flag, so a release build cannot show it and
+    // flipping one boolean gets the real library — and its empty state — back.
+
+    #if DEBUG
+    /// Set to `false` to see the real library, including its empty state.
+    private static let padAlbumsForScrollTesting = true
+    /// Enough cells to overflow a phone screen twice over, so there is real
+    /// travel to scroll rather than a few points of rubber band.
+    private static let scrollTestAlbumCount = 24
+
+    private func paddedForScrollTesting(_ albums: [AlbumGroup]) -> [AlbumGroup] {
+        guard Self.padAlbumsForScrollTesting,
+              albums.count < Self.scrollTestAlbumCount else { return albums }
+
+        let filler = (albums.count..<Self.scrollTestAlbumCount).map { index in
+            // Empty `tracks`: tapping one opens a detail screen with no rows,
+            // which is honest — there is no album behind it.
+            AlbumGroup(
+                id: "scroll-test-\(index)",
+                title: "Album thử \(index + 1)",
+                artist: "Nghệ sĩ thử",
+                tracks: []
+            )
+        }
+        return albums + filler
+    }
+    #else
+    private func paddedForScrollTesting(_ albums: [AlbumGroup]) -> [AlbumGroup] { albums }
+    #endif
 }
 
 private struct AlbumCell: View {
@@ -94,6 +131,7 @@ private struct AlbumCell: View {
                 .lineLimit(1)
         }
     }
+
 }
 
 #Preview {
