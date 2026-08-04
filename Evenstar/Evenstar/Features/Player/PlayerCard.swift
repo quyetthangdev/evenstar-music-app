@@ -93,12 +93,17 @@ struct PlayerCard: View {
     /// visible for the whole transition, and there is no way to draw it from
     /// outside without knowing how far the card has travelled.
     ///
-    /// **This writes on every frame of a drag**, so whatever reads it re-renders
-    /// on every frame of a drag. Keep the reader cheap: a transform is fine, a
-    /// re-layout is not. If dragging the pill ever stutters, this binding and
-    /// whatever consumes it are the first things to look at — nothing else here
-    /// crosses that boundary.
-    @Binding var expandProgress: Double
+    /// Written from the gesture and from `expand()`/`collapse()`, never from an
+    /// `onChange` on `progress`. That distinction is what made the recede smooth:
+    /// an `onChange` runs *after* this view's body, so every dragged frame cost
+    /// a second update pass, and the write invalidated whoever held the other
+    /// end. Writing where the value actually changes keeps it to one pass.
+    ///
+    /// During the settle spring this is set once, to the destination, inside the
+    /// same `withAnimation`. The recede then runs its own spring with the same
+    /// parameters and lands with the card, rather than being driven frame by
+    /// frame from here.
+    let expansion: PlayerExpansion
 
     /// How far the collapsed pill is inset from each edge of the **safe area**
     /// *at collapsed rest*: `pillSideMargin` (21) on its own row, widening to
@@ -229,13 +234,6 @@ struct PlayerCard: View {
         .accessibilityHidden(playback.currentTrack == nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
-        }
-        // Mirrored rather than made the source of truth: `progress` is derived
-        // from `settled` and `dragDelta`, and routing a finger-tracked drag
-        // through a binding owned by a parent would put a view update between
-        // the gesture and the geometry that reads it.
-        .onChange(of: progress) { _, value in
-            expandProgress = value
         }
     }
 
@@ -667,6 +665,9 @@ struct PlayerCard: View {
                 // every touch move, and a redundant `@State` write would
                 // invalidate the view again for nothing.
                 if !isDragging { isDragging = true }
+                // Written here rather than from an `onChange` on `progress` —
+                // see the note on `expansion`.
+                defer { expansion.progress = progress }
                 // No rubber-band past either end: `progress` (settled +
                 // dragDelta, clamped) is rigid at 0 and 1. An earlier version
                 // of this method shaved the excess off `delta` here to fake
@@ -689,6 +690,7 @@ struct PlayerCard: View {
                 withAnimation(BottomBarStyle.settle) {
                     settled = predicted > 0.5 ? 1 : 0
                     dragDelta = 0
+                    expansion.progress = settled
                 }
             }
     }
@@ -697,6 +699,7 @@ struct PlayerCard: View {
         withAnimation(BottomBarStyle.expand) {
             settled = 1
             dragDelta = 0
+            expansion.progress = 1
         }
     }
 
@@ -704,6 +707,7 @@ struct PlayerCard: View {
         withAnimation(BottomBarStyle.expand) {
             settled = 0
             dragDelta = 0
+            expansion.progress = 0
         }
     }
 

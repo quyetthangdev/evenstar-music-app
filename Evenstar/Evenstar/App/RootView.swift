@@ -33,10 +33,14 @@ struct RootView: View {
     /// This flag alone does NOT mean minimised styling should render — see
     /// `isMinimisedActive` below, which is what every renderer actually reads.
     @State private var isMinimised = false
-    /// How far the player has opened, 0 collapsed to 1 full screen. Owned here
-    /// rather than by `PlayerCard` so the content behind it can recede as it
-    /// rises. See the note on `PlayerCard.expandProgress`.
-    @State private var expandProgress: Double = 0
+    /// How far the player has opened, 0 collapsed to 1 full screen.
+    ///
+    /// A `@State` reference type, not a value: `RootView`'s body never reads
+    /// `progress`, so it is not invalidated when the card moves. Only the one
+    /// modifier that applies the transform re-runs. See `PlayerExpansion.swift`
+    /// — the version before this was a `Binding`, and rebuilding this body and
+    /// its five tabs on every dragged frame is what made the recede stutter.
+    @State private var expansion = PlayerExpansion()
 
     /// The window's bottom safe-area inset: 34 on a phone with a home
     /// indicator, 0 on one without.
@@ -113,23 +117,10 @@ struct RootView: View {
                 // so it has nothing to write.
                 SearchView(query: query).tag(LibraryTab.search)
             }
-            // The content recedes as the player opens, the way a sheet pushes
-            // its presenting screen back.
-            //
-            // **Scale only, no corner rounding.** The first version clipped to
-            // a `RoundedRectangle` as well, and the recede was visibly rough. A
-            // clip is a mask: it forces an offscreen pass over the whole screen
-            // on every frame, where `scaleEffect` is a transform the compositor
-            // applies for nothing. Doing that per frame, on a view this large,
-            // while a finger is dragging, is the one expensive thing in this
-            // change — so it is the one that went.
-            //
-            // Little is lost. The card is opaque and full-screen by the time
-            // `expandProgress` reaches 1, so the corners were only ever visible
-            // in passing. If they turn out to be wanted, the cheap route is to
-            // round a static backdrop *behind* the content rather than mask the
-            // content itself; do not simply put the clip back.
-            .scaleEffect(1 - (1 - BottomBarStyle.recedeScale) * expandProgress)
+            // The content recedes as the player opens. The transform lives in
+            // the modifier, not here, so that changing it re-runs the modifier's
+            // body and not this one — see `PlayerExpansion.swift`.
+            .recedesBehindPlayer(expansion)
             // Reaches all seven screens, including the two pushed detail
             // screens declared inside `navigationDestination` closures, which a
             // parameter would have to be threaded to by hand.
@@ -271,7 +262,7 @@ struct RootView: View {
             PlayerCard(
                 playback: playback,
                 minimised: isMinimisedActive ? 1 : 0,
-                expandProgress: $expandProgress
+                expansion: expansion
             )
                 .opacity(isEditing ? 0 : 1)
                 .allowsHitTesting(!isEditing)
