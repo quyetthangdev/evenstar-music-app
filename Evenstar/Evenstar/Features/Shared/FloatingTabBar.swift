@@ -139,7 +139,16 @@ struct FloatingTabBar: View {
     /// spring: the one part of a tab change that was not animating, in the
     /// middle of the part that was.
     ///
-    /// An opacity does interpolate, so the tint now travels with the wash.
+    /// An opacity does interpolate — but it must **not** interpolate on the
+    /// wash's spring. Given `selectionSpring`'s 0.38s and its bounce, the
+    /// destination tab spends the whole slide fading up, which reads as the tab
+    /// being dragged along behind the wash rather than the wash arriving at a
+    /// tab that is already lit. The call sites give it `BottomBarStyle.control`
+    /// instead: quick, and no bounce, since a colour has nowhere to overshoot
+    /// to.
+    ///
+    /// So the two are deliberately on different curves. The wash is the thing
+    /// travelling; the tint just has to stop snapping.
     ///
     /// 0.6 is not arbitrary — `secondaryLabel`, which `.secondary` resolves to,
     /// is 60% in both light and dark. Nothing looks different at rest; only the
@@ -493,6 +502,10 @@ struct FloatingTabBar: View {
                             .font(.caption2)
                     }
                     .foregroundStyle(Self.tint(isCurrent: selection == tab))
+                    // Scoped to `selection` so the tint lands on its own quick
+                    // curve instead of riding the wash's long bouncy one. See
+                    // `tint(isCurrent:)`.
+                    .animation(BottomBarStyle.control, value: selection)
                     // Fill the slot first, then inset the backing — see
                     // `selectionInset`. Doing it the other way round (padding
                     // the content and letting the capsule hug it) sizes the
@@ -604,6 +617,7 @@ struct FloatingTabBar: View {
                 // swaps on the same curve as the bar rather than popping.
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(Self.tint(isCurrent: selection == .search))
+                .animation(BottomBarStyle.control, value: selection)
                 .frame(width: barHeight, height: barHeight)
                 .background {
                     ZStack {
