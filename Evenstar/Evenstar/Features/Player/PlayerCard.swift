@@ -83,6 +83,23 @@ struct PlayerCard: View {
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
+    /// Publishes `progress` outward so the content behind the card can recede
+    /// with it, the way a sheet pushes its presenting screen back.
+    ///
+    /// This state was private for most of the card's life, and deliberately: an
+    /// earlier request to hide the tab bar behind the expanded card was turned
+    /// down rather than exposing it, because the expanded card is opaque and
+    /// full-screen and already covers the bar. The recede is different — it is
+    /// visible for the whole transition, and there is no way to draw it from
+    /// outside without knowing how far the card has travelled.
+    ///
+    /// **This writes on every frame of a drag**, so whatever reads it re-renders
+    /// on every frame of a drag. Keep the reader cheap: a transform is fine, a
+    /// re-layout is not. If dragging the pill ever stutters, this binding and
+    /// whatever consumes it are the first things to look at — nothing else here
+    /// crosses that boundary.
+    @Binding var expandProgress: Double
+
     /// How far the collapsed pill is inset from each edge of the **safe area**
     /// *at collapsed rest*: `pillSideMargin` (21) on its own row, widening to
     /// `BottomBarMetrics.minimisedPlayerInset` (79) as the pill slots into the
@@ -212,6 +229,13 @@ struct PlayerCard: View {
         .accessibilityHidden(playback.currentTrack == nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
+        }
+        // Mirrored rather than made the source of truth: `progress` is derived
+        // from `settled` and `dragDelta`, and routing a finger-tracked drag
+        // through a binding owned by a parent would put a view update between
+        // the gesture and the geometry that reads it.
+        .onChange(of: progress) { _, value in
+            expandProgress = value
         }
     }
 
@@ -670,14 +694,14 @@ struct PlayerCard: View {
     }
 
     private func expand() {
-        withAnimation(BottomBarStyle.settle) {
+        withAnimation(BottomBarStyle.expand) {
             settled = 1
             dragDelta = 0
         }
     }
 
     private func collapse() {
-        withAnimation(BottomBarStyle.settle) {
+        withAnimation(BottomBarStyle.expand) {
             settled = 0
             dragDelta = 0
         }

@@ -70,6 +70,32 @@ enum BottomBarStyle {
     /// "snappier"; it was in fact the slower of the two.
     static let settle = Animation.spring(duration: 0.42, bounce: 0.14)
 
+    /// The collapsed player opening to full screen, and closing again.
+    ///
+    /// Separate from `settle`, and this distinction is real where the one it
+    /// replaced was not. `settle` finishes a drag the user was steering: it
+    /// covers whatever is left of the travel, often a fraction of the screen.
+    /// This one covers the whole height in a single move — around 750pt on a
+    /// phone — and a spring tuned for the short case reads as abrupt over that
+    /// distance, arriving before the eye has followed it.
+    ///
+    /// Longer and calmer accordingly. Not bounce-free: a little overshoot is
+    /// what keeps a large move from feeling mechanical, but far less than a
+    /// short one can carry.
+    static let expand = Animation.spring(duration: 0.52, bounce: 0.12)
+
+    /// How the content behind the player recedes as it opens, the way a sheet
+    /// pushes its presenting screen back.
+    ///
+    /// The scale is small on purpose. iOS's own card presentation moves the
+    /// screen behind it by only a few percent; more than that stops reading as
+    /// depth and starts reading as the app shrinking.
+    static let recedeScale: CGFloat = 0.92
+    /// The rounding the receding content takes on. Content behind a sheet is a
+    /// card, and a card has corners — square ones at any scale below 1 look
+    /// like a mistake rather than a layer.
+    static let recedeCornerRadius: CGFloat = 22
+
     /// A control inside one of these surfaces reacting to touch — the
     /// scrubber swelling under a finger.
     ///

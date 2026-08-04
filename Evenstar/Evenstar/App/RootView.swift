@@ -33,6 +33,10 @@ struct RootView: View {
     /// This flag alone does NOT mean minimised styling should render — see
     /// `isMinimisedActive` below, which is what every renderer actually reads.
     @State private var isMinimised = false
+    /// How far the player has opened, 0 collapsed to 1 full screen. Owned here
+    /// rather than by `PlayerCard` so the content behind it can recede as it
+    /// rises. See the note on `PlayerCard.expandProgress`.
+    @State private var expandProgress: Double = 0
 
     /// The window's bottom safe-area inset: 34 on a phone with a home
     /// indicator, 0 on one without.
@@ -109,6 +113,22 @@ struct RootView: View {
                 // so it has nothing to write.
                 SearchView(query: query).tag(LibraryTab.search)
             }
+            // The content recedes as the player opens, the way a sheet pushes
+            // its presenting screen back. Only two transforms, deliberately:
+            // both composite rather than re-laying out, and this re-renders on
+            // every frame of a drag because `expandProgress` does.
+            //
+            // `.clipShape` before `.scaleEffect` so the radius is in the
+            // content's own coordinates and does not shrink with it — rounding
+            // applied after the scale would tighten as the card rises, which
+            // reads as the corners moving rather than the card receding.
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: BottomBarStyle.recedeCornerRadius * expandProgress,
+                    style: .continuous
+                )
+            )
+            .scaleEffect(1 - (1 - BottomBarStyle.recedeScale) * expandProgress)
             // Reaches all seven screens, including the two pushed detail
             // screens declared inside `navigationDestination` closures, which a
             // parameter would have to be threaded to by hand.
@@ -247,7 +267,11 @@ struct RootView: View {
             // minimised inset must not apply while `isSearching` is
             // true, or the pill lands on top of the 48pt search field. See
             // `isMinimisedActive`'s doc comment.
-            PlayerCard(playback: playback, minimised: isMinimisedActive ? 1 : 0)
+            PlayerCard(
+                playback: playback,
+                minimised: isMinimisedActive ? 1 : 0,
+                expandProgress: $expandProgress
+            )
                 .opacity(isEditing ? 0 : 1)
                 .allowsHitTesting(!isEditing)
                 .accessibilityHidden(isEditing)
