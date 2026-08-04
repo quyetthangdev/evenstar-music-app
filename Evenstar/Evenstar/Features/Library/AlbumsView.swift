@@ -2,7 +2,9 @@ import SwiftUI
 import SwiftData
 
 struct AlbumsView: View {
-    @Environment(PlaybackService.self) private var playback
+    // No `PlaybackService` here any more: the only thing this screen read it
+    // for was choosing between the two bottom clearances, and `clearsBottomBar`
+    // now owns that decision along with the arithmetic behind it.
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
     /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
@@ -32,17 +34,7 @@ struct AlbumsView: View {
                 // See the note in `SongsView`: this hides the system tab bar
                 // and must sit on the tab's content, not on the `TabView`.
                 .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear
-                        // Never 0: the floating tab bar is always present, so
-                        // the last row must clear it whether or not a track is
-                        // loaded.
-                        .frame(
-                            height: playback.currentTrack == nil
-                                ? BottomBarMetrics.clearanceTabBarOnly
-                                : BottomBarMetrics.clearanceWithPlayer
-                        )
-                }
+                .clearsBottomBar()
         }
     }
 

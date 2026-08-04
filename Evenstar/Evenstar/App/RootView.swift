@@ -34,6 +34,22 @@ struct RootView: View {
     /// `isMinimisedActive` below, which is what every renderer actually reads.
     @State private var isMinimised = false
 
+    /// The window's bottom safe-area inset: 34 on a phone with a home
+    /// indicator, 0 on one without.
+    ///
+    /// Measured here, once, and published to every screen through
+    /// `\.bottomSafeAreaInset` — see `BottomBarClearance.swift` for why the
+    /// environment rather than a parameter. The bottom bar itself does not read
+    /// it: the bar is anchored to the screen and simply ignores the inset. Only
+    /// the lists need it, to convert the bar's screen-relative position into the
+    /// safe-area-relative one `.safeAreaInset(edge: .bottom)` speaks.
+    ///
+    /// It starts at 0 and is corrected on the first layout pass. That is the
+    /// right way round: 0 is the true value on a device with no home indicator,
+    /// and everywhere else it briefly asks for *more* clearance than needed
+    /// rather than less, which no one can see at the top of a list.
+    @State private var bottomSafeAreaInset: CGFloat = 0
+
     /// Whether minimised styling should actually apply, as opposed to what
     /// `isMinimised` merely holds.
     ///
@@ -59,6 +75,28 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // The one place the window's bottom inset is measured. Invisible,
+            // untappable, and behind everything.
+            //
+            // A greedy child of this ZStack is the layout position that reports
+            // the real insets — the same position `PlayerCard`'s reader sits in,
+            // and for the same reason: a reader that still respects the safe
+            // area is the only one that can report it.
+            //
+            // `.ignoresSafeArea(.keyboard)` is load-bearing. Without it this
+            // reports the *keyboard's* inset while the search field is up —
+            // several hundred points — and every list underneath would drop its
+            // clearance to 0 mid-edit and reflow. The container inset is what
+            // the lists need, and it does not change when the keyboard does.
+            Color.clear
+                .ignoresSafeArea(.keyboard)
+                .allowsHitTesting(false)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.safeAreaInsets.bottom
+                } action: { inset in
+                    bottomSafeAreaInset = inset
+                }
+
             TabView(selection: $tab) {
                 SongsView(isMinimised: $isMinimised).tag(LibraryTab.songs)
                 AlbumsView(isMinimised: $isMinimised).tag(LibraryTab.albums)
@@ -71,6 +109,10 @@ struct RootView: View {
                 // so it has nothing to write.
                 SearchView(query: query).tag(LibraryTab.search)
             }
+            // Reaches all seven screens, including the two pushed detail
+            // screens declared inside `navigationDestination` closures, which a
+            // parameter would have to be threaded to by hand.
+            .environment(\.bottomSafeAreaInset, bottomSafeAreaInset)
 
             FloatingTabBar(
                 selection: $tab,
@@ -124,7 +166,40 @@ struct RootView: View {
                     }
                 }
             )
-            .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
+            // Anchored to the screen, not to the safe area — Apple's own
+            // floating tab bar sits 21pt in from the physical bottom edge on
+            // every device, and deliberately intrudes into the bottom inset.
+            //
+            // All three lines are load-bearing, in this order.
+            //
+            // The greedy frame is not decoration and cannot be dropped.
+            // `ignoresSafeArea` expands the region a view is *offered*; a view
+            // that does not take the region it is offered does not move. With
+            // the bar's own 71pt (bar plus padding) and no frame, the two lines
+            // below compiled, changed nothing, and left the bar at 21 above the
+            // safe area — 55 from the physical edge, measured. `PlayerCard`
+            // gets this right for the same reason: its card is bottom-aligned
+            // in a `maxHeight: .infinity` frame before it ignores anything.
+            //
+            // The padding is inside the frame, so it holds the bar clear of the
+            // frame's bottom edge — which, once the safe area is ignored, is
+            // the physical bottom of the display.
+            //
+            // `.container`, never `.all` and never a bare `ignoresSafeArea()`:
+            // the keyboard is a separate safe-area region, and the bar rides
+            // the keyboard by design. Ignoring that one too would leave the bar
+            // buried under the keyboard while search is being typed into. Left
+            // as `.container` the frame's bottom is the keyboard's top while
+            // the keyboard is up, so the same 21pt gap is measured from
+            // whatever the bottom of the usable screen currently is.
+            //
+            // The frame draws nothing and carries no `contentShape`, so it does
+            // not hit-test: the library keeps every tap outside the bar itself.
+            // See the long note at `PlayerCard`'s `.contentShape` call site for
+            // what a hit region on a full-screen frame costs.
+            .padding(.bottom, BottomBarMetrics.screenBottomInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .ignoresSafeArea(.container, edges: .bottom)
 
             // Order here is load-bearing: `PlayerCard` must be LAST so that
             // expanding it covers the tab bar — the expanded card is opaque and
@@ -150,8 +225,8 @@ struct RootView: View {
             // Reads `isMinimisedActive`, not `isMinimised` directly — the same
             // masking `FloatingTabBar` gets above, for the same reason: this
             // is the only call site that constructs `PlayerCard`, and the
-            // 56pt minimised inset must not apply while `isSearching` is
-            // true, or it lands on top of the 48pt search field. See
+            // minimised inset must not apply while `isSearching` is
+            // true, or the pill lands on top of the 48pt search field. See
             // `isMinimisedActive`'s doc comment.
             PlayerCard(playback: playback, minimised: isMinimisedActive ? 1 : 0)
                 .opacity(isEditing ? 0 : 1)

@@ -307,9 +307,9 @@ struct FloatingTabBar: View {
             // be kept in lockstep with this one.
             //
             // The width this resolves to is not incidental: with `leadingCapsule`
-            // at `tabBarHeight` (56) and this gap at `tabBarSearchGap` (8) on
+            // at `tabBarHeight` (50) and this gap at `tabBarSearchGap` (8) on
             // each side, this capsule spans exactly
-            // `[64, W − 64]` in the bar's own (post-`sideMargin`) coordinate
+            // `[58, W − 58]` in the bar's own (post-`sideMargin`) coordinate
             // space — the same span Task 2 slots the collapsed player pill
             // into via `BottomBarMetrics.minimisedPlayerInset`. Landing on a
             // different span here would leave the player visibly out of line
@@ -784,7 +784,13 @@ private struct FloatingTabBarPreview: View {
                     }
                 }
             )
-            .padding(.bottom, BottomBarMetrics.tabBarBottomGap)
+            // Matches `RootView`, greedy frame and all — see the note there for
+            // why that frame is what makes `ignoresSafeArea` do anything. Kept
+            // in step so the canvas does not quietly demonstrate a placement
+            // the app does not use.
+            .padding(.bottom, BottomBarMetrics.screenBottomInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .ignoresSafeArea(.container, edges: .bottom)
         }
     }
 }

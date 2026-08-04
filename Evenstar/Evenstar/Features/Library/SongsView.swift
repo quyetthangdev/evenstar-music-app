@@ -36,18 +36,7 @@ struct SongsView: View {
                 // to the `TabView` itself, which is why it lives here on each
                 // tab's root view rather than in `RootView`.
                 .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear
-                        // Never 0: the floating tab bar is always present, so
-                        // the last row must clear it whether or not a track is
-                        // loaded. With a track the pill sits above the bar and
-                        // the clearance grows by the pill and its gap.
-                        .frame(
-                            height: playback.currentTrack == nil
-                                ? BottomBarMetrics.clearanceTabBarOnly
-                                : BottomBarMetrics.clearanceWithPlayer
-                        )
-                }
+                .clearsBottomBar()
         }
         .fileImporter(
             isPresented: $showFileImporter,
