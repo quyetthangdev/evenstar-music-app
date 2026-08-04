@@ -50,6 +50,19 @@ final class MockNowPlayingPublisher: NowPlayingPublisher {
         let title: String
         let artist: String
         let album: String
+        /// Whether this push carried a cover, and — when it did — how big the
+        /// decoded image was.
+        ///
+        /// This used to discard the artwork argument entirely (`artwork _:`),
+        /// which meant no test in the suite could see whether a push had a
+        /// cover on it. That is precisely how the restore path shipped
+        /// pushing `artwork: nil` forever with all 74 tests green.
+        ///
+        /// Recorded as a `Bool` plus a `CGSize`, not as the `UIImage` itself:
+        /// `UIImage` is not `Sendable`, and holding one here would make
+        /// `Update` non-`Sendable` for no gain — no assertion needs the pixels.
+        let hasArtwork: Bool
+        let artworkSize: CGSize
         let duration: TimeInterval
         let elapsed: TimeInterval
         let isPlaying: Bool
@@ -59,9 +72,11 @@ final class MockNowPlayingPublisher: NowPlayingPublisher {
     private(set) var clearCallCount = 0
 
     func update(title: String, artist: String, album: String,
-                artwork _: UIImage?, duration: TimeInterval,
+                artwork: UIImage?, duration: TimeInterval,
                 elapsed: TimeInterval, isPlaying: Bool) {
         updates.append(.init(title: title, artist: artist, album: album,
+                             hasArtwork: artwork != nil,
+                             artworkSize: artwork?.size ?? .zero,
                              duration: duration, elapsed: elapsed,
                              isPlaying: isPlaying))
     }

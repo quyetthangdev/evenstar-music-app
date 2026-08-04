@@ -203,6 +203,16 @@ final class PlaybackService {
             playCountedForCurrent = pos >= 30
             isPlaying = false
             pushNowPlaying()
+            // Restore builds and pushes its own metadata rather than calling
+            // `loadCurrentAndPlay()` (see above), so it has to ask for the
+            // artwork itself — `metadata(from:)` returns `artwork: nil` by
+            // design. Omitting this call left the most common launch path with
+            // no cover at all: `NowPlayingService.update` simply drops the
+            // artwork key when it is nil, and every later push on this track
+            // (`resume()`, `pause()`, `seek()`, the `tickPosition()` reconcile)
+            // re-reads the same nil-artwork `currentMetadata`, so the lock
+            // screen stayed blank until the track changed.
+            loadArtworkIntoNowPlaying(for: track)
             // Persist the queue/index/position that actually landed — the
             // stored row must reflect surviving tracks, not the pre-restore
             // state, and must not be silently left pointing at a dead track.
@@ -361,6 +371,19 @@ final class PlaybackService {
 
     /// The persist half alone, for callers that have already pushed to the lock
     /// screen synchronously and only need the disk write moved off the tap.
+    ///
+    /// **Nothing may be captured here, and the same goes for `deferSideEffects`
+    /// above.** A deferred write can land *after* something else has already
+    /// persisted — `next()` on the last track calls `stopPlayback()`, which
+    /// persists an empty queue, and this task runs afterwards. That is safe
+    /// only because `persistImmediately()` reads `queue`, `queueIndex`,
+    /// `currentTrack` and `position` live at execution time and captures
+    /// nothing at enqueue time, so a late write reproduces whatever state
+    /// actually landed in between rather than resurrecting a stale snapshot.
+    /// Passing captured values in (a queue, an index, a position taken at the
+    /// tap) would turn a harmless duplicate write into a resurrection of a
+    /// queue the user has already left — this project's worst bug to date came
+    /// from exactly that shape. Change the behaviour only with that in mind.
     private func deferPersist() {
         Task { @MainActor in persistImmediately() }
     }
@@ -404,11 +427,35 @@ final class PlaybackService {
     /// Guarded on the track's id, because a user holding Next changes track
     /// faster than a decode finishes — without it, a late decode would put the
     /// previous track's cover under the current track's title.
+    ///
+    /// The load goes through `ArtworkStore`, not through a local
+    /// `Data(contentsOf:)` + `UIImage(data:)`. That pair decoded the file at
+    /// its full resolution, which for the 1000x1000–3000x3000 covers embedded
+    /// in real files is up to ~36 MB a time, and it only *moved* the cost this
+    /// method exists to remove: `NowPlayingService` wraps the result as
+    /// `MPMediaItemArtwork(boundsSize: artwork.size)`, so the full-size bitmap
+    /// is what crosses XPC to the media server. `ArtworkStore` downsamples
+    /// through ImageIO to `lockScreenArtworkPixels` and caches the result, so
+    /// each of these tasks holds a few MB rather than tens, and a track played
+    /// again later is a cache hit rather than another file read.
+    ///
+    /// The task is deliberately unstructured and unstored. Holding Next starts
+    /// one per track change, and the id guard below discards all but the last;
+    /// what makes that acceptable rather than wasteful is that each is now a
+    /// bounded, cached, downsampled read. If this ever goes back to decoding at
+    /// full size, the fan-out has to be bounded too.
+    ///
+    /// Takes the path out of the `Track` before hopping: `Track` is a SwiftData
+    /// `@Model`, neither `Sendable` nor safe to touch from another executor.
     private func loadArtworkIntoNowPlaying(for track: Track) {
         let path = track.artworkRelativePath
         let id = track.id
         Task { @MainActor in
-            guard let image = await Self.decodeArtwork(path) else { return }
+            let image = await ArtworkStore.image(
+                for: path,
+                maxPixel: Self.lockScreenArtworkPixels
+            )
+            guard let image else { return }
             guard currentTrack?.id == id, let current = currentMetadata else { return }
             currentMetadata = TrackMetadata(
                 title: current.title,
@@ -421,20 +468,18 @@ final class PlaybackService {
         }
     }
 
-    /// `@concurrent`, not a bare `nonisolated async`. Under this project's
-    /// `SWIFT_APPROACHABLE_CONCURRENCY` setting the latter inherits its
-    /// caller's executor, so called from the main actor it would decode on the
-    /// main thread and change nothing. Same reasoning as `ArtworkStore`.
+    /// The longest edge, in pixels, the lock screen and Control Center need —
+    /// the only two consumers of `TrackMetadata.artwork`. Nothing in the app
+    /// draws it; `PlayerCard` asks `ArtworkStore` for its own size separately.
     ///
-    /// Takes a path rather than a `Track`: `Track` is a SwiftData `@Model`,
-    /// neither `Sendable` nor safe to touch from another executor.
-    @concurrent
-    private static func decodeArtwork(_ relativePath: String?) async -> UIImage? {
-        guard let relativePath,
-              let data = try? Data(contentsOf: FileLocation.absoluteURL(forRelative: relativePath))
-        else { return nil }
-        return UIImage(data: data)
-    }
+    /// The lock screen's cover fills most of the display's width, so the
+    /// requirement scales with the largest device: ~360pt on a 440pt-wide
+    /// iPhone 17 Pro Max, which at @3x is ~1080px. 1024 is the round number
+    /// just under that — visually indistinguishable at this size, and 4 MB
+    /// rather than the ~36 MB a full-resolution 3000x3000 cover would cost,
+    /// which also keeps a queue's worth of entries inside `ArtworkStore`'s
+    /// 50 MB cache budget.
+    private static let lockScreenArtworkPixels: CGFloat = 1024
 
     private func activateSessionIfNeeded() {
         guard !sessionActivated else { return }

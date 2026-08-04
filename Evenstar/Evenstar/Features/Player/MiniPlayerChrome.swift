@@ -44,11 +44,21 @@ struct MiniPlayerChrome: View {
                     Image(systemName: "forward.fill")
                         .font(.body)
                         .frame(width: 32, height: 32)
-                        // Fires on the tap, not on the track changing:
-                        // `playback.next()` at the end of a queue stops rather
-                        // than advancing, and the button should still
-                        // acknowledge the press it received.
-                        .transportTapEffect(trigger: nextTaps, direction: 1)
+                        // Driven by the tap counter, not by the track changing.
+                        // The acknowledgement then lands in the same frame as
+                        // the press rather than waiting on the load, and — the
+                        // reason it is a counter — a second tap during the
+                        // first animation retriggers it instead of being
+                        // swallowed, which is what holding Next feels like.
+                        //
+                        // It is not here to cover a press that fails to
+                        // advance: the `.disabled` below means the last track
+                        // takes no taps at all.
+                        //
+                        // 30 clears the 32pt frame above: `forward.fill` at
+                        // `.body` is 25pt wide, so it is fully outside past
+                        // 16 + 12.5 = 28.5. See `transportTapEffect`.
+                        .transportTapEffect(trigger: nextTaps, direction: 1, travel: 30)
                 }
                 .buttonStyle(.plain)
                 .disabled(playback.queueIndex >= playback.queue.count - 1)
