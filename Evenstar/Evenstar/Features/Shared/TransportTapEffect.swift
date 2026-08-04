@@ -1,106 +1,154 @@
 import SwiftUI
 
-/// Acknowledges a transport tap: the glyph travels the way its arrow points,
-/// wraps around, and springs back into place, over a halo that blooms and
-/// fades under it.
+/// The circular bloom under a transport button when it is pressed.
 ///
-/// The wrap is the point. A glyph that slides out and slides *back* reads as
-/// undo — it went somewhere and returned. Sliding out one side and re-entering
-/// from the other reads as advancing, which is what the button did.
-///
-/// The two halves are one keyframe track with a `MoveKeyframe` between them.
-/// Keyframes interpolate, so the jump from one edge to the other cannot be a
-/// keyframe of its own — `MoveKeyframe` sets the value without animating
-/// through it, which is exactly the discontinuity a wrap needs and the reason
-/// this is not simply two springs in sequence.
-struct TransportTapEffect: ViewModifier {
-    /// Changing this fires the effect. A counter rather than a `Bool` so
-    /// repeated taps each retrigger it instead of the second one being a
-    /// no-op because the value did not change.
+/// Split out from the arrow's slide because not every transport control has a
+/// direction: play/pause toggles in place, so it takes the halo and nothing
+/// else, while Previous and Next take both.
+private struct TapHalo: ViewModifier {
+    /// Changing this fires it. A counter rather than a `Bool` so a second press
+    /// during the first retriggers instead of being swallowed.
     let trigger: Int
-    /// Positive slides right, negative slides left.
-    let direction: CGFloat
-    /// How far the glyph travels before wrapping, in points. See the note on
-    /// the extension below for how to derive it — it is a property of the
-    /// frame and glyph at each call site, not a constant that can be shared.
-    let travel: CGFloat
 
     private struct Pulse {
-        var offset: CGFloat = 0
-        var haloOpacity: Double = 0
-        var haloScale: Double = 0.5
+        var opacity: Double = 0
+        var scale: Double = 0.5
     }
 
     func body(content: Content) -> some View {
-        content
-            .keyframeAnimator(initialValue: Pulse(), trigger: trigger) { view, pulse in
-                view
-                    .offset(x: pulse.offset)
-                    // Clipped to the button's own bounds, so the glyph
-                    // disappears at the edge instead of sliding over whatever
-                    // sits beside it — the title on one side, another control
-                    // on the other.
-                    .clipped()
-                    .background {
-                        Circle()
-                            .fill(Color.primary.opacity(0.12))
-                            .scaleEffect(pulse.haloScale)
-                            .opacity(pulse.haloOpacity)
-                    }
-            } keyframes: { _ in
-                KeyframeTrack(\.offset) {
-                    // Out, the way the arrow points.
-                    CubicKeyframe(direction * travel, duration: 0.13)
-                    // The wrap: same distance, opposite side, no interpolation.
-                    MoveKeyframe(-direction * travel)
-                    // Back to centre with the bounce.
-                    SpringKeyframe(0, duration: 0.30, spring: .bouncy)
-                }
-
-                KeyframeTrack(\.haloOpacity) {
-                    LinearKeyframe(1, duration: 0.06)
-                    LinearKeyframe(1, duration: 0.10)
-                    LinearKeyframe(0, duration: 0.22)
-                }
-
-                KeyframeTrack(\.haloScale) {
-                    SpringKeyframe(1.0, duration: 0.16, spring: .bouncy)
-                    LinearKeyframe(1.0, duration: 0.22)
-                }
+        content.keyframeAnimator(initialValue: Pulse(), trigger: trigger) { view, pulse in
+            view.background {
+                Circle()
+                    .fill(Color.primary.opacity(0.12))
+                    .scaleEffect(pulse.scale)
+                    .opacity(pulse.opacity)
             }
+        } keyframes: { _ in
+            KeyframeTrack(\.opacity) {
+                LinearKeyframe(1, duration: 0.06)
+                LinearKeyframe(1, duration: 0.10)
+                LinearKeyframe(0, duration: 0.22)
+            }
+            KeyframeTrack(\.scale) {
+                SpringKeyframe(1.0, duration: 0.16, spring: .bouncy)
+                LinearKeyframe(1.0, duration: 0.22)
+            }
+        }
     }
 }
 
 extension View {
-    /// Acknowledges a transport tap. `direction` is `1` for a control that
-    /// moves forward and `-1` for one that moves back, so the glyph travels
-    /// the way its own arrow points.
-    ///
-    /// `travel` must put the glyph **entirely outside the clip** before
-    /// `MoveKeyframe` fires, or the wrap — the whole point of the effect —
-    /// shows as a sliver blinking between the two edges instead of the glyph
-    /// leaving one side and re-entering the other. For a glyph centred in a
-    /// square frame:
-    ///
-    ///     travel > frameWidth / 2 + glyphWidth / 2
-    ///
-    /// Measure `glyphWidth` rather than eyeballing it. `forward.fill` renders
-    /// 25.0pt wide at `.body` and 32.3pt at `.title2` (measured via
-    /// `UIImage(systemName:withConfiguration:)`), both noticeably wider than
-    /// they look. Hence:
-    ///
-    /// - collapsed (32pt frame, `.body`): 16 + 12.5 = 28.5, so 30.
-    /// - expanded (44pt frame, `.title2`): 22 + 16.2 = 38.2, so 40.
-    ///
-    /// This is a required parameter and deliberately has no default. It was
-    /// once a single shared constant of 18 — below the collapsed threshold, so
-    /// roughly 8pt of the glyph never left the clip — and no one number can
-    /// serve both call sites: 30 leaves the expanded glyph half inside, while
-    /// 40 in the collapsed frame parks it out of sight for a third of the
-    /// animation, which reads as a blink rather than a wrap. A default would
-    /// let the next call site inherit whichever of those was wrong for it,
-    /// silently.
-    func transportTapEffect(trigger: Int, direction: CGFloat, travel: CGFloat) -> some View {
-        modifier(TransportTapEffect(trigger: trigger, direction: direction, travel: travel))
+    /// Acknowledges a press with a bloom, for a control that does not travel.
+    func tapHalo(trigger: Int) -> some View {
+        modifier(TapHalo(trigger: trigger))
+    }
+}
+
+/// A transport arrow that hands over to a fresh copy of itself when tapped.
+///
+/// Two glyphs, not one. The outgoing copy slides the way the arrow points and
+/// fades out; a second copy comes in from the opposite side, fading up as the
+/// first goes, and springs into place.
+///
+/// This replaced a single glyph that slid out and wrapped around via a
+/// `MoveKeyframe`. A wrap has to teleport — keyframes interpolate, so the jump
+/// from one edge to the other cannot be animated — and a teleport is visible if
+/// the glyph has not fully cleared the clip by the time it happens. Two copies
+/// have no discontinuity to hide: at every instant both are simply somewhere,
+/// and the handover reads as one arrow replacing another rather than one arrow
+/// jumping.
+///
+/// It also removes the constraint that made the old version fragile. The wrap
+/// needed `travel` large enough to put the glyph *entirely* outside the clip
+/// before the jump — measured per call site, and wrong by 8pt on the first
+/// attempt. Here the outgoing copy is already transparent by the time it would
+/// matter, so `travel` only has to be far enough to read as movement.
+struct TransportArrow: View {
+    let systemName: String
+    let font: Font
+    /// The square frame the glyph sits in — also the halo's size and the bounds
+    /// the slide is clipped to.
+    let side: CGFloat
+    let trigger: Int
+    /// `1` for a control that moves forward, `-1` for one that moves back, so
+    /// the glyph travels the way its own arrow points.
+    let direction: CGFloat
+    let travel: CGFloat
+
+    /// Both copies move on this, so their acceleration matches rather than one
+    /// easing while the other springs. The bounce is what the incoming copy
+    /// arrives on; the outgoing one is transparent long before its own
+    /// overshoot would show.
+    private static let slide = Spring(duration: 0.30, bounce: 0.22)
+
+    private struct Leg {
+        var offset: CGFloat
+        var opacity: Double
+    }
+
+    var body: some View {
+        // Each copy animates on its own `keyframeAnimator` applied to a real
+        // `Image`, rather than one animator building both inside its closure.
+        //
+        // The one-animator version compiled, reserved its layout space, and
+        // drew nothing: its base view was an `EmptyView`, chosen because
+        // applying the modifier to `self` inside `body` would have made `body`
+        // depend on itself. A modifier over `EmptyView` contributes no content
+        // no matter what its closure returns. Caught by screenshot, not by the
+        // compiler — the build was clean and the tests were green.
+        //
+        // Sharing `trigger` and `Self.slide` is what keeps the two in step, so
+        // splitting them costs nothing: both start on the same press and move
+        // on the same curve.
+        ZStack {
+            // At rest this is the copy you see: offset 0, fully opaque.
+            glyph.keyframeAnimator(
+                initialValue: Leg(offset: 0, opacity: 1),
+                trigger: trigger
+            ) { view, leg in
+                view.offset(x: leg.offset).opacity(leg.opacity)
+            } keyframes: { _ in
+                KeyframeTrack(\.offset) {
+                    SpringKeyframe(direction * travel, duration: 0.30, spring: Self.slide)
+                }
+                KeyframeTrack(\.opacity) {
+                    LinearKeyframe(0, duration: 0.16)
+                }
+            }
+
+            // At rest this one is invisible, and it ends each run holding the
+            // visible position — offset 0, opacity 1. That is what lets the
+            // animator snap back to `initialValue` afterwards without anything
+            // being seen: the two copies simply trade which is showing, and
+            // they are the same glyph.
+            glyph.keyframeAnimator(
+                initialValue: Leg(offset: 0, opacity: 0),
+                trigger: trigger
+            ) { view, leg in
+                view.offset(x: leg.offset).opacity(leg.opacity)
+            } keyframes: { _ in
+                KeyframeTrack(\.offset) {
+                    // Jumps behind, on the side the outgoing copy is leaving
+                    // from, while still transparent — so the jump is unseen.
+                    MoveKeyframe(-direction * travel)
+                    SpringKeyframe(0, duration: 0.30, spring: Self.slide)
+                }
+                KeyframeTrack(\.opacity) {
+                    // Held down at first so the two are never both solid: this
+                    // copy only starts to read once the other is nearly gone.
+                    LinearKeyframe(0, duration: 0.09)
+                    LinearKeyframe(1, duration: 0.17)
+                }
+            }
+        }
+        .frame(width: side, height: side)
+        // So a glyph on its way out disappears at the frame's edge instead of
+        // sliding over the control beside it.
+        .clipped()
+        .tapHalo(trigger: trigger)
+    }
+
+    private var glyph: some View {
+        Image(systemName: systemName).font(font)
     }
 }

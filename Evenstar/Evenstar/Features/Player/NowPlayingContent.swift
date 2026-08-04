@@ -94,34 +94,37 @@ struct NowPlayingContent: View {
                 previousTaps += 1
                 acknowledge { playback.previous() }
             } label: {
-                Image(systemName: "backward.fill")
-                    .font(.title2)
-                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
-                    // `direction: -1`, so the glyph travels the way its own
-                    // arrow points. Same travel as Next: same glyph mirrored,
-                    // same frame.
-                    .transportTapEffect(trigger: previousTaps, direction: -1, travel: 40)
+                TransportArrow(
+                    systemName: "backward.fill",
+                    font: .title2,
+                    side: Self.transportGlyphFrame,
+                    trigger: previousTaps,
+                    direction: -1,
+                    travel: 26
+                )
             }
             .buttonStyle(.plain)
             .disabled(playback.currentTrack == nil)
 
             Button {
                 playPauseTaps += 1
-                acknowledge { playback.togglePlayPause() }
+                // NOT deferred, unlike the two arrows. For play/pause the
+                // response *is* the state change: `isPlaying` flips and the
+                // glyph swaps. Deferring that pushed the very thing being
+                // acknowledged a turn later and made the button feel slower,
+                // not faster. It can afford to run inline because it already
+                // does nothing expensive — `pause()`/`resume()` defer their own
+                // lock-screen push and disk write.
+                playback.togglePlayPause()
             } label: {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
                     .contentTransition(.symbolEffect(.replace))
-                    // `travel: 0` — the halo, without the slide.
-                    //
-                    // The wrap says "that went somewhere", which is true of
-                    // Previous and Next and false of this one: play/pause
-                    // toggles in place and has no direction to travel in. A
-                    // zero travel makes the offset track a no-op while the halo
-                    // still blooms, so all three buttons acknowledge a press in
-                    // the same visual language and only the directional two
-                    // move.
-                    .transportTapEffect(trigger: playPauseTaps, direction: 1, travel: 0)
+                    // Halo only. A handover says "that went somewhere", true of
+                    // Previous and Next and false of this one, which toggles in
+                    // place and has no direction — and its own glyph already
+                    // changes, which is feedback the arrows do not have.
+                    .tapHalo(trigger: playPauseTaps)
             }
             .buttonStyle(.plain)
             .disabled(playback.currentTrack == nil)
@@ -130,18 +133,14 @@ struct NowPlayingContent: View {
                 nextTaps += 1
                 acknowledge { playback.next() }
             } label: {
-                Image(systemName: "forward.fill")
-                    .font(.title2)
-                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
-                    // The same acknowledgement the collapsed player's Next
-                    // gives. `PlayerCard` is one card at two ends of a
-                    // continuum, so the same control cannot answer a press at
-                    // one end and ignore it at the other.
-                    //
-                    // 40, not the collapsed 30: this frame is 44 and the glyph
-                    // 32.3pt wide, so the glyph is fully outside the clip only
-                    // past 22 + 16.2 = 38.2. See `transportTapEffect`.
-                    .transportTapEffect(trigger: nextTaps, direction: 1, travel: 40)
+                TransportArrow(
+                    systemName: "forward.fill",
+                    font: .title2,
+                    side: Self.transportGlyphFrame,
+                    trigger: nextTaps,
+                    direction: 1,
+                    travel: 26
+                )
             }
             .buttonStyle(.plain)
             .disabled(playback.queueIndex >= playback.queue.count - 1)

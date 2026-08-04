@@ -38,39 +38,40 @@ struct MiniPlayerChrome: View {
                 Spacer()
                 Button {
                     playPauseTaps += 1
-                    acknowledge { playback.togglePlayPause() }
+                    // Inline, not deferred — see the note in `NowPlayingContent`:
+                    // for this button the state change is the response.
+                    playback.togglePlayPause()
                 } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title3)
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: 32, height: 32)
-                        // Halo only, no slide — play/pause toggles in place and
-                        // has no direction. See `NowPlayingContent`.
-                        .transportTapEffect(trigger: playPauseTaps, direction: 1, travel: 0)
+                        // Halo only — see `NowPlayingContent`.
+                        .tapHalo(trigger: playPauseTaps)
                 }
                 .buttonStyle(.plain)
                 Button {
                     nextTaps += 1
                     acknowledge { playback.next() }
                 } label: {
-                    Image(systemName: "forward.fill")
-                        .font(.body)
-                        .frame(width: 32, height: 32)
-                        // Driven by the tap counter, not by the track changing.
-                        // The acknowledgement then lands in the same frame as
-                        // the press rather than waiting on the load, and — the
-                        // reason it is a counter — a second tap during the
-                        // first animation retriggers it instead of being
-                        // swallowed, which is what holding Next feels like.
-                        //
-                        // It is not here to cover a press that fails to
-                        // advance: the `.disabled` below means the last track
-                        // takes no taps at all.
-                        //
-                        // 30 clears the 32pt frame above: `forward.fill` at
-                        // `.body` is 25pt wide, so it is fully outside past
-                        // 16 + 12.5 = 28.5. See `transportTapEffect`.
-                        .transportTapEffect(trigger: nextTaps, direction: 1, travel: 30)
+                    TransportArrow(
+                        systemName: "forward.fill",
+                        font: .body,
+                        side: 32,
+                        trigger: nextTaps,
+                        direction: 1,
+                        travel: 20
+                    )
+                    // Driven by the tap counter, not by the track changing.
+                    // The acknowledgement then lands in the same frame as the
+                    // press rather than waiting on the load, and — the reason
+                    // it is a counter — a second tap during the first animation
+                    // retriggers it instead of being swallowed, which is what
+                    // holding Next feels like.
+                    //
+                    // It is not here to cover a press that fails to advance:
+                    // the `.disabled` below means the last track takes no taps
+                    // at all.
                 }
                 .buttonStyle(.plain)
                 .disabled(playback.queueIndex >= playback.queue.count - 1)
