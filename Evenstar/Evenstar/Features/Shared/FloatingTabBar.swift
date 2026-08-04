@@ -120,7 +120,7 @@ struct FloatingTabBar: View {
     /// Searching never merges: that mode needs the full width for its field.
     private var isMerged: Bool { isMinimised && !hasTrack && !isSearching }
 
-    private static let symbolSize: CGFloat = 17
+    private static let symbolSize: CGFloat = 15
     /// The selected item's backing. Drawn over the material rather than
     /// replacing it, so it reads as a slightly darker patch of the same
     /// surface. `.primary` rather than a fixed grey so it inverts with the
@@ -145,7 +145,7 @@ struct FloatingTabBar: View {
     /// around the content — makes its width depend on how long each label is
     /// and pulls its leading edge away from the pill's curve, which is what
     /// this replaced.
-    private static let selectionInset: CGFloat = 6
+    private static let selectionInset: CGFloat = 5
 
     /// The tint for a bar item, by whether it is the current destination.
     ///
@@ -325,10 +325,16 @@ struct FloatingTabBar: View {
             // Zero-width and invisible when merged: its glyph has moved inside
             // the merged capsule, and leaving a 56pt button here would both
             // duplicate search and push the centred row off centre.
+            // `.clipped()` before the shadow, never after. A shadow is drawn
+            // outside the shape that casts it, so clipping *over* one cuts its
+            // soft edge off at the frame's rectangle — which is exactly the
+            // square halo that appeared around this circular button once the
+            // clip was added for the merged layout.
             trailingButton
                 .frame(width: isMerged ? 0 : barHeight)
-                .opacity(isMerged ? 0 : 1)
                 .clipped()
+                .floatingBarShadow()
+                .opacity(isMerged ? 0 : 1)
                 .animation(BottomBarStyle.morph, value: isSearching)
         }
     }
@@ -529,12 +535,30 @@ struct FloatingTabBar: View {
     /// the row cross-fading as one — which put all four on screen while the
     /// pill was still a circle, in space it had not grown into yet.
     private var tabsRow: some View {
+        tabsRowContent
+            // The bar has a fixed height, so its content cannot be allowed to
+            // grow without limit: `.caption2` scales with the user's text size,
+            // and at the larger settings the icon-over-label stack outgrows the
+            // 40pt selection wash and then the 50pt capsule itself.
+            //
+            // A clamp is the lesser evil here. The alternative usually reached
+            // for — dropping the labels above some size — makes the bar less
+            // usable for exactly the people who raised the text size. This lets
+            // the labels grow as far as the bar can hold and stops there.
+            //
+            // Only the tabs are clamped. The search field's text scales
+            // normally, because that one is content the user is reading and
+            // editing rather than a fixed-size control.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+    }
+
+    private var tabsRowContent: some View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
                     withAnimation(BottomBarStyle.selection) { selection = tab }
                 } label: {
-                    VStack(spacing: 4) {
+                    VStack(spacing: 2) {
                         // The active tab's glyph is the one that survives the
                         // collapse, so it is not drawn here while minimised —
                         // `restoreButton` draws it instead, and the shared
@@ -684,7 +708,6 @@ struct FloatingTabBar: View {
                             Circle().fill(Color.primary.opacity(Self.selectionWash))
                         }
                     }
-                    .floatingBarShadow()
                 }
         }
         .buttonStyle(.plain)
