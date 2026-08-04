@@ -114,20 +114,21 @@ struct RootView: View {
                 SearchView(query: query).tag(LibraryTab.search)
             }
             // The content recedes as the player opens, the way a sheet pushes
-            // its presenting screen back. Only two transforms, deliberately:
-            // both composite rather than re-laying out, and this re-renders on
-            // every frame of a drag because `expandProgress` does.
+            // its presenting screen back.
             //
-            // `.clipShape` before `.scaleEffect` so the radius is in the
-            // content's own coordinates and does not shrink with it — rounding
-            // applied after the scale would tighten as the card rises, which
-            // reads as the corners moving rather than the card receding.
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: BottomBarStyle.recedeCornerRadius * expandProgress,
-                    style: .continuous
-                )
-            )
+            // **Scale only, no corner rounding.** The first version clipped to
+            // a `RoundedRectangle` as well, and the recede was visibly rough. A
+            // clip is a mask: it forces an offscreen pass over the whole screen
+            // on every frame, where `scaleEffect` is a transform the compositor
+            // applies for nothing. Doing that per frame, on a view this large,
+            // while a finger is dragging, is the one expensive thing in this
+            // change — so it is the one that went.
+            //
+            // Little is lost. The card is opaque and full-screen by the time
+            // `expandProgress` reaches 1, so the corners were only ever visible
+            // in passing. If they turn out to be wanted, the cheap route is to
+            // round a static backdrop *behind* the content rather than mask the
+            // content itself; do not simply put the clip back.
             .scaleEffect(1 - (1 - BottomBarStyle.recedeScale) * expandProgress)
             // Reaches all seven screens, including the two pushed detail
             // screens declared inside `navigationDestination` closures, which a

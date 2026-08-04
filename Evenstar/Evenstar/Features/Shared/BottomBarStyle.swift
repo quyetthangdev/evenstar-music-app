@@ -91,10 +91,15 @@ enum BottomBarStyle {
     /// screen behind it by only a few percent; more than that stops reading as
     /// depth and starts reading as the app shrinking.
     static let recedeScale: CGFloat = 0.92
-    /// The rounding the receding content takes on. Content behind a sheet is a
-    /// card, and a card has corners — square ones at any scale below 1 look
-    /// like a mistake rather than a layer.
-    static let recedeCornerRadius: CGFloat = 22
+    // A `recedeCornerRadius` stood here, rounding the receding content the way
+    // a sheet's backdrop is rounded. It was removed rather than tuned: applying
+    // it meant clipping the whole screen to a shape on every frame of a drag,
+    // which is a mask and an offscreen pass, and the recede was visibly rough
+    // because of it. `recedeScale` above is a transform and costs nothing by
+    // comparison.
+    //
+    // If the corners are wanted back, round a static backdrop behind the
+    // content instead of masking the content itself.
 
     /// A control inside one of these surfaces reacting to touch — the
     /// scrubber swelling under a finger.
