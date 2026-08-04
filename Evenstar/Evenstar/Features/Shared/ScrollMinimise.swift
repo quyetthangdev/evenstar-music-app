@@ -19,13 +19,24 @@ private struct ScrollMinimiseModifier: ViewModifier {
     /// they all share.
     @State private var accumulatedTravel: CGFloat = 0
 
-    /// Same-direction travel required before the bar reacts. Below this, a
-    /// change in `contentOffset.y` reads as finger jitter rather than
-    /// intent — without a floor, a gesture that pauses and drifts a couple
-    /// of points can flip `isMinimised` back and forth on consecutive
-    /// frames. 50pt is comfortably past normal jitter while still well
-    /// short of a deliberate scroll, so a real gesture crosses it quickly.
-    private static let directionThreshold: CGFloat = 50
+    /// Same-direction travel required before the bar reacts.
+    ///
+    /// This is the **only** thing between the user's finger and the bar
+    /// moving: the springs start the instant it is crossed, so whatever this
+    /// costs is felt directly as lag. It started at 50, which was safe and
+    /// noticeably late — a scroll had visibly begun before anything happened.
+    ///
+    /// 12 is chosen against finger jitter, which is a couple of points, not
+    /// against scroll distance. It survives jitter because the accumulator
+    /// **resets on any direction change**: a wobble of down-3, up-2, down-4
+    /// never accumulates toward anything, whatever this number is. The
+    /// threshold only has to outrun noise within a single unbroken direction,
+    /// and 12 does that with room to spare while reading as immediate.
+    ///
+    /// Lower it further and the reset is still the real protection — but a
+    /// deliberate slow scroll starts flipping the bar on the first frame,
+    /// which is a different kind of wrong.
+    private static let directionThreshold: CGFloat = 12
 
     func body(content: Content) -> some View {
         content
