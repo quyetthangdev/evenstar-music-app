@@ -78,6 +78,10 @@ struct FloatingTabBar: View {
 
     @FocusState private var queryFocused: Bool
 
+    /// Ties the selected tab's wash to one geometry across all four slots, so
+    /// changing tabs moves a single capsule rather than swapping two.
+    @Namespace private var selectionNamespace
+
     // No explicit init. The one that stood here defaulted `isMinimised` to
     // `.constant(false)` and `onRestore` to `{}` so `RootView` kept compiling
     // while it was out of scope; both are now supplied for real, and keeping
@@ -119,6 +123,20 @@ struct FloatingTabBar: View {
     /// and pulls its leading edge away from the pill's curve, which is what
     /// this replaced.
     private static let selectionInset: CGFloat = 6
+
+    /// Identifies the selected tab's wash across all four slots. A constant,
+    /// because the whole point is that every slot claims the *same* geometry.
+    private static let selectionGeometryID = "tab-selection-wash"
+
+    /// The wash's slide between tabs. Its own spring, not `searchSpring`.
+    ///
+    /// They are different motions with different jobs: the bar's morph is
+    /// scenery rearranging itself and should get out of the way, while this is
+    /// direct feedback for a tap the user just made and can afford to be more
+    /// alive. The higher bounce is what gives it the liquid overshoot — it
+    /// arrives past the new tab and comes back — which a calmer curve reads as
+    /// merely sliding.
+    private static let selectionSpring = Animation.spring(duration: 0.38, bounce: 0.34)
 
     /// The morph between the tab row and the search field. Owned here rather
     /// than by each caller so the bar cannot animate on two different curves
@@ -444,7 +462,7 @@ struct FloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
-                    selection = tab
+                    withAnimation(Self.selectionSpring) { selection = tab }
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: tab.symbol)
@@ -459,11 +477,30 @@ struct FloatingTabBar: View {
                     // backing to the label's length and breaks the concentric
                     // curve at the pill's leading edge.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // One capsule, handed from tab to tab.
+                    //
+                    // Each tab used to draw its own, so changing tabs removed
+                    // one view and inserted another — nothing moved, because
+                    // nothing was the same view twice.
+                    // `matchedGeometryEffect` makes it one view as far as
+                    // SwiftUI is concerned, so it interpolates the frame
+                    // between the old slot and the new one and the wash slides
+                    // across.
+                    //
+                    // This is the case that effect is actually for, and it is
+                    // not the case `PlayerCard`'s doc comment rejects it for:
+                    // both slots are in one view tree in one layout pass, and
+                    // this is a discrete state change rather than something
+                    // tracking a finger.
                     .background {
                         if selection == tab {
                             Capsule()
                                 .fill(Color.primary.opacity(Self.selectionWash))
                                 .padding(Self.selectionInset)
+                                .matchedGeometryEffect(
+                                    id: Self.selectionGeometryID,
+                                    in: selectionNamespace
+                                )
                         }
                     }
                 }
