@@ -84,6 +84,36 @@ final class PlaybackService {
         persistImmediately()
     }
 
+    /// How far into a track Previous stops meaning "the one before" and starts
+    /// meaning "this one, from the top".
+    ///
+    /// Every music player behaves this way, and the reason is that Previous has
+    /// two jobs sharing a button: correcting a skip you just made, and
+    /// restarting something you are part way through. Three seconds is the
+    /// usual split — long enough that a mis-tap in the opening still goes back,
+    /// short enough that it never blocks a deliberate restart.
+    static let restartThreshold: TimeInterval = 3
+
+    /// Restarts the current track, or steps back to the one before it.
+    ///
+    /// Never a no-op while a queue exists, which is why nothing disables the
+    /// button: at the head of the queue, and anywhere past the threshold,
+    /// "previous" still means restart.
+    func previous() {
+        guard !queue.isEmpty else { return }
+        if position > Self.restartThreshold || queueIndex == 0 {
+            seek(to: 0)
+            return
+        }
+        queueIndex -= 1
+        playCountedForCurrent = false
+        loadCurrentAndPlay()
+        // Deferred for the same reason `next()` defers its own: a SwiftData
+        // write between the tap and the next render is felt as button latency,
+        // and `loadCurrentAndPlay` has already pushed to the lock screen.
+        deferPersist()
+    }
+
     func next() {
         guard !queue.isEmpty else { return }
         if queueIndex + 1 < queue.count {

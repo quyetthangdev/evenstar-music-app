@@ -88,6 +88,52 @@ final class PlaybackServiceQueueTests: XCTestCase {
         XCTAssertEqual(service.currentTrack?.id, list[1].id)
     }
 
+    func testPreviousStepsBackWhenNearTheStartOfATrack() throws {
+        let (service, player, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.next()
+        // Just inside the threshold, so Previous means "the one before".
+        player.currentTime = PlaybackService.restartThreshold - 0.5
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+    }
+
+    func testPreviousRestartsTheCurrentTrackWhenPastTheThreshold() throws {
+        let (service, player, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.next()
+        // Past the threshold, so the same button means "this one, from the top".
+        player.currentTime = PlaybackService.restartThreshold + 0.5
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 1, "Should not have stepped back")
+        XCTAssertEqual(service.currentTrack?.id, list[1].id)
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
+    func testPreviousRestartsAtTheHeadOfTheQueueRatherThanDoingNothing() throws {
+        let (service, player, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        // Before the threshold, where a step back would be the other branch —
+        // but there is nothing to step back to, so it must still restart.
+        player.currentTime = 1
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
     func testPlayCountIncrementsAfter30Seconds() throws {
         let (service, player, _, library) = try makeStack()
         let list = try tracks(1, library: library)

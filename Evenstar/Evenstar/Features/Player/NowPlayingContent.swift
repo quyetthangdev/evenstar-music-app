@@ -5,13 +5,16 @@ import SwiftUI
 struct NowPlayingContent: View {
     let playback: PlaybackService
 
-    /// Counts taps on Next, exactly as `MiniPlayerChrome` does and for the same
+    /// Counts taps on each transport control, exactly as `MiniPlayerChrome`
+    /// does for Next and for the same
     /// reason — a `Bool` would fire once and then sit at `true`. Its own
     /// counter rather than one shared with the collapsed player: only one of
     /// the two is hit-testable at a time, so they never need to agree, and a
     /// shared count would have to live in `PlayerCard` purely to be passed back
     /// down.
     @State private var nextTaps = 0
+    @State private var previousTaps = 0
+    @State private var playPauseTaps = 0
 
     /// The transport glyphs' square frame. `forward.fill` at `.title2` is
     /// 32.3pt wide and 20pt tall, so an unframed button would give the tap
@@ -60,18 +63,38 @@ struct NowPlayingContent: View {
 
     private var transport: some View {
         HStack(spacing: 48) {
-            Image(systemName: "backward.fill")
-                .font(.title2)
-                .foregroundStyle(.tertiary)
-                .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
-                // previous deferred to 2c
+            Button {
+                previousTaps += 1
+                playback.previous()
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.title2)
+                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
+                    // `direction: -1`, so the glyph travels the way its own
+                    // arrow points. Same travel as Next: same glyph mirrored,
+                    // same frame.
+                    .transportTapEffect(trigger: previousTaps, direction: -1, travel: 40)
+            }
+            .buttonStyle(.plain)
+            .disabled(playback.currentTrack == nil)
 
             Button {
+                playPauseTaps += 1
                 playback.togglePlayPause()
             } label: {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
                     .contentTransition(.symbolEffect(.replace))
+                    // `travel: 0` — the halo, without the slide.
+                    //
+                    // The wrap says "that went somewhere", which is true of
+                    // Previous and Next and false of this one: play/pause
+                    // toggles in place and has no direction to travel in. A
+                    // zero travel makes the offset track a no-op while the halo
+                    // still blooms, so all three buttons acknowledge a press in
+                    // the same visual language and only the directional two
+                    // move.
+                    .transportTapEffect(trigger: playPauseTaps, direction: 1, travel: 0)
             }
             .buttonStyle(.plain)
             .disabled(playback.currentTrack == nil)
