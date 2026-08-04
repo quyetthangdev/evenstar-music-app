@@ -103,7 +103,7 @@ struct NowPlayingContent: View {
                     travel: 26
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle(trigger: previousTaps, direction: -1))
             .disabled(playback.currentTrack == nil)
 
             Button {
@@ -142,7 +142,7 @@ struct NowPlayingContent: View {
                     travel: 26
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle(trigger: nextTaps, direction: 1))
             .disabled(playback.queueIndex >= playback.queue.count - 1)
         }
         .padding(.top, 8)

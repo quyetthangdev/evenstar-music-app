@@ -73,7 +73,10 @@ struct MiniPlayerChrome: View {
                     // the `.disabled` below means the last track takes no taps
                     // at all.
                 }
-                .buttonStyle(.plain)
+                // A shorter throw than the expanded player's 10: this button is
+                // 32pt inside a pill, not 44 in open space, so the full kick
+                // would carry it into its neighbour.
+                .buttonStyle(TransportButtonStyle(trigger: nextTaps, direction: 1, translate: 6))
                 .disabled(playback.queueIndex >= playback.queue.count - 1)
             }
         }
