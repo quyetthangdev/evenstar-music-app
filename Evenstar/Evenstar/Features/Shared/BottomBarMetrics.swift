@@ -40,7 +40,15 @@ enum BottomBarMetrics {
     /// the bar from it. Measured from the screen it is 21 everywhere, and the
     /// device-dependence moves to the one place that genuinely needs it — the
     /// list clearance below.
-    static let screenBottomInset: CGFloat = 21
+    ///
+    /// **30, not the 21 two write-ups give for iOS 26.** Set at 21 it looked
+    /// too close to the edge beside the real Apple Music on the same phone,
+    /// which is better evidence than a figure from a blog — and that figure is
+    /// suspect: it quotes one number for "left, right, and bottom", and the
+    /// bottom is the one edge where a home indicator changes the picture. At 30
+    /// the bar's bottom sits 4pt inside a 34pt bottom inset, still intruding on
+    /// it but only just, and clears the home indicator line by about 17pt.
+    static let screenBottomInset: CGFloat = 30
     /// Between the tab bar's top edge and the collapsed player's bottom edge.
     static let playerTabGap: CGFloat = 8
     /// Between the tab pill and the detached circular search button.
