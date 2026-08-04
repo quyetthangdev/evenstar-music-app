@@ -129,6 +129,25 @@ struct FloatingTabBar: View {
     /// this replaced.
     private static let selectionInset: CGFloat = 6
 
+    /// The tint for a bar item, by whether it is the current destination.
+    ///
+    /// `Color.primary` at an opacity rather than the `.primary`/`.secondary`
+    /// pair those two sites used to switch between. Those are *hierarchical*
+    /// styles, and SwiftUI does not interpolate one into another — it resolves
+    /// each to a colour and swaps. So the glyph and label snapped to their new
+    /// tint in a single frame while the wash behind them slid across on a
+    /// spring: the one part of a tab change that was not animating, in the
+    /// middle of the part that was.
+    ///
+    /// An opacity does interpolate, so the tint now travels with the wash.
+    ///
+    /// 0.6 is not arbitrary — `secondaryLabel`, which `.secondary` resolves to,
+    /// is 60% in both light and dark. Nothing looks different at rest; only the
+    /// transition between the two changed.
+    private static func tint(isCurrent: Bool) -> Color {
+        Color.primary.opacity(isCurrent ? 1 : 0.6)
+    }
+
     /// Identifies the selected tab's wash across all four slots. A constant,
     /// because the whole point is that every slot claims the *same* geometry.
     private static let selectionGeometryID = "tab-selection-wash"
@@ -473,7 +492,7 @@ struct FloatingTabBar: View {
                         Text(tab.label)
                             .font(.caption2)
                     }
-                    .foregroundStyle(selection == tab ? .primary : .secondary)
+                    .foregroundStyle(Self.tint(isCurrent: selection == tab))
                     // Fill the slot first, then inset the backing — see
                     // `selectionInset`. Doing it the other way round (padding
                     // the content and letting the capsule hug it) sizes the
@@ -584,7 +603,7 @@ struct FloatingTabBar: View {
                 // The one glyph that changes meaning mid-animation, so it
                 // swaps on the same curve as the bar rather than popping.
                 .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(selection == .search ? .primary : .secondary)
+                .foregroundStyle(Self.tint(isCurrent: selection == .search))
                 .frame(width: barHeight, height: barHeight)
                 .background {
                     ZStack {
