@@ -29,7 +29,7 @@ struct PlayerCard: View {
     /// apply `clearsBottomBar()`, which reaches
     /// `BottomBarMetrics.clearanceWithPlayer(bottomSafeAreaInset:)` and adds
     /// everything below the floating pill. Do not duplicate this as a literal.
-    static let collapsedHeight: CGFloat = 50
+    static let collapsedHeight: CGFloat = 54
 
     /// How far the collapsed pill is inset from each side of the safe area.
     ///
@@ -48,12 +48,12 @@ struct PlayerCard: View {
     /// cap is a semicircle and the visible gap is therefore not uniform: at
     /// mid-height the pill's edge is at x = 0, but level with the artwork's
     /// top and bottom edges the curve has already come in — at this height, to
-    /// x ≈ 7.7. The eye judges that tightest point, not the generous gap in
+    /// x ≈ 6.9. The eye judges that tightest point, not the generous gap in
     /// the middle, so the inset has to be set against it.
     ///
-    /// At 18 the tightest gap is ~10pt and the artwork's corner sits 19.3pt
-    /// from the cap's centre against a 25pt radius. Room remains to go further,
-    /// but not indefinitely — the corner starts touching the curve around 25,
+    /// At 18 the tightest gap is ~11pt and the artwork's corner sits 20.1pt
+    /// from the cap's centre against a 27pt radius. Room remains to go further,
+    /// but not indefinitely — the corner starts touching the curve around 27,
     /// and past that the artwork clips.
     ///
     /// These three numbers move together. Changing `collapsedHeight` or

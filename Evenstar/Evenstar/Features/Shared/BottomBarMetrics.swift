@@ -31,7 +31,7 @@ enum BottomBarMetrics {
     /// device the sides of the *screen* are under the notch and the rounded
     /// corners, so a screen-relative side margin would put the bar under them.
     static let sideMargin: CGFloat = 21
-    static let tabBarHeight: CGFloat = 50
+    static let tabBarHeight: CGFloat = 54
     /// Between the tab bar's bottom edge and the **physical bottom of the
     /// screen** — not the safe area, which is what this used to measure from
     /// and what made it mean something different on every device: 8 above a
