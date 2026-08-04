@@ -132,15 +132,22 @@ struct FloatingTabBar: View {
     /// second axis (higher damping means *less* bounce), which is what makes it
     /// awkward to tune by feel.
     ///
-    /// The bounce is what keeps the collapse from reading as a mechanical
-    /// slide. Raise it for more spring; much past 0.4 the bar starts to wobble
-    /// rather than settle.
-    static let searchSpring = Animation.spring(duration: 0.45, bounce: 0.32)
+    /// A little bounce keeps the collapse from reading as a mechanical slide,
+    /// but this bar morphs on nearly every scroll, so it has to get out of the
+    /// way. Raise `bounce` for more spring; much past 0.4 it wobbles rather
+    /// than settles. Raise `duration` and everything below has to move with it
+    /// — see `stagger`.
+    static let searchSpring = Animation.spring(duration: 0.32, bounce: 0.18)
 
     /// How far the field's growth trails the tab pill's collapse, and the
     /// reverse on the way back. Short enough that the bar still feels like one
     /// gesture — much more and the two halves read as separate events.
-    private static let stagger = 0.10
+    ///
+    /// This and `tabRevealStep` are fractions of `searchSpring`'s duration,
+    /// not absolute times. Shortening the spring without shortening them
+    /// leaves the delays occupying most of the animation, so the pieces
+    /// straggle in after the movement they were meant to be part of.
+    private static let stagger = 0.07
 
     /// How far each tab's reveal trails the one before it as the pill grows
     /// back. The pill expands from its leading edge, so its trailing edge
@@ -152,11 +159,20 @@ struct FloatingTabBar: View {
     /// reading the capsule's live width mid-animation would need a
     /// `GeometryReader` feeding state back into the same layout pass. Tune by
     /// eye — larger if the tabs still arrive early.
-    private static let tabRevealStep = 0.08
+    ///
+    /// Four tabs multiply this: the last one waits `stagger + 3 × step`. Keep
+    /// that sum comfortably inside `searchSpring`'s duration, or the final tab
+    /// arrives after everything else has already settled and reads as a
+    /// straggler rather than part of the same movement.
+    private static let tabRevealStep = 0.05
 
-    /// What each tab grows from. Small enough to read as arriving, large
-    /// enough that the glyph never looks like a dot.
-    private static let tabRevealScale = 0.55
+    /// What each tab grows from.
+    ///
+    /// Deliberately close to 1. A long journey — 0.55, say — makes each tab
+    /// visibly fly in, which is a lot of motion to repeat on every scroll for
+    /// something that is only meant to appear. Just enough scale to read as
+    /// arriving, over as soon as it starts.
+    private static let tabRevealScale = 0.85
 
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
