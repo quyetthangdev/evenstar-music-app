@@ -82,6 +82,11 @@ struct FloatingTabBar: View {
     /// changing tabs moves a single capsule rather than swapping two.
     @Namespace private var selectionNamespace
 
+    /// Ties the active tab's glyph to the minimised circle's glyph, so the two
+    /// are one view travelling rather than one fading out while another fades
+    /// in somewhere else.
+    @Namespace private var glyphNamespace
+
     // No explicit init. The one that stood here defaulted `isMinimised` to
     // `.constant(false)` and `onRestore` to `{}` so `RootView` kept compiling
     // while it was out of scope; both are now supplied for real, and keeping
@@ -127,6 +132,15 @@ struct FloatingTabBar: View {
     /// Identifies the selected tab's wash across all four slots. A constant,
     /// because the whole point is that every slot claims the *same* geometry.
     private static let selectionGeometryID = "tab-selection-wash"
+
+    /// Identifies the active tab's glyph as it travels between its slot in the
+    /// pill and the minimised circle.
+    ///
+    /// Exactly one view may claim this at a time, which is why both sites are
+    /// behind an `if` on `isMinimised` rather than being present-but-hidden.
+    /// Two live claimants make SwiftUI position one from the other's frame,
+    /// and the glyph lands somewhere neither of them is.
+    private static let activeGlyphID = "active-tab-glyph"
 
     /// The wash's slide between tabs. Its own spring, not `searchSpring`.
     ///
@@ -355,8 +369,11 @@ struct FloatingTabBar: View {
                 .allowsHitTesting(isSearching)
                 .accessibilityHidden(!isSearching)
 
+            // No `.opacity` here any more. The glyph's presence is conditional
+            // now, so there is nothing to hide when expanded — and fading it
+            // would fade the travelling glyph itself, which is meant to stay
+            // solid the whole way across.
             restoreButton
-                .opacity(isMinimised ? 1 : 0)
                 .allowsHitTesting(isMinimised)
                 .accessibilityHidden(!isMinimised)
         }
@@ -404,14 +421,34 @@ struct FloatingTabBar: View {
     /// The accessibility label says what the tap *does*, not where the icon
     /// points: read on its own, a bare tab glyph announces a destination, and
     /// this button does not go there.
+    /// The glyph a tab draws. Factored out so the active tab and
+    /// `restoreButton` render the identical view, which is what makes the
+    /// shared geometry read as one thing moving rather than two things
+    /// swapping.
+    private func glyph(for tab: LibraryTab) -> some View {
+        Image(systemName: tab.symbol)
+            .font(.system(size: Self.symbolSize))
+    }
+
+    /// Holds the active tab's glyph while the bar is minimised. The glyph is
+    /// the *same* one the pill had — shared geometry travels it here as the
+    /// capsule closes, and back to its slot as the capsule opens, so it slides
+    /// rather than cross-fading between two positions.
     private var restoreButton: some View {
         Button {
             onRestore()
         } label: {
-            Image(systemName: selection.symbol)
-                .font(.system(size: Self.symbolSize))
-                .foregroundStyle(.secondary)
-                .frame(width: barHeight, height: barHeight)
+            Group {
+                if isMinimised {
+                    glyph(for: selection)
+                        .matchedGeometryEffect(
+                            id: Self.activeGlyphID,
+                            in: glyphNamespace
+                        )
+                }
+            }
+            .foregroundStyle(.secondary)
+            .frame(width: barHeight, height: barHeight)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Hiện thanh điều hướng")
@@ -450,8 +487,27 @@ struct FloatingTabBar: View {
                     withAnimation(Self.selectionSpring) { selection = tab }
                 } label: {
                     VStack(spacing: 4) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: Self.symbolSize))
+                        // The active tab's glyph is the one that survives the
+                        // collapse, so it is not drawn here while minimised —
+                        // `restoreButton` draws it instead, and the shared
+                        // geometry carries it there. Only one site may hold the
+                        // id at a time, hence the `if` rather than hiding it.
+                        //
+                        // The placeholder keeps the `VStack`'s height while it
+                        // is away, so the label beneath does not lurch upward
+                        // mid-collapse.
+                        if selection == tab && isMinimised {
+                            glyph(for: tab).hidden()
+                        } else if selection == tab {
+                            glyph(for: tab)
+                                .matchedGeometryEffect(
+                                    id: Self.activeGlyphID,
+                                    in: glyphNamespace
+                                )
+                        } else {
+                            glyph(for: tab)
+                        }
+
                         Text(tab.label)
                             .font(.caption2)
                     }
