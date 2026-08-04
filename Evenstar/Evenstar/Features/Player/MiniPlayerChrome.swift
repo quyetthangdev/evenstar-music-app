@@ -52,24 +52,9 @@ struct MiniPlayerChrome: View {
                     nextTaps += 1
                     acknowledge { playback.next() }
                 } label: {
-                    TransportArrow(
-                        systemName: "forward.fill",
-                        font: .body,
-                        side: 32,
-                        trigger: nextTaps,
-                        direction: 1,
-                        travel: 15
-                    )
-                    // Driven by the tap counter, not by the track changing.
-                    // The acknowledgement then lands in the same frame as the
-                    // press rather than waiting on the load, and — the reason
-                    // it is a counter — a second tap during the first animation
-                    // retriggers it instead of being swallowed, which is what
-                    // holding Next feels like.
-                    //
-                    // It is not here to cover a press that fails to advance:
-                    // the `.disabled` below means the last track takes no taps
-                    // at all.
+                    Image(systemName: "forward.fill")
+                        .font(.body)
+                        .frame(width: 32, height: 32)
                 }
                 // A shorter throw than the expanded player's: this button is
                 // 32pt inside a pill, not 44 in open space, so the full kick

@@ -94,14 +94,9 @@ struct NowPlayingContent: View {
                 previousTaps += 1
                 acknowledge { playback.previous() }
             } label: {
-                TransportArrow(
-                    systemName: "backward.fill",
-                    font: .title2,
-                    side: Self.transportGlyphFrame,
-                    trigger: previousTaps,
-                    direction: -1,
-                    travel: 20
-                )
+                Image(systemName: "backward.fill")
+                    .font(.title2)
+                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
             .buttonStyle(.transportSkip(trigger: previousTaps, direction: -1))
             .disabled(playback.currentTrack == nil)
@@ -133,14 +128,9 @@ struct NowPlayingContent: View {
                 nextTaps += 1
                 acknowledge { playback.next() }
             } label: {
-                TransportArrow(
-                    systemName: "forward.fill",
-                    font: .title2,
-                    side: Self.transportGlyphFrame,
-                    trigger: nextTaps,
-                    direction: 1,
-                    travel: 20
-                )
+                Image(systemName: "forward.fill")
+                    .font(.title2)
+                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
             .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1))
             .disabled(playback.queueIndex >= playback.queue.count - 1)
