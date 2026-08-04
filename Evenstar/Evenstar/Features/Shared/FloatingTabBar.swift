@@ -65,6 +65,11 @@ struct FloatingTabBar: View {
     /// write is belt-and-braces now, not the guarantee.
     @Binding var isMinimised: Bool
 
+    /// Whether a track is loaded, which decides *which* minimised layout the
+    /// bar collapses to. Not `isPlaying` — a paused track still owns the middle
+    /// slot, because the collapsed player is still on screen there.
+    let hasTrack: Bool
+
     /// Called when the trailing button opens search.
     let onOpenSearch: () -> Void
     /// Called when search closes. `nil` means "back where you came from";
@@ -104,6 +109,16 @@ struct FloatingTabBar: View {
     /// field's width, the trailing button's glyph/label, and the bar's
     /// height — does not go near this value.
     private var isCollapsed: Bool { isSearching || isMinimised }
+
+    /// The bar collapses all the way to one small centred capsule holding the
+    /// current tab and search, rather than to a circle at each edge.
+    ///
+    /// Only when minimised **with nothing playing**. With a track loaded the
+    /// space between the two circles is not empty — the collapsed player sits
+    /// exactly there — so merging would drop the bar on top of it.
+    ///
+    /// Searching never merges: that mode needs the full width for its field.
+    private var isMerged: Bool { isMinimised && !hasTrack && !isSearching }
 
     private static let symbolSize: CGFloat = 17
     /// The selected item's backing. Drawn over the material rather than
@@ -271,7 +286,10 @@ struct FloatingTabBar: View {
             // `HStack` to the height of its container and the bar ends up
             // centred in the middle of the screen instead of sitting at the
             // bottom.
-            Color.clear.frame(width: BottomBarMetrics.tabBarSearchGap, height: barHeight)
+            Color.clear.frame(
+                width: isMerged ? 0 : BottomBarMetrics.tabBarSearchGap,
+                height: barHeight
+            )
 
             // The row's one flexible element while collapsed by either mode.
             // With `leadingCapsule` clamped to `barHeight` and `trailingButton`
@@ -295,13 +313,19 @@ struct FloatingTabBar: View {
             // with the two circles, with nothing in a build or a test to
             // catch it.
             searchCapsule
-                .padding(.trailing, isCollapsed ? BottomBarMetrics.tabBarSearchGap : 0)
+                .padding(.trailing, (isCollapsed && !isMerged) ? BottomBarMetrics.tabBarSearchGap : 0)
                 .animation(
                     BottomBarStyle.morph.delay(isCollapsed ? Self.stagger : 0),
                     value: isCollapsed
                 )
 
+            // Zero-width and invisible when merged: its glyph has moved inside
+            // the merged capsule, and leaving a 56pt button here would both
+            // duplicate search and push the centred row off centre.
             trailingButton
+                .frame(width: isMerged ? 0 : barHeight)
+                .opacity(isMerged ? 0 : 1)
+                .clipped()
                 .animation(BottomBarStyle.morph, value: isSearching)
         }
     }
@@ -368,7 +392,10 @@ struct FloatingTabBar: View {
         // frame while collapsed — centred, it overhangs equally on both sides
         // and the home glyph, which sits at the content's leading edge, ends up
         // outside the clip entirely. The circle renders empty.
-        .frame(maxWidth: isCollapsed ? barHeight : .infinity, alignment: .leading)
+        .frame(
+            maxWidth: isMerged ? barHeight * 2 : (isCollapsed ? barHeight : .infinity),
+            alignment: .leading
+        )
         .frame(height: barHeight)
         .background(.regularMaterial, in: Capsule())
         // Load-bearing, not cosmetic: `tabsRow` is deliberately wider than this
@@ -420,23 +447,46 @@ struct FloatingTabBar: View {
     /// capsule closes, and back to its slot as the capsule opens, so it slides
     /// rather than cross-fading between two positions.
     private var restoreButton: some View {
-        Button {
-            onRestore()
-        } label: {
-            Group {
-                if isMinimised {
-                    glyph(for: selection)
-                        .matchedGeometryEffect(
-                            id: Self.activeGlyphID,
-                            in: glyphNamespace
-                        )
+        HStack(spacing: 0) {
+            Button {
+                onRestore()
+            } label: {
+                Group {
+                    if isMinimised {
+                        glyph(for: selection)
+                            .matchedGeometryEffect(
+                                id: Self.activeGlyphID,
+                                in: glyphNamespace
+                            )
+                    }
                 }
+                .foregroundStyle(Self.tint(isCurrent: false))
+                .frame(width: barHeight, height: barHeight)
             }
-            .foregroundStyle(.secondary)
-            .frame(width: barHeight, height: barHeight)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hiện thanh điều hướng")
+
+            // Search joins the capsule only in the merged layout. Everywhere
+            // else it is the standalone trailing circle, and drawing it in both
+            // places at once would put two search buttons on screen.
+            //
+            // Its own opacity rather than the row's: the capsule is growing
+            // from 56 to 112 underneath it, and a glyph that appears at full
+            // strength on frame one sits outside the capsule that has not
+            // reached it yet.
+            Button {
+                onOpenSearch()
+            } label: {
+                glyph(for: .search)
+                    .foregroundStyle(Self.tint(isCurrent: false))
+                    .frame(width: barHeight, height: barHeight)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(LibraryTab.search.label)
+            .opacity(isMerged ? 1 : 0)
+            .allowsHitTesting(isMerged)
+            .accessibilityHidden(!isMerged)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Hiện thanh điều hướng")
     }
 
     /// Zero-wide when closed, so it takes up no room and contributes no gap;
@@ -453,7 +503,12 @@ struct FloatingTabBar: View {
     /// view.
     private var searchCapsule: some View {
         searchRow
-            .frame(maxWidth: isCollapsed ? .infinity : 0)
+            // Not flexible when merged. With nothing greedy in the row, the
+            // HStack shrinks to its intrinsic width and the outer
+            // `.frame(width: geo.size.width, alignment: .bottom)` centres it —
+            // which is precisely the behaviour that shipped as a Critical
+            // defect in Task 1, and precisely what the merged layout wants.
+            .frame(maxWidth: (isCollapsed && !isMerged) ? .infinity : 0)
             .frame(height: barHeight)
             .background(.regularMaterial, in: Capsule())
             .clipShape(Capsule())
@@ -682,6 +737,10 @@ private struct FloatingTabBarPreview: View {
                 query: $query,
                 isEditing: $isEditing,
                 isMinimised: $isMinimised,
+                // `false`, so the preview's Minimise toggle shows the merged
+                // layout — the one with nothing playing, which is the harder
+                // of the two to reach in the running app.
+                hasTrack: false,
                 // Unwrapped, matching `RootView` — the bar owns its own timing,
                 // and a `withAnimation` here would flatten the stagger.
                 onOpenSearch: {

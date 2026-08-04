@@ -102,6 +102,7 @@ struct RootView: View {
                 // the guarantee. The guarantee that the two morphs never
                 // render at once is `isMinimisedActive` above: it holds
                 // whether or not this particular write ever ran.
+                hasTrack: playback.currentTrack != nil,
                 onOpenSearch: {
                     tabBeforeSearch = tab
                     tab = .search
