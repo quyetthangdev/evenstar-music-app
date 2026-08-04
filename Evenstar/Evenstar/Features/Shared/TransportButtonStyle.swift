@@ -37,23 +37,30 @@ struct TransportButtonStyle: ButtonStyle {
     /// The damping ratio this works out to is
     /// `12 / (2 * sqrt(200 * 0.8))` ≈ 0.47, comfortably under 1, so it really
     /// does overshoot and settle rather than easing flat into place.
-    fileprivate static let rebound = Spring(mass: 0.8, stiffness: 200, damping: 12)
+    /// Softened from the 0.8 / 200 / 12 this was first built to. That settled
+    /// in about half a second with a sharp rebound, which read as a snap rather
+    /// than as weight; slackening the spring is what slows the motion without
+    /// making the button feel late, because the press itself still answers
+    /// immediately.
+    fileprivate static let rebound = Spring(mass: 1.0, stiffness: 140, damping: 13)
 
     /// Fast enough to feel like it answers the finger, and used on the way out
     /// as well as in: relaxing instantly instead would put a visible step
-    /// between the squeeze and the stretch.
-    fileprivate static let squeeze = Animation.easeOut(duration: 0.07)
+    /// between the squeeze and the stretch. This one is not slowed with the
+    /// rest — it is the part that has to be immediate.
+    fileprivate static let squeeze = Animation.easeOut(duration: 0.09)
 
     fileprivate static let pressedScale: CGFloat = 0.88
 
     /// How long the kick takes to reach full stretch before the spring takes
     /// over. Short — it is the snap of the release, not a movement in itself.
-    fileprivate static let kickDuration = 0.10
+    fileprivate static let kickDuration = 0.14
     /// Long enough for `rebound` to actually settle: with these constants the
-    /// natural frequency is `sqrt(200 / 0.8)` ≈ 15.8 rad/s, which puts settling
-    /// at roughly `4 / (0.47 * 15.8)` ≈ 0.54s. Cutting it short would clip the
-    /// overshoot the spring was chosen for.
-    fileprivate static let reboundDuration = 0.52
+    /// natural frequency is `sqrt(140)` ≈ 11.8 rad/s and the damping ratio
+    /// `13 / (2 * sqrt(140))` ≈ 0.55, which puts settling at roughly
+    /// `4 / (0.55 * 11.8)` ≈ 0.62s. Cutting it short would clip the overshoot
+    /// the spring was chosen for.
+    fileprivate static let reboundDuration = 0.62
 
     fileprivate struct Kick {
         var offset: CGFloat = 0
@@ -113,6 +120,12 @@ struct TransportButtonStyle: ButtonStyle {
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
                 }
+                // Outside the kick, deliberately. Inside it the squash and
+                // stretch would scale the disc by 1.2 across and 0.85 down and
+                // draw it as an ellipse, and the 10pt throw would drag it off
+                // the point that was actually pressed. Out here it stays a
+                // circle, centred where the finger was.
+                .tapHalo(trigger: trigger)
                 // Fires on the same counter, so the tap lands in the hand at
                 // the same moment it lands in the eye. `.sensoryFeedback`
                 // rather than a `UIImpactFeedbackGenerator`: SwiftUI owns the

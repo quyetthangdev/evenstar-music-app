@@ -25,13 +25,17 @@ private struct TapHalo: ViewModifier {
             }
         } keyframes: { _ in
             KeyframeTrack(\.opacity) {
-                LinearKeyframe(1, duration: 0.06)
-                LinearKeyframe(1, duration: 0.10)
-                LinearKeyframe(0, duration: 0.22)
+                LinearKeyframe(1, duration: 0.08)
+                LinearKeyframe(1, duration: 0.14)
+                LinearKeyframe(0, duration: 0.30)
             }
+            // Eased open, not sprung. A spring makes the circle overshoot its
+            // size and rebound, which on a plain disc reads as a wobble rather
+            // than as elasticity — there is no shape for the eye to read the
+            // bounce against. It just grows and fades.
             KeyframeTrack(\.scale) {
-                SpringKeyframe(1.0, duration: 0.16, spring: .bouncy)
-                LinearKeyframe(1.0, duration: 0.22)
+                CubicKeyframe(1.0, duration: 0.22)
+                LinearKeyframe(1.0, duration: 0.30)
             }
         }
     }
@@ -45,6 +49,10 @@ extension View {
 }
 
 /// A transport arrow that hands over to a fresh copy of itself when tapped.
+///
+/// Deliberately no halo of its own: `TransportButtonStyle` adds one outside its
+/// own squash-and-stretch, where it stays a circle. Applied here it would sit
+/// inside that transform and be drawn as an ellipse.
 ///
 /// Two glyphs, not one, and they take turns rather than crossing. The copy you
 /// pressed leaves first — travelling the way its own arrow points and fading —
@@ -81,7 +89,7 @@ struct TransportArrow: View {
     /// easing while the other springs. The bounce is what the incoming copy
     /// arrives on; the outgoing one is transparent long before its own
     /// overshoot would show.
-    private static let slide = Spring(duration: 0.30, bounce: 0.22)
+    private static let slide = Spring(duration: 0.44, bounce: 0.16)
 
     /// How long the replacement waits at the edge before setting off.
     ///
@@ -90,7 +98,7 @@ struct TransportArrow: View {
     /// incoming copy fades up it has already travelled most of the way and
     /// appears near the middle. Holding it still at the edge is what makes the
     /// eye see it come in from the side.
-    private static let handoverDelay = 0.10
+    private static let handoverDelay = 0.14
 
     private struct Leg {
         var offset: CGFloat
@@ -120,10 +128,10 @@ struct TransportArrow: View {
                 view.offset(x: leg.offset).opacity(leg.opacity)
             } keyframes: { _ in
                 KeyframeTrack(\.offset) {
-                    SpringKeyframe(direction * travel, duration: 0.30, spring: Self.slide)
+                    SpringKeyframe(direction * travel, duration: 0.44, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
-                    LinearKeyframe(0, duration: 0.16)
+                    LinearKeyframe(0, duration: 0.22)
                 }
             }
 
@@ -143,14 +151,14 @@ struct TransportArrow: View {
                     // jump is unseen, and waits there.
                     MoveKeyframe(-direction * travel)
                     LinearKeyframe(-direction * travel, duration: Self.handoverDelay)
-                    SpringKeyframe(0, duration: 0.30, spring: Self.slide)
+                    SpringKeyframe(0, duration: 0.44, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
                     // Stays hidden for exactly as long as it stays still, so it
                     // becomes visible at the edge in the act of setting off
                     // rather than materialising part-way across.
                     LinearKeyframe(0, duration: Self.handoverDelay)
-                    LinearKeyframe(1, duration: 0.16)
+                    LinearKeyframe(1, duration: 0.22)
                 }
             }
         }
@@ -158,7 +166,6 @@ struct TransportArrow: View {
         // So a glyph on its way out disappears at the frame's edge instead of
         // sliding over the control beside it.
         .clipped()
-        .tapHalo(trigger: trigger)
     }
 
     private var glyph: some View {
