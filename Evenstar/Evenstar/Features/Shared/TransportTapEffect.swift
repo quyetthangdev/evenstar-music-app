@@ -46,9 +46,10 @@ extension View {
 
 /// A transport arrow that hands over to a fresh copy of itself when tapped.
 ///
-/// Two glyphs, not one. A fresh copy arrives from the side the arrow points at,
-/// fading up and springing into place, while the copy it replaces is pushed off
-/// the far side, fading out.
+/// Two glyphs, not one, and they take turns rather than crossing. The copy you
+/// pressed leaves first — travelling the way its own arrow points and fading —
+/// and only once it is nearly gone does a fresh copy set off from the far edge,
+/// fading up and springing into place.
 ///
 /// This replaced a single glyph that slid out and wrapped around via a
 /// `MoveKeyframe`. A wrap has to teleport — keyframes interpolate, so the jump
@@ -70,20 +71,26 @@ struct TransportArrow: View {
     /// the slide is clipped to.
     let side: CGFloat
     let trigger: Int
-    /// `1` for a control that moves forward, `-1` for one that moves back.
-    ///
-    /// This is the side the *replacement* arrives from, not the side the old
-    /// glyph leaves towards. Tapping Next brings the new glyph in from the
-    /// right and pushes the old one off to the left, the way the next item in a
-    /// list arrives; Previous mirrors it.
+    /// `1` for a control that moves forward, `-1` for one that moves back, so
+    /// the pressed glyph travels the way its own arrow points. Its replacement
+    /// then comes in from the opposite edge.
     let direction: CGFloat
     let travel: CGFloat
 
-    /// Both copies move on this, so their acceleration matches rather than one
+    /// Both copies move on this, so they accelerate alike rather than one
     /// easing while the other springs. The bounce is what the incoming copy
     /// arrives on; the outgoing one is transparent long before its own
     /// overshoot would show.
     private static let slide = Spring(duration: 0.30, bounce: 0.22)
+
+    /// How long the replacement waits at the edge before setting off.
+    ///
+    /// Without it the two legs are simultaneous and only opacity separates
+    /// them — which does not read as an arrow arriving, because by the time the
+    /// incoming copy fades up it has already travelled most of the way and
+    /// appears near the middle. Holding it still at the edge is what makes the
+    /// eye see it come in from the side.
+    private static let handoverDelay = 0.10
 
     private struct Leg {
         var offset: CGFloat
@@ -113,8 +120,7 @@ struct TransportArrow: View {
                 view.offset(x: leg.offset).opacity(leg.opacity)
             } keyframes: { _ in
                 KeyframeTrack(\.offset) {
-                    // Away from the side the replacement comes from.
-                    SpringKeyframe(-direction * travel, duration: 0.30, spring: Self.slide)
+                    SpringKeyframe(direction * travel, duration: 0.30, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
                     LinearKeyframe(0, duration: 0.16)
@@ -133,17 +139,18 @@ struct TransportArrow: View {
                 view.offset(x: leg.offset).opacity(leg.opacity)
             } keyframes: { _ in
                 KeyframeTrack(\.offset) {
-                    // Jumps to the side it is arriving from — the direction the
-                    // arrow points — while still transparent, so the jump is
-                    // unseen.
-                    MoveKeyframe(direction * travel)
+                    // Jumps to the far edge while still transparent, so the
+                    // jump is unseen, and waits there.
+                    MoveKeyframe(-direction * travel)
+                    LinearKeyframe(-direction * travel, duration: Self.handoverDelay)
                     SpringKeyframe(0, duration: 0.30, spring: Self.slide)
                 }
                 KeyframeTrack(\.opacity) {
-                    // Held down at first so the two are never both solid: this
-                    // copy only starts to read once the other is nearly gone.
-                    LinearKeyframe(0, duration: 0.09)
-                    LinearKeyframe(1, duration: 0.17)
+                    // Stays hidden for exactly as long as it stays still, so it
+                    // becomes visible at the edge in the act of setting off
+                    // rather than materialising part-way across.
+                    LinearKeyframe(0, duration: Self.handoverDelay)
+                    LinearKeyframe(1, duration: 0.16)
                 }
             }
         }
