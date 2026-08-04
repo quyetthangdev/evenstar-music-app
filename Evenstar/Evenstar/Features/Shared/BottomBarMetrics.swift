@@ -14,7 +14,13 @@ import CoreGraphics
 enum BottomBarMetrics {
     static let sideMargin: CGFloat = 12
     static let tabBarHeight: CGFloat = 50
-    static let tabBarBottomGap: CGFloat = 12
+    /// Measured from the **safe area**, not the screen, so what it means
+    /// depends on the device: 8 above a home indicator is 42 from the physical
+    /// edge, while on a device without one — an iPhone SE, where the bottom
+    /// inset is 0 — it is 8 from the edge and nothing else separates the bar
+    /// from it. Lowering this further is felt far more there than on the
+    /// notched phones it is usually being judged on.
+    static let tabBarBottomGap: CGFloat = 8
     /// Between the tab bar's top edge and the collapsed player's bottom edge.
     static let playerTabGap: CGFloat = 8
     /// Between the tab pill and the detached circular search button.
