@@ -132,12 +132,18 @@ struct FloatingTabBar: View {
     /// second axis (higher damping means *less* bounce), which is what makes it
     /// awkward to tune by feel.
     ///
-    /// A little bounce keeps the collapse from reading as a mechanical slide,
-    /// but this bar morphs on nearly every scroll, so it has to get out of the
-    /// way. Raise `bounce` for more spring; much past 0.4 it wobbles rather
-    /// than settles. Raise `duration` and everything below has to move with it
-    /// — see `stagger`.
-    static let searchSpring = Animation.spring(duration: 0.32, bounce: 0.18)
+    /// The two axes are not independent in the way the names suggest. Bounce
+    /// is a *proportion* of the duration, so shortening the spring makes the
+    /// same `bounce` read as flatter — the overshoot is still there, but it
+    /// happens over less time and the eye reads less of it. Dropping 0.45 to
+    /// 0.32 therefore took springiness out on its own, before `bounce` was
+    /// touched at all; 0.30 here is close to the original number but over a
+    /// shorter spring, which nets out springier per second and quicker
+    /// overall.
+    ///
+    /// Much past 0.4 it wobbles rather than settles. Raise `duration` and
+    /// everything below has to move with it — see `stagger`.
+    static let searchSpring = Animation.spring(duration: 0.32, bounce: 0.30)
 
     /// How far the field's growth trails the tab pill's collapse, and the
     /// reverse on the way back. Short enough that the bar still feels like one
