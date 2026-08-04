@@ -89,7 +89,7 @@ struct TransportArrow: View {
     /// easing while the other springs. The bounce is what the incoming copy
     /// arrives on; the outgoing one is transparent long before its own
     /// overshoot would show.
-    private static let slide = Spring(duration: 0.44, bounce: 0.16)
+    private static let slide = Spring(duration: 0.44, bounce: 0.12)
 
     /// How long the replacement waits at the edge before setting off.
     ///

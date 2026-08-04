@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// Press-and-release physics for a transport button: squeeze while held, then
-/// kick in the button's own direction with a squash-and-stretch and spring
-/// back.
+/// on release deform, kick, and spring back.
 ///
 /// A `ButtonStyle` rather than a modifier on the label, because only a button
 /// style is handed `configuration.isPressed` — the touch-down and touch-up
@@ -17,43 +16,50 @@ import SwiftUI
 ///   keyframes on the same tap counter the glyph handover already uses.
 ///
 /// They compose by multiplication, which is what makes the seam invisible: at
-/// release the squeeze is relaxing 0.88 → 1 while the kick stretches 1 → 1.2,
-/// so the product leaves the compressed state and grows into the stretch with
-/// no jump between them.
+/// release the squeeze is relaxing back to 1 while the kick is deforming away
+/// from it, so the button leaves the compressed state and grows into the
+/// stretch with no step between them.
+///
+/// Prefer the two named forms — `.transportSkip` and `.transportToggle` — over
+/// building one by hand. They are the difference between a button that goes
+/// somewhere and one that does not, and that difference is not just a zero
+/// distance: see `transportToggle`.
 struct TransportButtonStyle: ButtonStyle {
     /// Incremented by the button's action, so the kick fires on release rather
     /// than on touch-down, and a second press during the first retriggers it.
     let trigger: Int
-    /// `1` kicks right, `-1` left, `0` not at all — the squeeze and the spring
-    /// still apply, which is what a play/pause button wants.
+    /// `1` kicks right, `-1` left, `0` not at all.
     let direction: CGFloat
     /// How far the kick throws the button, in points.
-    var translate: CGFloat = 10
+    let translate: CGFloat
+    /// Deformation at the peak of the kick. Unequal for a button that travels
+    /// and equal for one that does not — see `transportToggle`.
+    let stretchX: CGFloat
+    let stretchY: CGFloat
 
-    /// The rebound. Given as mass/stiffness/damping rather than SwiftUI's usual
+    /// The rebound.
+    ///
+    /// Given as mass/stiffness/damping rather than SwiftUI's usual
     /// duration/bounce because those are the terms the behaviour was specified
     /// in, and `Spring` accepts them directly — no conversion to get wrong.
     ///
-    /// The damping ratio this works out to is
-    /// `12 / (2 * sqrt(200 * 0.8))` ≈ 0.47, comfortably under 1, so it really
-    /// does overshoot and settle rather than easing flat into place.
-    /// Softened from the 0.8 / 200 / 12 this was first built to. That settled
-    /// in about half a second with a sharp rebound, which read as a snap rather
-    /// than as weight; slackening the spring is what slows the motion without
-    /// making the button feel late, because the press itself still answers
-    /// immediately.
+    /// Slackened from an earlier 0.8 / 200 / 12, which settled in about half a
+    /// second with a rebound sharp enough to read as a snap rather than as
+    /// weight. Loosening the spring is what slows the motion without making the
+    /// button feel late, because the press itself still answers immediately.
     fileprivate static let rebound = Spring(mass: 1.0, stiffness: 140, damping: 13)
 
     /// Fast enough to feel like it answers the finger, and used on the way out
     /// as well as in: relaxing instantly instead would put a visible step
-    /// between the squeeze and the stretch. This one is not slowed with the
-    /// rest — it is the part that has to be immediate.
+    /// between the squeeze and the stretch. Deliberately not slowed along with
+    /// the rest — it is the part that has to be immediate.
     fileprivate static let squeeze = Animation.easeOut(duration: 0.09)
 
-    fileprivate static let pressedScale: CGFloat = 0.88
+    fileprivate static let pressedScale: CGFloat = 0.92
 
-    /// How long the kick takes to reach full stretch before the spring takes
-    /// over. Short — it is the snap of the release, not a movement in itself.
+    /// How long the kick takes to reach full deformation before the spring
+    /// takes over. Short — it is the snap of the release, not a movement in
+    /// itself.
     fileprivate static let kickDuration = 0.14
     /// Long enough for `rebound` to actually settle: with these constants the
     /// natural frequency is `sqrt(140)` ≈ 11.8 rad/s and the damping ratio
@@ -74,13 +80,15 @@ struct TransportButtonStyle: ButtonStyle {
         // `.plain` with a custom style silently takes the disabled appearance
         // with it — `.plain` greys a disabled label, a custom style renders it
         // exactly like an enabled one. Next is disabled on the last track and
-        // both arrows are disabled with no track loaded, so without this the
-        // buttons look tappable when they are not.
+        // every transport button is disabled with no track loaded, so without
+        // this they look tappable when they are not.
         Interaction(
             configuration: configuration,
             trigger: trigger,
             direction: direction,
-            translate: translate
+            translate: translate,
+            stretchX: stretchX,
+            stretchY: stretchY
         )
     }
 
@@ -92,6 +100,8 @@ struct TransportButtonStyle: ButtonStyle {
         let trigger: Int
         let direction: CGFloat
         let translate: CGFloat
+        let stretchX: CGFloat
+        let stretchY: CGFloat
 
         var body: some View {
             configuration.label
@@ -107,24 +117,20 @@ struct TransportButtonStyle: ButtonStyle {
                         CubicKeyframe(direction * translate, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(0, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
-                    // Stretch along the travel and squash across it, conserving
-                    // roughly the area the glyph occupied, which is what reads
-                    // as one object being flung rather than two unrelated
-                    // scalings.
                     KeyframeTrack(\.scaleX) {
-                        CubicKeyframe(1.2, duration: TransportButtonStyle.kickDuration)
+                        CubicKeyframe(stretchX, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
                     KeyframeTrack(\.scaleY) {
-                        CubicKeyframe(0.85, duration: TransportButtonStyle.kickDuration)
+                        CubicKeyframe(stretchY, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
                 }
-                // Outside the kick, deliberately. Inside it the squash and
-                // stretch would scale the disc by 1.2 across and 0.85 down and
-                // draw it as an ellipse, and the 10pt throw would drag it off
-                // the point that was actually pressed. Out here it stays a
-                // circle, centred where the finger was.
+                // Outside the kick, deliberately. Inside it, the deformation
+                // would scale the disc unevenly and draw it as an ellipse, and
+                // the throw would drag it off the point that was actually
+                // pressed. Out here it stays a circle, centred where the finger
+                // was.
                 .tapHalo(trigger: trigger)
                 // Fires on the same counter, so the tap lands in the hand at
                 // the same moment it lands in the eye. `.sensoryFeedback`
@@ -133,5 +139,54 @@ struct TransportButtonStyle: ButtonStyle {
                 // settings.
                 .sensoryFeedback(.impact(weight: .light), trigger: trigger)
         }
+    }
+}
+
+extension ButtonStyle where Self == TransportButtonStyle {
+    /// For a button that moves the queue: Previous and Next.
+    ///
+    /// It throws itself the way its own arrow points, and stretches along that
+    /// travel while squashing across it — roughly conserving the area it
+    /// covered, which is what reads as one object being flung rather than two
+    /// unrelated scalings.
+    ///
+    /// - Parameter translate: shorten it where the button is tight against its
+    ///   neighbours; the mini player's 32pt Next has less room than the
+    ///   expanded player's 44pt one.
+    static func transportSkip(
+        trigger: Int,
+        direction: CGFloat,
+        translate: CGFloat = 7
+    ) -> Self {
+        TransportButtonStyle(
+            trigger: trigger,
+            direction: direction,
+            translate: translate,
+            stretchX: 1.12,
+            stretchY: 0.92
+        )
+    }
+
+    /// For a button that acts in place: play/pause.
+    ///
+    /// Not simply the skip form with the distance set to zero. Squash and
+    /// stretch is the deformation of something being *thrown* — it reads as
+    /// wind resistance, and it needs a direction of travel to be read against.
+    /// On a button that stays put it has none, and an unequal scaling with
+    /// nowhere to go just looks like the glyph is being wrung.
+    ///
+    /// So the deformation here is equal on both axes: a pop rather than a
+    /// stretch. It carries the same squeeze, the same rebound spring, and the
+    /// same halo and haptic as its neighbours, so the three buttons answer a
+    /// press in one language — only the part that describes travel is dropped,
+    /// because this one does not travel.
+    static func transportToggle(trigger: Int) -> Self {
+        TransportButtonStyle(
+            trigger: trigger,
+            direction: 0,
+            translate: 0,
+            stretchX: 1.08,
+            stretchY: 1.08
+        )
     }
 }

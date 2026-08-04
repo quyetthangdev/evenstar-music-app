@@ -100,10 +100,10 @@ struct NowPlayingContent: View {
                     side: Self.transportGlyphFrame,
                     trigger: previousTaps,
                     direction: -1,
-                    travel: 26
+                    travel: 20
                 )
             }
-            .buttonStyle(TransportButtonStyle(trigger: previousTaps, direction: -1))
+            .buttonStyle(.transportSkip(trigger: previousTaps, direction: -1))
             .disabled(playback.currentTrack == nil)
 
             Button {
@@ -120,13 +120,13 @@ struct NowPlayingContent: View {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
                     .contentTransition(.symbolEffect(.replace))
-                    // Halo only. A handover says "that went somewhere", true of
-                    // Previous and Next and false of this one, which toggles in
-                    // place and has no direction — and its own glyph already
-                    // changes, which is feedback the arrows do not have.
-                    .tapHalo(trigger: playPauseTaps)
+                    // No glyph handover: a handover says "that went somewhere",
+                    // true of Previous and Next and false of this one, which
+                    // toggles in place. Its own glyph already changes, which is
+                    // feedback the arrows do not have. The halo now comes from
+                    // the button style, along with the press physics.
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.transportToggle(trigger: playPauseTaps))
             .disabled(playback.currentTrack == nil)
 
             Button {
@@ -139,10 +139,10 @@ struct NowPlayingContent: View {
                     side: Self.transportGlyphFrame,
                     trigger: nextTaps,
                     direction: 1,
-                    travel: 26
+                    travel: 20
                 )
             }
-            .buttonStyle(TransportButtonStyle(trigger: nextTaps, direction: 1))
+            .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1))
             .disabled(playback.queueIndex >= playback.queue.count - 1)
         }
         .padding(.top, 8)

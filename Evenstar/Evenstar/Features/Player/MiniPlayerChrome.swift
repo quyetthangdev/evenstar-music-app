@@ -46,10 +46,8 @@ struct MiniPlayerChrome: View {
                         .font(.title3)
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: 32, height: 32)
-                        // Halo only — see `NowPlayingContent`.
-                        .tapHalo(trigger: playPauseTaps)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.transportToggle(trigger: playPauseTaps))
                 Button {
                     nextTaps += 1
                     acknowledge { playback.next() }
@@ -60,7 +58,7 @@ struct MiniPlayerChrome: View {
                         side: 32,
                         trigger: nextTaps,
                         direction: 1,
-                        travel: 20
+                        travel: 15
                     )
                     // Driven by the tap counter, not by the track changing.
                     // The acknowledgement then lands in the same frame as the
@@ -73,10 +71,10 @@ struct MiniPlayerChrome: View {
                     // the `.disabled` below means the last track takes no taps
                     // at all.
                 }
-                // A shorter throw than the expanded player's 10: this button is
+                // A shorter throw than the expanded player's: this button is
                 // 32pt inside a pill, not 44 in open space, so the full kick
                 // would carry it into its neighbour.
-                .buttonStyle(TransportButtonStyle(trigger: nextTaps, direction: 1, translate: 6))
+                .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1, translate: 4))
                 .disabled(playback.queueIndex >= playback.queue.count - 1)
             }
         }
