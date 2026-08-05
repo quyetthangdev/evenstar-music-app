@@ -7,10 +7,28 @@ import SwiftData
 /// in the playback layer but would force every existing `@Query` to grow a
 /// filter, and missing one would leak Drive rows into the local library. Two
 /// models make the compiler enforce the split instead of a reviewer.
+///
+/// **Reconciling a scan against existing rows must fetch by `fileID` and
+/// mutate in place — never construct a fresh `DriveTrack(fileID:...)` and
+/// insert it for a `fileID` that may already exist.** SwiftData's
+/// `@Attribute(.unique)` on `fileID` does keep the row count at one either
+/// way, but on a collision it is `id` — not the caller — that decides which
+/// object's `id` the surviving row keeps, and it is not necessarily the
+/// original. Re-inserting a known `fileID` on every rescan therefore mints a
+/// new `id` for that row on every rescan. `PlaybackState` persists queue
+/// membership as bare `UUID`s (`currentTrackID`, `queueTrackIDs`) with no
+/// relationship back to this table, so nothing re-links them when a row's
+/// `id` changes underneath it — a restored queue silently loses any track
+/// whose `id` moved. See `testInsertingTheSameFileIDTwiceKeepsOneRow` for the
+/// reproduction.
 @Model
 final class DriveTrack {
-    /// Stable across app launches, and what `PlaybackState` persists.
-    /// Distinct from `fileID`, which is Google's.
+    /// What `PlaybackState` persists to identify a queued track. Distinct
+    /// from `fileID`, which is Google's.
+    ///
+    /// *Not* stable across a `fileID` collision — see the type-level doc
+    /// comment. Only stable if every reconcile fetches the existing row by
+    /// `fileID` and mutates it, rather than reconstructing and inserting.
     @Attribute(.unique) var id: UUID
     @Attribute(.unique) var fileID: String
     var folderID: String
