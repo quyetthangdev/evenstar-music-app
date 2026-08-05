@@ -17,7 +17,9 @@ struct EvenstarApp: App {
     init() {
         let container: ModelContainer
         do {
-            container = try ModelContainer(for: Track.self, PlaybackState.self)
+            container = try ModelContainer(
+                for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self
+            )
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
