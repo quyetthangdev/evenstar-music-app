@@ -15,6 +15,7 @@ struct NowPlayingContent: View {
     @State private var nextTaps = 0
     @State private var previousTaps = 0
     @State private var playPauseTaps = 0
+    @State private var repeatTaps = 0
 
     /// The transport glyphs' square frame. `forward.fill` at `.title2` is
     /// 32.3pt wide and 20pt tall, so an unframed button would give the tap
@@ -25,11 +26,28 @@ struct NowPlayingContent: View {
     /// the play button.
     private static let transportGlyphFrame: CGFloat = 44
 
+    /// Dim when off, accent when armed — the glyph alone cannot carry it,
+    /// because off and all share the `repeat` symbol and only `one` differs.
+    ///
+    /// Three branches, not two. `TransportButtonStyle` dims a disabled label to
+    /// `.tertiary` from outside, but this view sets its colour inside the
+    /// label, where the innermost `foregroundStyle` wins — so the style's
+    /// dimming never lands and this has to do it.
+    private var repeatTint: AnyShapeStyle {
+        if playback.currentTrack == nil {
+            return AnyShapeStyle(.tertiary)
+        }
+        return playback.repeatMode == .off
+            ? AnyShapeStyle(.secondary)
+            : AnyShapeStyle(Color.accentColor)
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             titleBlock
             scrubber
             transport
+            repeatRow
             volume
         }
     }
@@ -136,6 +154,24 @@ struct NowPlayingContent: View {
             .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
+    }
+
+    private var repeatRow: some View {
+        Button {
+            repeatTaps += 1
+            // Inline, not deferred. Like play/pause, the state change is the
+            // feedback: both the glyph and its tint read from `repeatMode`.
+            playback.cycleRepeatMode()
+        } label: {
+            Image(systemName: playback.repeatMode == .one ? "repeat.1" : "repeat")
+                .font(.subheadline)
+                .foregroundStyle(repeatTint)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.transportToggle(trigger: repeatTaps))
+        .disabled(playback.currentTrack == nil)
+        .padding(.top, 4)
     }
 
     // The `.frame` modifiers this used to carry at the call site were a
