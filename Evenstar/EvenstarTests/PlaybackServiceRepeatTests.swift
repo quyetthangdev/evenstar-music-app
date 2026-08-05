@@ -133,4 +133,101 @@ final class PlaybackServiceRepeatTests: XCTestCase {
 
         XCTAssertEqual(service.repeatMode, .off)
     }
+
+    // MARK: - A track ending by itself
+
+    func testFinishWithRepeatOffOnLastTrackStops() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(2, library: library)
+        service.play(list[1], in: list)
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    func testFinishWithRepeatAllOnLastTrackWrapsToTheFirst() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()  // .all
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertTrue(service.isPlaying)
+        XCTAssertEqual(service.queue.count, 3, "wrapping must not tear down the queue")
+    }
+
+    func testFinishWithRepeatAllMidQueueStillAdvances() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()  // .all
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertEqual(service.currentTrack?.id, list[1].id)
+    }
+
+    func testFinishWithRepeatOneReplaysTheSameTrack() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()  // .all
+        service.cycleRepeatMode()  // .one
+        let playsBefore = player.playCallCount
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertEqual(service.queueIndex, 0, "repeat-one must not advance")
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertTrue(service.isPlaying)
+        XCTAssertGreaterThan(player.playCallCount, playsBefore, "it must actually start again")
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
+    func testFinishWithRepeatOneOnTheLastTrackReplaysRatherThanStopping() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(2, library: library)
+        service.play(list[1], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertTrue(service.isPlaying)
+        XCTAssertFalse(service.queue.isEmpty)
+    }
+
+    /// A track left on repeat is genuinely being played again, so each pass
+    /// past 30 seconds counts. This fails if the replay path forgets to clear
+    /// `playCountedForCurrent`.
+    func testRepeatOneCountsEachPassAsAPlay() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(1, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        player.currentTime = 31
+        service.tickForTesting()
+        XCTAssertEqual(list[0].playCount, 1)
+
+        player.simulateFinish()
+        await Task.yield()
+        player.currentTime = 31
+        service.tickForTesting()
+
+        XCTAssertEqual(list[0].playCount, 2)
+    }
 }

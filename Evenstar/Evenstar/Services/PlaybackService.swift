@@ -133,15 +133,7 @@ final class PlaybackService {
     func next() {
         guard !queue.isEmpty else { return }
         if queueIndex + 1 < queue.count {
-            queueIndex += 1
-            playCountedForCurrent = false
-            loadCurrentAndPlay()
-            // Deferred for the same reason `pause()`/`resume()` defer theirs:
-            // a SwiftData write between the tap and the next render is felt as
-            // button latency. `loadCurrentAndPlay` has already pushed the new
-            // track to the lock screen synchronously, so nothing user-visible
-            // waits on this.
-            deferPersist()
+            advance(to: queueIndex + 1)
         } else {
             stopPlayback()
         }
@@ -343,11 +335,45 @@ final class PlaybackService {
         persistImmediately()
     }
 
+    /// Plays the track at `index`, from the top.
+    ///
+    /// Extracted because four callers now want it — Next, Previous, automatic
+    /// advance, and the repeat-one replay, which is simply `advance(to:)` with
+    /// the index it already has: `loadCurrentAndPlay()` reloads the file, seeks
+    /// to 0 and starts, which is exactly what replaying a track is.
+    ///
+    /// The persist is deferred for the same reason every other tap path defers
+    /// its own: a SwiftData write between the tap and the next render is felt
+    /// as button latency, and `loadCurrentAndPlay()` has already pushed the
+    /// track to the lock screen synchronously, so nothing user-visible waits.
+    private func advance(to index: Int) {
+        queueIndex = index
+        playCountedForCurrent = false
+        loadCurrentAndPlay()
+        deferPersist()
+    }
+
+    /// A track ran out on its own.
+    ///
+    /// This deliberately no longer delegates to `next()`. The two are different
+    /// events that happen to have shared an implementation: repeat-one applies
+    /// here and *not* to the Next button, where pressing it means the user
+    /// wants the next track regardless of the mode. Delegating would make Next
+    /// replay the current track whenever repeat-one was armed, which reads as a
+    /// broken button.
     private func handleFinish() {
-        if queueIndex + 1 < queue.count {
-            next()
-        } else {
-            stopPlayback()
+        guard !queue.isEmpty else { return }
+        switch repeatMode {
+        case .one:
+            advance(to: queueIndex)
+        case .all:
+            advance(to: queueIndex + 1 < queue.count ? queueIndex + 1 : 0)
+        case .off:
+            if queueIndex + 1 < queue.count {
+                advance(to: queueIndex + 1)
+            } else {
+                stopPlayback()
+            }
         }
     }
 
