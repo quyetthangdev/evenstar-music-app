@@ -10,10 +10,17 @@ final class StubURLProtocol: URLProtocol {
 
     nonisolated(unsafe) static var responses: [Response] = []
     nonisolated(unsafe) static var requestedURLs: [URL] = []
+    /// When set, the next request fails with this error instead of being
+    /// answered from `responses` (or with the default "queue empty" offline
+    /// failure). Lets a test exercise a transport failure — cancellation,
+    /// DNS, TLS — that has nothing to do with any queued HTTP response.
+    /// Consumed once, then cleared, so it never leaks into the next request.
+    nonisolated(unsafe) static var nextError: Error?
 
     static func reset() {
         responses = []
         requestedURLs = []
+        nextError = nil
     }
 
     static func session() -> URLSession {
@@ -27,6 +34,11 @@ final class StubURLProtocol: URLProtocol {
 
     override func startLoading() {
         if let url = request.url { Self.requestedURLs.append(url) }
+        if let error = Self.nextError {
+            Self.nextError = nil
+            client?.urlProtocol(self, didFailWithError: error)
+            return
+        }
         guard !Self.responses.isEmpty else {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
