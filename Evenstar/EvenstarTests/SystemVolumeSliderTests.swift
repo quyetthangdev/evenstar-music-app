@@ -7,19 +7,18 @@ import UIKit
 final class SystemVolumeSliderTests: XCTestCase {
 
     /// Builds the volume view the way SwiftUI would and drives it through a
-    /// real layout pass, because `MPVolumeView` creates its `UISlider` lazily
-    /// during layout — asking for it any earlier finds nothing.
-    /// Builds the volume view the way SwiftUI would and drives it through a
     /// real layout pass, because `MPVolumeView` creates its slider lazily
     /// during layout — asking any earlier finds nothing.
-    private func laidOutSlider() -> UISlider? {
-        let view = TintedVolumeView(frame: CGRect(x: 0, y: 0, width: 300, height: 28))
+    private func laidOut() -> (TintedVolumeView, UISlider?) {
+        let view = TintedVolumeView(
+            frame: CGRect(x: 0, y: 0, width: 300, height: ScrubberBar.touchHeight)
+        )
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
         window.addSubview(view)
         window.isHidden = false
         view.setNeedsLayout()
         view.layoutIfNeeded()
-        return Self.findSlider(in: view)
+        return (view, Self.findSlider(in: view))
     }
 
     private static func findSlider(in view: UIView) -> UISlider? {
@@ -32,20 +31,21 @@ final class SystemVolumeSliderTests: XCTestCase {
 
     /// The simulator has no audio hardware, so `MPVolumeView` builds no slider
     /// there at all — its subtree is `[UILabel, MPButton]`. Skipping is honest
-    /// where passing would be vacuous: these two assertions are real, and they
-    /// run on a device.
-    private func requireSlider() throws -> UISlider {
-        guard let slider = laidOutSlider() else {
+    /// where passing would be vacuous: these assertions are real, and they run
+    /// on a device.
+    private func requireSlider() throws -> (TintedVolumeView, UISlider) {
+        let (view, slider) = laidOut()
+        guard let slider else {
             throw XCTSkip("MPVolumeView builds no UISlider without audio hardware; run on a device")
         }
-        return slider
+        return (view, slider)
     }
 
     /// The point of the whole exercise: the volume bar has to be as thick as
     /// the scrubber, and `UISlider`'s own track is about 4pt with no property
     /// to change it — only a track image can.
-    func testTrackImageIsAsThickAsTheScrubber() throws {
-        let slider = try requireSlider()
+    func testTrackImagesAreAsThickAsTheScrubber() throws {
+        let (_, slider) = try requireSlider()
 
         let minimum = try XCTUnwrap(slider.currentMinimumTrackImage, "no minimum track image")
         let maximum = try XCTUnwrap(slider.currentMaximumTrackImage, "no maximum track image")
@@ -54,24 +54,54 @@ final class SystemVolumeSliderTests: XCTestCase {
         XCTAssertEqual(maximum.size.height, ScrubberBar.restingHeight, accuracy: 0.01)
     }
 
-    /// Painting `UIColor.label` into the bitmap would bake whichever appearance
-    /// was current when the image was first built, leaving the bar the wrong
-    /// colour after a switch to dark mode. A template image takes the slider's
-    /// tint colours instead, which is what keeps it dynamic.
-    func testTrackImageIsATemplateSoItFollowsTheAppearance() throws {
-        let slider = try requireSlider()
-        let minimum = try XCTUnwrap(slider.currentMinimumTrackImage)
+    /// Without this the bar is a solid block and the current volume cannot be
+    /// read off it — which is what shipped once, because `UISlider` tints a
+    /// track *image* with `tintColor` rather than with `minimumTrackTintColor`
+    /// and `maximumTrackTintColor`, so a single template image came out the
+    /// same colour at both ends.
+    func testTheTwoEndsOfTheTrackAreDrawnDifferently() throws {
+        let (_, slider) = try requireSlider()
 
-        XCTAssertEqual(minimum.renderingMode, .alwaysTemplate)
+        let minimum = try XCTUnwrap(slider.currentMinimumTrackImage)
+        let maximum = try XCTUnwrap(slider.currentMaximumTrackImage)
+
+        XCTAssertNotEqual(
+            minimum.pngData(),
+            maximum.pngData(),
+            "the filled and unfilled halves must not be the same bitmap"
+        )
+    }
+
+    /// `MPVolumeView` lays its slider out against its own idea of the row
+    /// rather than the height this view reports, which left the bar sitting
+    /// above the speaker glyphs either side of it.
+    func testTheSliderIsCentredInTheRow() throws {
+        let (view, slider) = try requireSlider()
+
+        XCTAssertEqual(slider.frame.midY, view.bounds.midY, accuracy: 0.5)
     }
 
     /// One bitmap serves both ends of the bar by stretching from the middle.
     /// Without the caps it would squash the rounded ends into ellipses at one
     /// end and stretch them into a lozenge at the other.
+    ///
+    /// Runs everywhere — it asks the image directly and needs no slider.
     func testTrackImageStretchesFromItsMiddle() {
-        let image = SystemVolumeSlider.trackImage
+        let image = SystemVolumeSlider.trackImage(color: .label)
+
+        XCTAssertEqual(image.size.height, ScrubberBar.restingHeight, accuracy: 0.01)
         XCTAssertEqual(image.capInsets.left, ScrubberBar.restingHeight / 2, accuracy: 0.01)
         XCTAssertEqual(image.capInsets.right, ScrubberBar.restingHeight / 2, accuracy: 0.01)
         XCTAssertEqual(image.resizingMode, UIImage.ResizingMode.stretch)
+    }
+
+    /// The colour is baked into the bitmap rather than taken from a tint, so
+    /// two different colours have to produce two different images — which is
+    /// what the dark-mode rebuild in `layoutSubviews` relies on.
+    func testTrackImageColourReachesTheBitmap() {
+        let opaque = SystemVolumeSlider.trackImage(color: UIColor.black)
+        let faded = SystemVolumeSlider.trackImage(color: UIColor.black.withAlphaComponent(0.25))
+
+        XCTAssertNotEqual(opaque.pngData(), faded.pngData())
     }
 }

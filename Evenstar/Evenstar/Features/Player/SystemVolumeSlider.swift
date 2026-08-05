@@ -80,6 +80,47 @@ struct SystemVolumeSlider: UIViewRepresentable {
     /// the other. `UISlider`'s own track is about 4pt and cannot be resized any
     /// other way.
     ///
+    /// Two images, not one template. A template would be the tidier answer to
+    /// dark mode, and it was the first attempt — but `UISlider` tints a track
+    /// *image* with `tintColor`, not with `minimumTrackTintColor` and
+    /// `maximumTrackTintColor`, so both ends came out the same colour and the
+    /// bar became a solid block with no visible level. The colour therefore has
+    /// to be in the bitmap, which means resolving it against the current trait
+    /// collection and rebuilding when that changes — see `layoutSubviews`.
+    ///
+    /// The caps make it stretch from the middle, so one bitmap draws both a
+    /// short filled section and a long unfilled one.
+    static func trackImage(color: UIColor) -> UIImage {
+        let side = ScrubberBar.restingHeight
+        let size = CGSize(width: side, height: side)
+        let capsule = UIGraphicsImageRenderer(size: size).image { _ in
+            color.setFill()
+            UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: size),
+                cornerRadius: side / 2
+            ).fill()
+        }
+        return capsule.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: side / 2, bottom: 0, right: side / 2),
+            resizingMode: .stretch
+        )
+    }
+
+    /// A 30x30 transparent image. An empty `UIImage()` is not reliably
+    /// honoured by `setVolumeThumbImage` across iOS versions — if a knob is
+    /// still visible on device, this is the first thing to check.
+    ///
+    /// It must not shrink back to 1x1: `UISlider` only begins tracking a
+    /// touch that lands inside the thumb rect, and that rect derives from
+    /// the thumb image's size. A 1x1 image gives a roughly 1pt grab target
+    /// across a control this wide — nothing is drawn either way, since the
+    /// image itself is invisible, so there is no size at which 1x1 is
+    /// better and 30x30 costs nothing visually.
+    /// A capsule as thick as `ScrubberBar`'s resting bar, so the two controls
+    /// read as the same kind of thing rather than one being a hairline next to
+    /// the other. `UISlider`'s own track is about 4pt and cannot be resized any
+    /// other way.
+    ///
     /// Rendered as a **template** image, deliberately. Painting `UIColor.label`
     /// into the bitmap would bake whichever appearance was current at launch
     /// and leave the bar the wrong colour after a switch to dark mode; a
@@ -132,18 +173,39 @@ struct SystemVolumeSlider: UIViewRepresentable {
 /// simulator, so no screenshot can show it, and the first attempt at this —
 /// through `MPVolumeView`'s own image setters — silently did nothing on device.
 final class TintedVolumeView: MPVolumeView {
+    /// The appearance the current track images were drawn for, so they are
+    /// rebuilt when it changes and not on every layout pass.
+    private var renderedStyle: UIUserInterfaceStyle?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let slider = Self.findSlider(in: self) else { return }
-        slider.minimumTrackTintColor = .label
-        slider.maximumTrackTintColor = UIColor.label.withAlphaComponent(0.25)
+
         // On the slider itself, not through
         // `MPVolumeView.setMinimum/MaximumVolumeSliderImage`. Those were tried
         // first and had no visible effect on device — which the simulator
         // could not have shown either way, since `MPVolumeView` draws nothing
         // there. `UISlider`'s own setters do land.
-        slider.setMinimumTrackImage(SystemVolumeSlider.trackImage, for: .normal)
-        slider.setMaximumTrackImage(SystemVolumeSlider.trackImage, for: .normal)
+        if renderedStyle != traitCollection.userInterfaceStyle {
+            renderedStyle = traitCollection.userInterfaceStyle
+            let filled = UIColor.label.resolvedColor(with: traitCollection)
+            slider.setMinimumTrackImage(
+                SystemVolumeSlider.trackImage(color: filled),
+                for: .normal
+            )
+            slider.setMaximumTrackImage(
+                SystemVolumeSlider.trackImage(color: filled.withAlphaComponent(0.25)),
+                for: .normal
+            )
+        }
+
+        // Centred by hand. `MPVolumeView` lays its slider out against its own
+        // idea of the row, which is not the 28pt this view reports, so the bar
+        // sat a few points above the speaker glyphs either side of it.
+        let centred = (bounds.height - slider.frame.height) / 2
+        if abs(slider.frame.minY - centred) > 0.5 {
+            slider.frame.origin.y = centred
+        }
     }
 
     /// Searches the whole subtree, not just the direct children.
