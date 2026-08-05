@@ -28,6 +28,19 @@ enum DriveLinkParser {
         // shapes staying exactly as they are.
         if trimmed.contains("/file/d/") { return nil }
 
+        // /uc is Drive's direct-download endpoint and is only ever a file —
+        // "https://drive.google.com/uc?id=FILEID" and its
+        // "...&export=download" variant are the commonest direct-download
+        // links Google hands out. Reject it before the id= branch below
+        // would otherwise treat the file ID as a folder ID.
+        //
+        // /open?id= is different and deliberately NOT rejected here: Google
+        // genuinely uses /open?id= for both files and folders, so no amount
+        // of string parsing can tell them apart, and the brief requires
+        // accepting it. /uc, unlike /open, is unambiguous — it never means
+        // a folder — which is what makes it safe to reject outright.
+        if trimmed.contains("/uc?") { return nil }
+
         // Only look for /folders/ or id= on an actual Drive host. Otherwise
         // e.g. "https://example.com/drive/folders/abc" would be accepted
         // just because its path happens to contain "/folders/".

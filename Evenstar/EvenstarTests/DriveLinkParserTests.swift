@@ -57,4 +57,29 @@ final class DriveLinkParserTests: XCTestCase {
         XCTAssertNil(DriveLinkParser.folderID(from: tooShort))
         XCTAssertEqual(DriveLinkParser.folderID(from: longEnough), longEnough)
     }
+
+    /// Drive's /uc endpoint is a direct-download link for a *file* — the
+    /// commonest direct-download form Google hands out — and it never
+    /// refers to a folder. It must be rejected before it reaches the id=
+    /// branch, or a file ID would be queried as a folder and produce the
+    /// same silent empty-list failure testRejectsAFileLink exists to
+    /// prevent.
+    func testRejectsUcDownloadLinks() {
+        let id = "1A2b3C4d5E6f7G8h9I0jKlMnOpQrStUv"
+        for text in [
+            "https://drive.google.com/uc?id=\(id)",
+            "https://drive.google.com/uc?export=download&id=\(id)",
+        ] {
+            XCTAssertNil(DriveLinkParser.folderID(from: text), "should have rejected: \(text)")
+        }
+    }
+
+    /// Unlike /uc, /open?id= is genuinely ambiguous — Google uses it for
+    /// both files and folders, and no string parsing can tell them apart —
+    /// so it must stay accepted. Pinned on its own so a later tightening
+    /// aimed at /uc-style links cannot silently also reject this one.
+    func testStillAcceptsOpenIDLinks() {
+        let id = "1A2b3C4d5E6f7G8h9I0jKlMnOpQrStUv"
+        XCTAssertEqual(DriveLinkParser.folderID(from: "https://drive.google.com/open?id=\(id)"), id)
+    }
 }
