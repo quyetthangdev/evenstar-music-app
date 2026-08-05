@@ -17,9 +17,15 @@ enum DriveLinkParser {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // A file link deliberately fails rather than falling through to the
-        // bare-ID branch below, which would otherwise accept its ID and query
-        // it as a folder.
+        // A file link is rejected here as an explicit, named first line of
+        // defense. It is not actually what keeps a file link out of the
+        // bare-ID branch below — that branch requires no "/" at all, and any
+        // full URL fails that on its own — nor is it the only thing that
+        // rejects it: the domain-scoped block below also falls through to
+        // nil for a file link, since "/file/d/.../view" matches neither
+        // "/folders/" nor "id=". This guard is kept anyway so the rejection
+        // is explicit and doesn't silently depend on those other branches'
+        // shapes staying exactly as they are.
         if trimmed.contains("/file/d/") { return nil }
 
         // Only look for /folders/ or id= on an actual Drive host. Otherwise
@@ -36,10 +42,11 @@ enum DriveLinkParser {
         }
 
         // A bare ID: no scheme, no slashes, only ID characters, and long
-        // enough not to be an ordinary word. Real Drive IDs run 25+
-        // characters; this threshold just needs to clear short words like
-        // "hello" without rejecting any real ID.
-        if !trimmed.contains("/"), !trimmed.contains(":"), trimmed.count >= 10, isID(trimmed) {
+        // enough to be a real Drive ID rather than an ordinary word. Real
+        // Drive folder IDs run 28-44 characters; 28 is the floor, pinned by
+        // testRejectsBareIDsShorterThanRealDriveIDs so it can't quietly
+        // drift down and start accepting words like "screenshot1" again.
+        if !trimmed.contains("/"), !trimmed.contains(":"), trimmed.count >= 28, isID(trimmed) {
             return trimmed
         }
         return nil

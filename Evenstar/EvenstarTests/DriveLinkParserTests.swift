@@ -47,4 +47,14 @@ final class DriveLinkParserTests: XCTestCase {
         let result = DriveLinkParser.folderID(from: link)
         XCTAssertEqual(result, "abc")
     }
+
+    /// Real Drive folder IDs run 28-44 characters. Pin the exact floor so
+    /// it can't quietly drift downward and start accepting ordinary words
+    /// (like "screenshot1" or "helloworld") as bare IDs again.
+    func testRejectsBareIDsShorterThanRealDriveIDs() {
+        let tooShort = String(repeating: "a", count: 27)
+        let longEnough = String(repeating: "a", count: 28)
+        XCTAssertNil(DriveLinkParser.folderID(from: tooShort))
+        XCTAssertEqual(DriveLinkParser.folderID(from: longEnough), longEnough)
+    }
 }
