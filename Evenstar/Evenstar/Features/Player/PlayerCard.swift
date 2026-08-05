@@ -193,9 +193,14 @@ struct PlayerCard: View {
     ///   4. the repeat row — 32pt frame + `.padding(.top, 4)` = 36pt
     ///   5. `SystemVolumeSlider`, 44pt
     ///
-    /// 81 + 53 + 82 + 36 + 44, plus four 24pt gaps, is **~392pt**. Those
-    /// element heights are measured off a screenshot of the real expanded
-    /// player on an iPhone SE (3rd generation), not estimated.
+    /// The five elements are the title block (81), scrubber (53), transport
+    /// row (82), volume row (28) and repeat row (40, being a 36pt frame plus
+    /// 4pt of top padding). With four 24pt gaps that is **~380pt**.
+    ///
+    /// The transport row is 82 and not the 44 of `transportGlyphFrame`: the
+    /// play button is `.font(.system(size: 64))` with no frame of its own, so
+    /// it, not its neighbours, sizes that `HStack`. The heights here were
+    /// measured off a screenshot of the real expanded player, not estimated.
     ///
     /// Its history is a list of the same mistake. It was raised from 350 when
     /// the volume slider was added, but only by the slider's own 44pt — the
@@ -205,6 +210,11 @@ struct PlayerCard: View {
     /// added as a fifth element, which is another 36 + 24 = 60pt, and clipped
     /// the volume slider again on a 4.7" device in portrait and on every
     /// iPhone in landscape. Hence 440.
+    ///
+    /// 440 was kept when the volume row later shrank from 44 to
+    /// `ScrubberBar.touchHeight` (28) and the repeat row grew by 4, a net −12.
+    /// The number did not need to move — this is the direction that is always
+    /// safe — and the slack it buys is spent below.
     ///
     /// **Adding anything else to that stack means raising this by the new
     /// element's height *plus* the 24pt `VStack` spacing, not just the
@@ -216,9 +226,13 @@ struct PlayerCard: View {
     /// expandedArtworkTopGap - 440`, and `expandedContent` offsets by
     /// `insets.top + expandedArtworkTopGap + artworkSide + 40`. Those cancel,
     /// so the region left below the artwork is exactly `440 - 40 = 400pt`,
-    /// whatever the device. Against a ~392pt stack that leaves ~8pt — thin,
-    /// but the alternative is a smaller artwork on every device where the
-    /// height term binds, and 135pt on a 4.7" screen is already small. At 380
+    /// whatever the device. Against a ~380pt stack that leaves ~20pt. Do not
+    /// read that as headroom: `NowPlayingContent` has no `.dynamicTypeSize`
+    /// cap, so one step up in accessibility text grows the two `.title2` lines
+    /// and the `.subheadline` beneath them by more than 20pt and clips the
+    /// bottom again on a 4.7" screen. The durable fix is to measure the stack
+    /// instead of allowing for it; until then this constant is a floor, not a
+    /// margin. At 380
     /// the region was 340pt, 52pt short, and the whole volume slider sat below
     /// the card's bottom edge where it could not be dragged.
     ///
@@ -230,11 +244,19 @@ struct PlayerCard: View {
     ///
     /// One case this cannot fix, and it is worth knowing before the number is
     /// nudged again: a 375pt-tall screen in landscape (a 4.7" device rotated)
-    /// has less height than the ~392pt stack needs, so something is always
-    /// clipped there. At 380 it was the volume slider, at 440 it is the top of
-    /// the title. That is the better end to lose — a truncated title is
-    /// cosmetic, an unreachable slider is a control the user cannot operate.
-    /// Landscape on every taller iPhone fits at 440.
+    /// has less height than the stack needs, so something is always clipped
+    /// there. At 380 it was the volume slider; at 440 it is the title — and
+    /// not merely its top line. At that width the title fits on one line, so
+    /// the whole line sits above the card and only the tips of its descenders
+    /// show. The artist and album line, scrubber, transport, volume and repeat
+    /// rows all survive.
+    ///
+    /// Losing the title is still the better end to lose: it is information the
+    /// user can get elsewhere, where an unreachable volume slider is a control
+    /// they cannot operate at all. But it is a real regression on a supported
+    /// orientation, not a cosmetic trim, and no value of this constant fixes
+    /// it — a stack that tall does not fit a screen that short. Landscape on
+    /// every taller iPhone fits at 440.
     ///
     /// This value is deliberately allowed to go negative for tall constants
     /// against a short `fullSize.height` (e.g. landscape on a compact

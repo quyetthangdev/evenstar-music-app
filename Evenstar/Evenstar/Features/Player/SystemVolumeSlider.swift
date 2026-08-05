@@ -40,6 +40,10 @@ struct SystemVolumeSlider: UIViewRepresentable {
         view.showsRouteButton = false
         view.setVolumeThumbImage(Self.invisibleThumb, for: .normal)
         view.setVolumeThumbImage(Self.invisibleThumb, for: .highlighted)
+        // Neither of these is deprecated — checked deliberately, as the
+        // attribute above demands of anything added to this function.
+        view.setMinimumVolumeSliderImage(Self.trackImage, for: .normal)
+        view.setMaximumVolumeSliderImage(Self.trackImage, for: .normal)
         view.tintColor = .label
         return view
     }
@@ -59,7 +63,10 @@ struct SystemVolumeSlider: UIViewRepresentable {
     /// Implementing `sizeThatFits` sidesteps that: it hands back the proposed
     /// width directly, so no absorb-and-repropose step is involved.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MPVolumeView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: 44)
+        CGSize(
+            width: proposal.width ?? uiView.intrinsicContentSize.width,
+            height: ScrubberBar.touchHeight
+        )
     }
 
     /// A 30x30 transparent image. An empty `UIImage()` is not reliably
@@ -72,6 +79,37 @@ struct SystemVolumeSlider: UIViewRepresentable {
     /// across a control this wide — nothing is drawn either way, since the
     /// image itself is invisible, so there is no size at which 1x1 is
     /// better and 30x30 costs nothing visually.
+    /// A capsule as thick as `ScrubberBar`'s resting bar, so the two controls
+    /// read as the same kind of thing rather than one being a hairline next to
+    /// the other. `UISlider`'s own track is about 4pt and cannot be resized any
+    /// other way.
+    ///
+    /// Rendered as a **template** image, deliberately. Painting `UIColor.label`
+    /// into the bitmap would bake whichever appearance was current at launch
+    /// and leave the bar the wrong colour after a switch to dark mode; a
+    /// template takes `minimumTrackTintColor`/`maximumTrackTintColor` instead,
+    /// which `TintedVolumeView` keeps dynamic.
+    ///
+    /// One image serves both ends: the caps make it stretch from the middle, so
+    /// the same bitmap draws a short filled section and a long unfilled one.
+    private static let trackImage: UIImage = {
+        let side = ScrubberBar.restingHeight
+        let size = CGSize(width: side, height: side)
+        let capsule = UIGraphicsImageRenderer(size: size).image { _ in
+            UIColor.black.setFill()
+            UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: size),
+                cornerRadius: side / 2
+            ).fill()
+        }
+        return capsule
+            .resizableImage(
+                withCapInsets: UIEdgeInsets(top: 0, left: side / 2, bottom: 0, right: side / 2),
+                resizingMode: .stretch
+            )
+            .withRenderingMode(.alwaysTemplate)
+    }()
+
     private static let invisibleThumb: UIImage = {
         UIGraphicsImageRenderer(size: CGSize(width: 30, height: 30)).image { _ in }
     }()

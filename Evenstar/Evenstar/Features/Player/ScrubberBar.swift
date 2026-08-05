@@ -17,11 +17,13 @@ struct ScrubberBar: View {
     /// case the bar follows `position` from the player.
     @State private var draggingPosition: TimeInterval?
 
-    private static let restingHeight: CGFloat = 7
+    /// Also read by `SystemVolumeSlider`, so the two bars are the same
+    /// thickness by construction rather than by two people picking 7.
+    static let restingHeight: CGFloat = 7
     private static let activeHeight: CGFloat = 12
     /// The bar is thin; the touch target is not. This is the full height the
     /// row reserves, so the swell does not shift anything below it.
-    private static let touchHeight: CGFloat = 28
+    static let touchHeight: CGFloat = 28
 
     private var displayedPosition: TimeInterval { draggingPosition ?? position }
     private var isDragging: Bool { draggingPosition != nil }

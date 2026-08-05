@@ -26,6 +26,13 @@ struct NowPlayingContent: View {
     /// the play button.
     private static let transportGlyphFrame: CGFloat = 44
 
+    /// Larger than the `.subheadline` this started at, because the glyph now
+    /// has to hold a legible digit inside its loop rather than just be
+    /// recognised.
+    private static let repeatGlyphSize: CGFloat = 22
+    private static let repeatDigitSize: CGFloat = 12
+    private static let repeatFrame: CGFloat = 36
+
     /// Dim when off, accent when armed — the glyph alone cannot carry it,
     /// because off and all share the `repeat` symbol and only `one` differs.
     ///
@@ -47,8 +54,8 @@ struct NowPlayingContent: View {
             titleBlock
             scrubber
             transport
-            repeatRow
             volume
+            repeatRow
         }
     }
 
@@ -163,11 +170,31 @@ struct NowPlayingContent: View {
             // feedback: both the glyph and its tint read from `repeatMode`.
             playback.cycleRepeatMode()
         } label: {
-            Image(systemName: playback.repeatMode == .one ? "repeat.1" : "repeat")
-                .font(.subheadline)
+            // One arrowhead, not the two of `repeat`, and the digit sits in
+            // the loop's own hollow. SF Symbols' `repeat.1` hangs its `1`
+            // outside the loop at the top right, which is the one thing this
+            // is not allowed to look like — so the digit is composed on top
+            // rather than taken from a symbol.
+            //
+            // `arrow.trianglehead.clockwise` over `arrow.clockwise` because
+            // its solid triangular head matches the arrowheads on the
+            // transport glyphs beside it; the thin-stroked head reads as a
+            // refresh control from a different family.
+            Image(systemName: "arrow.trianglehead.clockwise")
+                .font(.system(size: Self.repeatGlyphSize, weight: .semibold))
+                .overlay {
+                    Text("1")
+                        .font(.system(size: Self.repeatDigitSize, weight: .bold))
+                        .opacity(playback.repeatMode == .one ? 1 : 0)
+                        .scaleEffect(playback.repeatMode == .one ? 1 : 0.4)
+                }
+                // The base glyph no longer changes between modes, so there is
+                // no symbol swap left to transition — only the digit arrives
+                // and leaves, and it does so on the same short curve the other
+                // small controls use.
+                .animation(BottomBarStyle.control, value: playback.repeatMode)
                 .foregroundStyle(repeatTint)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: 32, height: 32)
+                .frame(width: Self.repeatFrame, height: Self.repeatFrame)
         }
         .buttonStyle(.transportToggle(trigger: repeatTaps))
         .disabled(playback.currentTrack == nil)
@@ -177,8 +204,16 @@ struct NowPlayingContent: View {
     // The `.frame` modifiers this used to carry at the call site were a
     // no-op — `.frame(maxWidth: .infinity)` cannot widen a wrapped `UIView`;
     // see the note on `SystemVolumeSlider.sizeThatFits`, which now takes the
-    // width out of the decision instead.
+    // width out of the decision instead. The `HStack` below is fine: the
+    // slider is the row's only flexible element, so it takes what the two
+    // glyphs leave rather than being handed a width it would ignore.
     private var volume: some View {
-        SystemVolumeSlider()
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+            SystemVolumeSlider()
+            Image(systemName: "speaker.wave.3.fill")
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
     }
 }
