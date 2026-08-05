@@ -19,6 +19,18 @@ final class PlaybackService {
         queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
     }
 
+    /// Whether Next has anywhere to go.
+    ///
+    /// Derived here rather than in the views because two of them ask. Both the
+    /// expanded player and the mini player used to compute
+    /// `queueIndex >= queue.count - 1` for themselves, which was correct only
+    /// while the end of the queue was always the end of playback. With a repeat
+    /// mode armed it no longer is, and one rule living in two files is how a
+    /// half-applied fix ships.
+    var canGoNext: Bool {
+        !queue.isEmpty && (queueIndex + 1 < queue.count || repeatMode != .off)
+    }
+
     // MARK: - Dependencies
     private let player: AudioPlayerProtocol
     private let nowPlaying: NowPlayingPublisher
@@ -117,23 +129,30 @@ final class PlaybackService {
     /// "previous" still means restart.
     func previous() {
         guard !queue.isEmpty else { return }
-        if position > Self.restartThreshold || queueIndex == 0 {
+        // The threshold outranks the repeat mode. Past three seconds this
+        // button means "this one, from the top" whatever is armed.
+        if position > Self.restartThreshold {
             seek(to: 0)
             return
         }
-        queueIndex -= 1
-        playCountedForCurrent = false
-        loadCurrentAndPlay()
-        // Deferred for the same reason `next()` defers its own: a SwiftData
-        // write between the tap and the next render is felt as button latency,
-        // and `loadCurrentAndPlay` has already pushed to the lock screen.
-        deferPersist()
+        if queueIndex > 0 {
+            advance(to: queueIndex - 1)
+        } else if repeatMode != .off {
+            advance(to: queue.count - 1)
+        } else {
+            seek(to: 0)
+        }
     }
 
     func next() {
         guard !queue.isEmpty else { return }
         if queueIndex + 1 < queue.count {
             advance(to: queueIndex + 1)
+        } else if repeatMode != .off {
+            // Repeat-one wraps here too. It means "an unattended track
+            // repeats", not "the queue has an end" — and a Next press is not
+            // unattended.
+            advance(to: 0)
         } else {
             stopPlayback()
         }

@@ -133,7 +133,7 @@ struct NowPlayingContent: View {
                     .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
             .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1))
-            .disabled(playback.queueIndex >= playback.queue.count - 1)
+            .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
     }

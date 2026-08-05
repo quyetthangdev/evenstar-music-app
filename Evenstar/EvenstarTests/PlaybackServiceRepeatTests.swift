@@ -230,4 +230,126 @@ final class PlaybackServiceRepeatTests: XCTestCase {
 
         XCTAssertEqual(list[0].playCount, 2)
     }
+
+    // MARK: - The Next button
+
+    /// The regression this whole đợt turns on: repeat-one governs a track that
+    /// runs out, never a button the user pressed.
+    func testNextWithRepeatOneStillAdvances() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        service.next()
+
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertEqual(service.currentTrack?.id, list[1].id)
+    }
+
+    func testNextWithRepeatAllOnLastTrackWraps() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()  // .all
+
+        service.next()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertEqual(service.queue.count, 3)
+    }
+
+    func testNextWithRepeatOneOnLastTrackWraps() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        service.next()
+
+        XCTAssertEqual(service.queueIndex, 0)
+    }
+
+    func testNextWithRepeatOffOnLastTrackStillStops() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(2, library: library)
+        service.play(list[1], in: list)
+
+        service.next()
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    // MARK: - The Previous button
+
+    func testPreviousWithRepeatAllAtTheHeadWrapsToTheLast() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()  // .all
+        player.currentTime = 1  // inside the restart threshold
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 2)
+        XCTAssertEqual(service.currentTrack?.id, list[2].id)
+    }
+
+    func testPreviousWithRepeatOffAtTheHeadStillRestarts() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        player.currentTime = 1
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
+    /// The three-second rule outranks the repeat mode: past it, Previous means
+    /// "this one, from the top" no matter what is armed.
+    func testPreviousPastTheThresholdRestartsEvenWithRepeatAll() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()  // .all
+        player.currentTime = PlaybackService.restartThreshold + 0.5
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 0, "must not have wrapped to the end")
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
+    // MARK: - canGoNext
+
+    func testCanGoNextIsFalseOnlyAtTheEndWithRepeatOff() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(2, library: library)
+
+        service.play(list[0], in: list)
+        XCTAssertTrue(service.canGoNext)
+
+        service.next()
+        XCTAssertFalse(service.canGoNext, "last track, repeat off")
+
+        service.cycleRepeatMode()  // .all
+        XCTAssertTrue(service.canGoNext, "repeat all reopens the end of the queue")
+
+        service.cycleRepeatMode()  // .one
+        XCTAssertTrue(service.canGoNext)
+    }
+
+    func testCanGoNextIsFalseWithNoQueue() throws {
+        let (service, _, _) = try makeStack()
+        XCTAssertFalse(service.canGoNext)
+    }
 }

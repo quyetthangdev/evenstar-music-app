@@ -60,7 +60,7 @@ struct MiniPlayerChrome: View {
                 // 32pt inside a pill, not 44 in open space, so the full kick
                 // would carry it into its neighbour.
                 .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1, translate: 4))
-                .disabled(playback.queueIndex >= playback.queue.count - 1)
+                .disabled(!playback.canGoNext)
             }
         }
     }
