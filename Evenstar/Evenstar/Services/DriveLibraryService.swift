@@ -45,18 +45,45 @@ final class DriveLibraryService {
         scannedFileCount = files.count
 
         let folderID = folder.folderID
-        let existing = try library.context.fetch(
+        let existingInFolder = try library.context.fetch(
             FetchDescriptor<DriveTrack>(predicate: #Predicate { $0.folderID == folderID })
         )
-        let existingByFileID = Dictionary(uniqueKeysWithValues: existing.map { ($0.fileID, $0) })
         let liveFileIDs = Set(files.map(\.id))
 
-        for file in files where existingByFileID[file.id] == nil {
+        // The insertion guard is deliberately store-wide, not folder-scoped:
+        // `DriveTrack.fileID` carries `@Attribute(.unique)` across every linked
+        // folder, because Drive supports multi-parent files — the same file
+        // can be a direct child of two folders the user links separately. A
+        // folder-scoped existence check would miss a `fileID` already known
+        // under a *different* folder and construct-and-insert a second row
+        // for it; SwiftData's uniqueness constraint then collapses the two
+        // rows down to one, but hands the survivor a freshly minted `id`,
+        // silently orphaning anything (e.g. a saved queue) that referenced
+        // the original `id`. See `DriveTrack.swift`'s type-level doc comment.
+        let existingAnywhere = try library.context.fetch(FetchDescriptor<DriveTrack>())
+        let existingByFileIDAnywhere = Dictionary(uniqueKeysWithValues: existingAnywhere.map { ($0.fileID, $0) })
+
+        // When a file already has a row under a different folder, that row is
+        // left exactly as it is — not retagged to this folder. One
+        // `DriveTrack` cannot represent membership in two folders at once
+        // (there is a single `folderID` field, not a set), so there is no
+        // representation of "also in this folder" to retag it to; the only
+        // choice that never constructs-and-inserts for a known `fileID` is to
+        // leave the existing row where it is. This does mean a file's row
+        // "belongs" to whichever folder happened to scan it first, and
+        // unlinking that folder deletes it even if the file is still visible
+        // through a second linked folder — an accepted limitation, not a bug,
+        // given `folderID` is a single value.
+        for file in files where existingByFileIDAnywhere[file.id] == nil {
             library.context.insert(
                 DriveTrack(fileID: file.id, folderID: folderID, fileName: file.name)
             )
         }
-        for row in existing where !liveFileIDs.contains(row.fileID) {
+
+        // The deletion loop, in contrast, stays folder-scoped: a file leaving
+        // this folder must not delete its row while the same `fileID` is
+        // still live under a different linked folder.
+        for row in existingInFolder where !liveFileIDs.contains(row.fileID) {
             library.context.delete(row)
         }
 
