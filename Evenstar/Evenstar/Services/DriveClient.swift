@@ -41,6 +41,50 @@ enum DriveError: Error, Equatable, LocalizedError {
             "Không đọc được dữ liệu Google Drive trả về."
         }
     }
+
+    /// Maps a transport-layer error onto the case whose `errorDescription` says
+    /// something true about it, in Vietnamese.
+    ///
+    /// Lives here rather than inside `DriveClient.fetch` because it now has two
+    /// callers: `fetch`, and `StreamingAudioPlayer`, which hands on whatever
+    /// `AVPlayerItem` reports. Without this the streaming path would surface a
+    /// raw `URLError` and the banner would read "The Internet connection appears
+    /// to be offline" — English, in an app whose copy is Vietnamese throughout.
+    /// One implementation, so the two paths cannot drift into describing the
+    /// same failure differently.
+    ///
+    /// Bridges through `NSError` rather than casting to `URLError`, because
+    /// `AVPlayerItem.error` is an `AVFoundationErrorDomain` error that carries
+    /// the real cause under `NSUnderlyingErrorKey` — a plain `as? URLError`
+    /// misses it and reports every streaming failure as `.connectionFailed`,
+    /// including a genuinely offline device.
+    static func classify(_ error: Error) -> DriveError {
+        let ns = error as NSError
+        if isConnectivityFailure(ns) { return .offline }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
+           isConnectivityFailure(underlying) {
+            return .offline
+        }
+        // Everything else `URLSession` or `AVFoundation` can report — DNS
+        // failure, TLS/certificate failure, timeout, a malformed stream, and
+        // anything unrecognised. Deliberately distinct from `.offline`: the
+        // device can be fully online while one of these happens, and saying
+        // "no internet" would be flatly wrong.
+        return .connectionFailed
+    }
+
+    /// Whether an error genuinely means "this device has no network
+    /// connectivity" as opposed to some other transport failure (DNS, TLS,
+    /// timeout) that can happen on a fully-online device.
+    private static func isConnectivityFailure(_ error: NSError) -> Bool {
+        guard error.domain == NSURLErrorDomain else { return false }
+        switch URLError.Code(rawValue: error.code) {
+        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 /// Reads a link-shared Drive folder with a plain API key. No OAuth, no SDK.
@@ -150,27 +194,10 @@ struct DriveClient {
             // `DriveError`, so it never reaches `errorDescription` and is
             // never shown to the user.
             throw urlError
-        } catch let urlError as URLError where Self.isConnectivityFailure(urlError.code) {
-            throw DriveError.offline
         } catch {
-            // Everything else `URLSession` can throw — DNS failure, TLS/
-            // certificate failure, timeout, and any error this client does
-            // not specifically recognize. Distinct from `.offline`: the
-            // device can be fully online while one of these happens, and
-            // saying "no internet" would be flatly wrong.
-            throw DriveError.connectionFailed
-        }
-    }
-
-    /// Whether a `URLError` genuinely means "this device has no network
-    /// connectivity" as opposed to some other transport failure (DNS, TLS,
-    /// timeout) that can happen on a fully-online device.
-    private static func isConnectivityFailure(_ code: URLError.Code) -> Bool {
-        switch code {
-        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
-            return true
-        default:
-            return false
+            // Classification moved to `DriveError.classify` so the streaming
+            // player reaches the same conclusion about the same failure.
+            throw DriveError.classify(error)
         }
     }
 

@@ -18,8 +18,14 @@ final class PlaybackService {
     private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
-    /// The last playback failure, for the UI to show. Cleared whenever a track
-    /// starts successfully.
+    /// The last playback failure, for the UI to show.
+    ///
+    /// Cleared when a track actually *starts playing* — the end of the
+    /// `autoPlay` branch of `loadCurrentAndPlay()`. Not cleared by `resume()`,
+    /// and deliberately so: after a failure `hasLoaded` is false, so `resume()`
+    /// returns early and there is nothing successful to clear the error on
+    /// behalf of. Playing something is what makes the banner stale, and playing
+    /// something is what removes it.
     private(set) var lastPlaybackError: Error?
     var duration: TimeInterval { player.duration }
     var currentTrack: (any Playable)? {
@@ -50,6 +56,15 @@ final class PlaybackService {
     private var playCountedForCurrent: Bool = false
     private var lastPersistAt: Date = .distantPast
     private let persistInterval: TimeInterval
+    /// The URL most recently handed to `player.load(url:)`.
+    ///
+    /// The identity an asynchronous failure is checked against. A streaming
+    /// load can fail seconds after it was asked for, by which time the user may
+    /// have started something else; without this, that stale failure would
+    /// pause the track they are actually listening to. Nothing can retract a
+    /// callback already delivered, so the only defence is to recognise it as
+    /// stale on arrival.
+    private var lastRequestedURL: URL?
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
@@ -62,8 +77,8 @@ final class PlaybackService {
         self.player.didFinishCallback = { [weak self] in
             Task { @MainActor in self?.handleFinish() }
         }
-        self.player.didFailCallback = { [weak self] error in
-            Task { @MainActor in self?.handleFailure(error) }
+        self.player.didFailCallback = { [weak self] error, url in
+            Task { @MainActor in self?.handleFailure(error, url: url) }
         }
     }
 
@@ -112,7 +127,7 @@ final class PlaybackService {
 
     func seek(to target: TimeInterval) {
         guard hasLoaded else { return }
-        let clamped = max(0, min(target, player.duration))
+        let clamped = clampToDuration(target)
         player.currentTime = clamped
         position = clamped
         pushNowPlaying()
@@ -285,6 +300,12 @@ final class PlaybackService {
                 return
             }
             let url = track.playbackURL()
+            // Recorded *before* the call, not after: the missing-API-key
+            // sentinel path reports its failure synchronously from inside
+            // `load`, and a callback that arrived before this was set would be
+            // dropped by `handleFailure`'s ownership guard as belonging to
+            // nothing.
+            lastRequestedURL = url
             do {
                 try player.load(url: url)
                 hasLoaded = true
@@ -312,9 +333,7 @@ final class PlaybackService {
             }
             // The saved position only applies to the track it was recorded
             // against; a track reached by skipping forward starts at 0.
-            let pos = queueIndex == originalIndex
-                ? max(0, min(savedPosition, player.duration))
-                : 0
+            let pos = queueIndex == originalIndex ? clampToDuration(savedPosition) : 0
             player.currentTime = pos
             position = pos
             currentMetadata = metadata(from: track)
@@ -372,6 +391,10 @@ final class PlaybackService {
                 return
             }
             let url = track.playbackURL()
+            // Before the call, for the reason given on the same line in
+            // `restoreFromPersistedState()`: the sentinel path reports
+            // synchronously from inside `load`.
+            lastRequestedURL = url
             do {
                 try player.load(url: url)
                 hasLoaded = true
@@ -434,6 +457,10 @@ final class PlaybackService {
         player.pause()
         isPlaying = false
         hasLoaded = false
+        // Nothing is loaded, so no in-flight failure belongs to the present any
+        // more. Leaving this set would let a late failure for the track we just
+        // stopped raise a banner about playback the user has already ended.
+        lastRequestedURL = nil
         queue = []
         queueIndex = 0
         currentMetadata = nil
@@ -487,15 +514,61 @@ final class PlaybackService {
         }
     }
 
+    /// Clamps a position into the track, skipping the upper bound while the
+    /// player has no duration to offer.
+    ///
+    /// `AVPlayer` reports an indefinite duration for the first few hundred
+    /// milliseconds after a streaming load, and `StreamingAudioPlayer.duration`
+    /// reports `0` there to keep NaN out of the scrubber's arithmetic. Clamping
+    /// against that `0` is what made **every restored Drive track lose its
+    /// saved position** — `min(2:31, 0)` is `0` — and made a scrub in that
+    /// window jump to the start. There is no fallback to fall back on:
+    /// `DriveTrack.durationSeconds` defaults to 0 as well.
+    ///
+    /// Chosen over deferring the seek inside `PlaybackService` because the
+    /// damage happens *here*, at the clamp: by the time a deferred seek ran, the
+    /// position would already have been flattened to 0 and there would be
+    /// nothing left to defer. The player still defers *applying* the seek until
+    /// its item is ready — the two halves are complementary, and both are
+    /// needed. Handing over a position past the eventual duration is safe;
+    /// `AVPlayer` clamps a seek to the seekable range itself.
+    private func clampToDuration(_ target: TimeInterval) -> TimeInterval {
+        guard player.isDurationKnown else { return max(0, target) }
+        return max(0, min(target, player.duration))
+    }
+
     /// A player that failed after `load()` returned.
     ///
     /// Deliberately does not skip to the next track: the commonest cause is no
     /// network, and skipping would march through the whole queue failing once
     /// per track. Stopping and saying why is the useful behaviour.
-    private func handleFailure(_ error: Error) {
+    ///
+    /// **The `url` guard is the whole safety of this method.** An asynchronous
+    /// failure arrives with no inherent claim on the present: a Drive item can
+    /// take seconds to reach `.failed`, the callback hop costs another
+    /// main-actor turn, and `teardown()`'s `invalidate()` cannot retract a
+    /// callback already in flight. Offline, tapping Drive track A and then
+    /// local track B — which plays fine — would otherwise end with B paused,
+    /// the timer stopped and a network banner about A. Same class of bug as the
+    /// stale `didFinishCallback` skipping a track, and it needs the same answer.
+    ///
+    /// A repeat-one replay reloads the same URL and so passes the guard, which
+    /// is correct rather than a hole: it is the same file failing for the same
+    /// reason, and the report applies either way.
+    private func handleFailure(_ error: Error, url: URL) {
+        guard url == lastRequestedURL else { return }
         lastPlaybackError = error
         player.pause()
         isPlaying = false
+        // Without this the transport lies. `resume()` guards on
+        // `hasLoaded, !isPlaying`, both of which would still hold: a tap on
+        // play would call `player.play()` — a no-op on a failed item — set
+        // `isPlaying = true` and restart the timer, giving a pause glyph, a
+        // position frozen at 0:00 and no sound. `tickPosition`'s reconcile
+        // cannot rescue it either, because a failed item reports duration 0 and
+        // currentTime 0, and `0 < 0 - 0.5` is false. Clearing the flag makes
+        // play inert instead of dishonest.
+        hasLoaded = false
         stopPositionUpdates()
         pushNowPlaying()
     }
