@@ -13,6 +13,7 @@ final class PlaybackService {
     private(set) var position: TimeInterval = 0
     private(set) var queue: [Track] = []
     private(set) var queueIndex: Int = 0
+    private(set) var repeatMode: RepeatMode = .off
     var duration: TimeInterval { player.duration }
     var currentTrack: Track? {
         queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
@@ -55,6 +56,18 @@ final class PlaybackService {
 
     func togglePlayPause() {
         if isPlaying { pause() } else { resume() }
+    }
+
+    /// Advances the repeat button through off → all → one → off.
+    ///
+    /// The mode change is applied inline, not deferred. For a mode button the
+    /// state change *is* the feedback — the glyph and its tint both read from
+    /// `repeatMode` — so deferring it would push the very thing being
+    /// acknowledged a turn later, which is the mistake that made play/pause
+    /// feel slow. Only the disk write is deferred.
+    func cycleRepeatMode() {
+        repeatMode = repeatMode.cycled
+        deferPersist()
     }
 
     func pause() {
@@ -186,6 +199,11 @@ final class PlaybackService {
     /// the queue can load does it fall through to `stopPlayback()`.
     func restoreFromPersistedState() async {
         let state = library.playbackState
+        // Above the guard on purpose. The repeat mode is a setting rather than
+        // part of the queue, so a launch with nothing to restore must still
+        // bring it back. Reading it after the guard would quietly reset it to
+        // off for anyone who finished their queue before quitting.
+        repeatMode = RepeatMode(rawValue: state.repeatModeRaw) ?? .off
         guard !state.queueTrackIDs.isEmpty else { return }
         let resolved: [Track] = state.queueTrackIDs.compactMap { id in
             try? library.findTrack(byID: id)
@@ -385,6 +403,7 @@ final class PlaybackService {
         state.queueIndex = queueIndex
         state.currentTrackID = currentTrack?.id
         state.positionSeconds = position
+        state.repeatModeRaw = repeatMode.rawValue
         try? library.save()
         lastPersistAt = .now
     }
