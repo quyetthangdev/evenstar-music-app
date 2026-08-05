@@ -75,13 +75,18 @@ Two new SwiftData models, separate from `Track`:
 }
 
 @Model final class DriveTrack {
+    /// Stable across launches and what `PlaybackState` persists. Distinct from
+    /// `fileID`, which is Google's.
+    @Attribute(.unique) var id: UUID
     @Attribute(.unique) var fileID: String
     var folderID: String
     var fileName: String
     var title: String
-    var artistName: String?
-    var albumTitle: String?
-    var durationSeconds: Double?
+    var artistNameOrNil: String?
+    var albumTitleOrNil: String?
+    /// 0 until `metadataResolved`. Not optional: `Playable` needs a number, and
+    /// two ways to say "unknown" in one row is one too many.
+    var durationSeconds: Double
     var metadataResolved: Bool
     var dateAdded: Date
     var playCount: Int
@@ -169,6 +174,9 @@ protocol Playable: AnyObject {
     var artistName: String { get }
     var albumTitle: String { get }
     var durationSeconds: Double { get }
+    /// Documents-relative; `nil` for every Drive track, since artwork is out of
+    /// scope for this đợt.
+    var artworkRelativePath: String? { get }
     var playCount: Int { get set }
     var lastPlayedAt: Date? { get set }
     func playbackURL() -> URL
