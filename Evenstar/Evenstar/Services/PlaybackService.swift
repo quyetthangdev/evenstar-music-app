@@ -168,9 +168,10 @@ final class PlaybackService {
 
     /// Keeps the in-memory queue consistent when a track is deleted from the
     /// library. No-op if `track` isn't in the queue. If it's the currently
-    /// playing track, advances to the next track (or stops if it was last).
-    /// Otherwise just removes it and shifts `queueIndex` if it sat before the
-    /// current position.
+    /// playing track, advances to the next track — or, if it was the last one,
+    /// wraps to the top under repeat-all and otherwise stops. Tracks that
+    /// aren't current are just removed, shifting `queueIndex` if they sat
+    /// before the current position.
     func handleTrackDeleted(_ track: Track) {
         let wasPlaying = isPlaying
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
@@ -179,7 +180,30 @@ final class PlaybackService {
 
         if wasCurrent {
             if queueIndex >= queue.count {
-                stopPlayback()
+                // Deleting the current track took us past the end. This is the
+                // third place that has to know an armed mode means the queue
+                // has no end — `next()` and `handleFinish()` are the other two
+                // — and it was the one left behind: swiping away the last track
+                // with repeat-all on stopped the music and wiped the surviving
+                // tracks, which is the worst possible answer to a delete.
+                //
+                // `.all` wraps: the tracks before it are still there and still
+                // wanted. `.one` deliberately does not, and this is not an
+                // oversight — repeat-one means "keep replaying *this* track",
+                // and the track it named is the one the user just deleted. With
+                // nothing left to repeat, stopping is the honest answer;
+                // wrapping would silently convert repeat-one into repeat-all.
+                //
+                // The emptiness check is load-bearing: deleting the only track
+                // in the queue leaves nothing to wrap to, whatever is armed.
+                if repeatMode == .all, !queue.isEmpty {
+                    queueIndex = 0
+                    playCountedForCurrent = false
+                    loadCurrentAndPlay(autoPlay: wasPlaying)
+                    persistImmediately()
+                } else {
+                    stopPlayback()
+                }
             } else {
                 // queueIndex stays; the new track at this index becomes current.
                 playCountedForCurrent = false
@@ -252,6 +276,18 @@ final class PlaybackService {
                 if queueIndex + 1 < queue.count {
                     queueIndex += 1
                     continue
+                } else if repeatMode != .off {
+                    // Same wrap as `loadCurrentAndPlay()`'s loop, and bounded
+                    // by the same already-incremented `attempts`. Lower stakes
+                    // here — restore never autoplays, so nothing stops mid
+                    // listen — but the outcome without it is still wrong: a
+                    // relaunch with repeat armed and the last track's file gone
+                    // threw away a queue whose earlier tracks were all fine.
+                    //
+                    // `repeatMode` is read above the queue guard, so it is
+                    // already the restored value by the time this runs.
+                    queueIndex = 0
+                    continue
                 } else {
                     stopPlayback()
                     return
@@ -293,10 +329,19 @@ final class PlaybackService {
     /// Loads the track at `queueIndex` and starts playback. If a track fails to
     /// load (missing/corrupt file), skips forward through the remaining queue
     /// looking for one that does — the queue itself is untouched, only
-    /// `queueIndex` advances. This is a bounded loop (at most `queue.count`
-    /// attempts, since each failed attempt either advances `queueIndex` or
-    /// exits) so a queue whose files have all been deleted still terminates in
-    /// `stopPlayback()` rather than recursing or spinning forever.
+    /// `queueIndex` advances. Running off the end with a repeat mode armed
+    /// wraps to index 0 and keeps looking, because an armed mode means the
+    /// queue has no end: without that, one deleted file at the tail of an
+    /// overnight repeat-all queue stopped the music and wiped the queue even
+    /// though every track behind it played fine.
+    ///
+    /// **Still bounded, and the bound is what makes the wrap safe.** The loop
+    /// runs at most `queue.count` times because every failed attempt increments
+    /// `attempts` exactly once before it advances, wraps, or exits — the wrap
+    /// changes *where* the next attempt looks, never how many are left. So a
+    /// queue whose files have all been deleted still terminates in
+    /// `stopPlayback()` rather than circling forever, and it does so having
+    /// tried each position at most once.
     /// - Parameter autoPlay: When false, the track still loads, seeks to 0,
     ///   publishes Now Playing info, and persists — it just doesn't start
     ///   playback, and `isPlaying` ends up `false`. Defaults to `true` so
@@ -317,6 +362,22 @@ final class PlaybackService {
                 attempts += 1
                 if queueIndex + 1 < queue.count {
                     queueIndex += 1
+                    playCountedForCurrent = false
+                    continue
+                } else if repeatMode != .off {
+                    // Wrap rather than stop, for the same reason `next()` does:
+                    // with a mode armed the end of the queue is not the end of
+                    // playback. `!= .off` rather than `== .all` because this
+                    // isn't a choice about which track to play next — it is
+                    // recovery from a file that won't open, and repeat-one's
+                    // "an unattended track repeats" says nothing about what to
+                    // do when that track cannot be opened at all. Stopping
+                    // there would end the session over one bad file with the
+                    // rest of the queue intact.
+                    //
+                    // `attempts` was already incremented above, so the loop
+                    // condition still stops this after `queue.count` tries.
+                    queueIndex = 0
                     playCountedForCurrent = false
                     continue
                 } else {

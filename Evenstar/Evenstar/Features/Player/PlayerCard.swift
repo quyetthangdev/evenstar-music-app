@@ -178,16 +178,63 @@ struct PlayerCard: View {
     /// below the artwork was clipped away and the expanded player had no
     /// controls at all. See F2.
     ///
-    /// `380` is a rough allowance for the title, scrubber, transport row and
-    /// volume slider below the artwork — a starting point, like the other
-    /// constants here, not a measured minimum. It was raised from 350 once
-    /// before, when the volume slider was added, but only by the slider's own
-    /// 44pt height — the extra `VStack(spacing: 24)` gap that came with a
-    /// fourth stack element (+24pt) was forgotten, leaving the allowance 18pt
-    /// short and clipping the slider on a two-line title on a 4.7" device.
-    /// Adding anything else to that stack means raising this by the new
-    /// element's height *plus* the `VStack` spacing, not just the element's
-    /// height — that omission is exactly the mistake being corrected here.
+    /// `440` is a rough allowance for everything `NowPlayingContent` stacks
+    /// below the artwork — a starting point, like the other constants here, not
+    /// a measured minimum. The stack is five elements in a
+    /// `VStack(spacing: 24)`:
+    ///
+    ///   1. the title block — two reserved `.title2` lines + a `.subheadline`,
+    ///      measured at 81pt
+    ///   2. `ScrubberBar`, ~53pt with its time labels
+    ///   3. the transport row, ~82pt — **not** the 44pt glyph frame plus its
+    ///      8pt top padding. The play button is `.font(.system(size: 64))` and
+    ///      draws ~74pt tall, which is what actually sizes the `HStack`. Sizing
+    ///      this row from `transportGlyphFrame` under-counts it by 30pt.
+    ///   4. the repeat row — 32pt frame + `.padding(.top, 4)` = 36pt
+    ///   5. `SystemVolumeSlider`, 44pt
+    ///
+    /// 81 + 53 + 82 + 36 + 44, plus four 24pt gaps, is **~392pt**. Those
+    /// element heights are measured off a screenshot of the real expanded
+    /// player on an iPhone SE (3rd generation), not estimated.
+    ///
+    /// Its history is a list of the same mistake. It was raised from 350 when
+    /// the volume slider was added, but only by the slider's own 44pt — the
+    /// extra `VStack` gap that came with a fourth element (+24pt) was
+    /// forgotten, leaving it 18pt short and clipping the slider on a two-line
+    /// title on a 4.7" device. It was then left at 380 when the repeat row was
+    /// added as a fifth element, which is another 36 + 24 = 60pt, and clipped
+    /// the volume slider again on a 4.7" device in portrait and on every
+    /// iPhone in landscape. Hence 440.
+    ///
+    /// **Adding anything else to that stack means raising this by the new
+    /// element's height *plus* the 24pt `VStack` spacing, not just the
+    /// element's height.** That omission is the mistake this number has now
+    /// been corrected for twice.
+    ///
+    /// Why the value is what the content actually gets: when the height term
+    /// below binds, `artworkSide == fullSize.height - insets.top -
+    /// expandedArtworkTopGap - 440`, and `expandedContent` offsets by
+    /// `insets.top + expandedArtworkTopGap + artworkSide + 40`. Those cancel,
+    /// so the region left below the artwork is exactly `440 - 40 = 400pt`,
+    /// whatever the device. Against a ~392pt stack that leaves ~8pt — thin,
+    /// but the alternative is a smaller artwork on every device where the
+    /// height term binds, and 135pt on a 4.7" screen is already small. At 380
+    /// the region was 340pt, 52pt short, and the whole volume slider sat below
+    /// the card's bottom edge where it could not be dragged.
+    ///
+    /// Verified by screenshot rather than by arithmetic alone, on both ends of
+    /// the change: at 380 the repeat glyph landed 15pt above the bottom edge on
+    /// a 4.7" screen in portrait (and 17pt on an iPhone 17 in landscape), with
+    /// no room for the 24pt gap and 44pt slider that follow it; at 440 it
+    /// landed 75pt above, which fits them both.
+    ///
+    /// One case this cannot fix, and it is worth knowing before the number is
+    /// nudged again: a 375pt-tall screen in landscape (a 4.7" device rotated)
+    /// has less height than the ~392pt stack needs, so something is always
+    /// clipped there. At 380 it was the volume slider, at 440 it is the top of
+    /// the title. That is the better end to lose — a truncated title is
+    /// cosmetic, an unreachable slider is a control the user cannot operate.
+    /// Landscape on every taller iPhone fits at 440.
     ///
     /// This value is deliberately allowed to go negative for tall constants
     /// against a short `fullSize.height` (e.g. landscape on a compact
@@ -202,7 +249,7 @@ struct PlayerCard: View {
     private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
         min(
             Self.expandedArtwork,
-            fullSize.height - insets.top - Self.expandedArtworkTopGap - 380,
+            fullSize.height - insets.top - Self.expandedArtworkTopGap - 440,
             fullSize.width - 48
         )
     }

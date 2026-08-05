@@ -318,6 +318,26 @@ final class PlaybackServiceRepeatTests: XCTestCase {
         XCTAssertEqual(service.currentTrack?.id, list[2].id)
     }
 
+    /// The step-back branch (`queueIndex > 0`) was only ever exercised with
+    /// repeat off, so narrowing it to `queueIndex > 0 && repeatMode == .off`
+    /// used to pass the whole suite — and that mutation would send a mid-queue
+    /// Previous to the *end* of the queue instead of one track back. Same
+    /// mutation class already caught once in this method; this pins the branch
+    /// with a mode armed.
+    func testPreviousMidQueueWithRepeatAllStepsBackRatherThanWrapping() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[1], in: list)
+        service.cycleRepeatMode()  // .all
+        player.currentTime = 1  // inside the restart threshold
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 0, "must step back, not wrap to the end")
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+    }
+
     func testPreviousWithRepeatOffAtTheHeadStillRestarts() throws {
         let (service, player, library) = try makeStack()
         let list = try tracks(3, library: library)
@@ -369,5 +389,216 @@ final class PlaybackServiceRepeatTests: XCTestCase {
     func testCanGoNextIsFalseWithNoQueue() throws {
         let (service, _, _) = try makeStack()
         XCTAssertFalse(service.canGoNext)
+    }
+
+    // MARK: - Deleting the current track (the third "the queue has no end" site)
+
+    /// Swipe-to-delete on the last track, repeat-all armed. `next()` and
+    /// `handleFinish()` both learned that an armed mode reopens the end of the
+    /// queue; `handleTrackDeleted()` did not, so this stopped the music and
+    /// wiped the two surviving tracks.
+    func testDeletingCurrentLastTrackWithRepeatAllWrapsToTheTop() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()  // .all
+
+        service.handleTrackDeleted(list[2])
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertTrue(service.isPlaying, "repeat-all must keep playing")
+        XCTAssertEqual(service.queue.map(\.id), [list[0].id, list[1].id],
+                       "the surviving tracks must not be torn down")
+    }
+
+    /// The wrap has to reach disk too, or a relaunch reads back the empty queue
+    /// the old `stopPlayback()` persisted.
+    func testDeletingCurrentLastTrackWithRepeatAllPersistsTheWrappedQueue() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()  // .all
+
+        service.handleTrackDeleted(list[2])
+
+        let state = library.playbackState
+        XCTAssertEqual(state.queueTrackIDs, [list[0].id, list[1].id])
+        XCTAssertEqual(state.currentTrackID, list[0].id)
+        XCTAssertEqual(state.queueIndex, 0)
+    }
+
+    /// A paused player stays paused through the wrap, the same way the ordinary
+    /// delete-and-advance path does.
+    func testDeletingCurrentLastTrackWithRepeatAllWhilePausedDoesNotResume() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()  // .all
+        service.pause()
+
+        service.handleTrackDeleted(list[2])
+
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertFalse(service.isPlaying)
+    }
+
+    /// Repeat-one deliberately does *not* wrap here. It means "keep replaying
+    /// this track", and the track it named is the one just deleted — there is
+    /// nothing left to repeat, so stopping is correct. Wrapping would quietly
+    /// turn repeat-one into repeat-all.
+    func testDeletingCurrentLastTrackWithRepeatOneStops() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        service.handleTrackDeleted(list[2])
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    /// Nothing to wrap to. The emptiness guard on the wrap is what keeps this
+    /// from indexing into an empty queue.
+    func testDeletingTheSoleTrackWithRepeatAllStillStops() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(1, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()  // .all
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    // MARK: - The skip-forward loop
+
+    /// An overnight repeat-all queue whose last file has been deleted from the
+    /// Files app. The bounded skip loop only ever walked forward, so it ran off
+    /// the end and stopped — in the middle of the night, with the whole queue
+    /// wiped, though every earlier track was fine.
+    func testUnplayableLastTrackWithRepeatAllWrapsInsteadOfStopping() async throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        player.failingURLs = [FileLocation.absoluteURL(forRelative: list[2].relativePath)]
+        service.play(list[1], in: list)
+        service.cycleRepeatMode()  // .all
+
+        player.simulateFinish()
+        await Task.yield()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertTrue(service.isPlaying)
+        XCTAssertEqual(service.queue.map(\.id), list.map(\.id),
+                       "the queue itself is untouched; only queueIndex moves")
+    }
+
+    /// The same wrap from a Next press rather than a natural finish.
+    func testNextOntoAnUnplayableLastTrackWithRepeatAllWraps() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        player.failingURLs = [FileLocation.absoluteURL(forRelative: list[2].relativePath)]
+        service.play(list[1], in: list)
+        service.cycleRepeatMode()  // .all
+
+        service.next()
+
+        XCTAssertEqual(service.queueIndex, 0)
+        XCTAssertEqual(service.currentTrack?.id, list[0].id)
+        XCTAssertTrue(service.isPlaying)
+    }
+
+    /// The bound the loop's doc comment promises, now that a failed attempt can
+    /// wrap as well as advance: with *nothing* loadable it must still terminate
+    /// rather than circle the queue forever. A regression here hangs the suite
+    /// rather than failing it, which is why it is stated explicitly.
+    func testAllTracksFailWithRepeatAllStillStopsWithoutHanging() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        for track in list {
+            player.failingURLs.insert(FileLocation.absoluteURL(forRelative: track.relativePath))
+        }
+        service.cycleRepeatMode()  // .all
+
+        service.play(list[0], in: list)
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    /// Restore's own skip loop, which is the same shape one method down. Lower
+    /// stakes — restore never autoplays — but without the wrap a relaunch with
+    /// repeat armed and the last track's file missing threw away a queue whose
+    /// earlier tracks all load.
+    func testRestoreWrapsPastAnUnplayableCurrentTrackWithRepeatAll() async throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        library.playbackState.repeatModeRaw = RepeatMode.all.rawValue
+        try library.save()
+
+        let player = MockAudioPlayer()
+        player.failingURLs = [FileLocation.absoluteURL(forRelative: list[2].relativePath)]
+        let relaunched = PlaybackService(
+            player: player,
+            nowPlaying: MockNowPlayingPublisher(),
+            library: library
+        )
+        await relaunched.restoreFromPersistedState()
+
+        XCTAssertEqual(relaunched.queueIndex, 0)
+        XCTAssertEqual(relaunched.currentTrack?.id, list[0].id)
+        XCTAssertEqual(relaunched.queue.count, 3)
+        XCTAssertFalse(relaunched.isPlaying, "restore must never autoplay")
+    }
+
+    // MARK: - stopPlayback() must not disarm the mode
+
+    /// `stopPlayback()` clears the queue, the metadata and the position, and it
+    /// must leave `repeatMode` alone — the mode is a setting the user armed, not
+    /// part of the queue that just ended. Nothing pinned this: adding
+    /// `repeatMode = .off` to the most-reached method in the service used to
+    /// pass the entire suite.
+    ///
+    /// Reached by deleting the sole track in the queue, which stops whatever is
+    /// armed, so this stays honest even if the delete path's mode rules change.
+    func testStopPlaybackLeavesTheArmedModeInMemory() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(1, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertTrue(service.queue.isEmpty, "precondition: playback really stopped")
+        XCTAssertEqual(service.repeatMode, .one, "ending a queue must not disarm the mode")
+    }
+
+    /// The other half, and the one the spec's persistence argument rests on:
+    /// `stopPlayback()` ends with `persistImmediately()`, which rewrites
+    /// `repeatModeRaw` from the live value. A reset in `stopPlayback()` would
+    /// therefore not merely be forgotten on relaunch — it would be written to
+    /// disk, so the user who finishes a queue with repeat-one armed comes back
+    /// to repeat off.
+    func testStopPlaybackLeavesTheArmedModeOnDisk() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(1, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+
+        service.handleTrackDeleted(list[0])
+
+        XCTAssertTrue(library.playbackState.queueTrackIDs.isEmpty,
+                      "precondition: the stop was persisted")
+        XCTAssertEqual(library.playbackState.repeatModeRaw, RepeatMode.one.rawValue)
     }
 }
