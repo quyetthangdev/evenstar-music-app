@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import XCTest
 @testable import Evenstar
 
 enum MockAudioPlayerError: Error {
@@ -56,8 +57,16 @@ final class MockAudioPlayer: AudioPlayerProtocol {
     /// that is playing failed" case. Pass one explicitly to simulate a *stale*
     /// failure: a load the service has since moved on from reporting late,
     /// which must be ignored.
+    ///
+    /// Fails loudly with nothing loaded rather than returning quietly: a silent
+    /// no-op there hands a test that forgot to load a green pass asserting
+    /// nothing happened, which is exactly what it would have got had the code
+    /// been broken.
     func simulateFailure(_ error: Error = URLError(.notConnectedToInternet), url: URL? = nil) {
-        guard let target = url ?? loadedURL else { return }
+        guard let target = url ?? loadedURL else {
+            XCTFail("simulateFailure() with nothing loaded — load a track first, or pass a url:")
+            return
+        }
         isPlaying = false
         didFailCallback?(error, target)
     }

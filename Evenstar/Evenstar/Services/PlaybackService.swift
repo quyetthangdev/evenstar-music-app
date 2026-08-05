@@ -65,6 +65,22 @@ final class PlaybackService {
     /// callback already delivered, so the only defence is to recognise it as
     /// stale on arrival.
     private var lastRequestedURL: URL?
+    /// The track a failure interrupted, and how far into it the user had got.
+    ///
+    /// **What makes a failure survivable.** A failed `AVPlayerItem` is
+    /// terminal — `AVPlayer` does not resume one — so `handleFailure` clears
+    /// `hasLoaded` and the only way back is to load the track again. But every
+    /// load goes through `loadCurrentAndPlay()`, which starts at 0 and then
+    /// persists that 0 over the saved position. Without this pair, a
+    /// three-second network blip forty minutes into a track costs the user the
+    /// forty minutes, permanently and with no undo.
+    ///
+    /// Deliberately *not* a general memory of where each track was left. It is
+    /// consumed by the next successful load and cleared by any load of a
+    /// different track, so it is scoped to a retry — the recovery it exists
+    /// for — and cannot resurrect a stale position much later.
+    private var interruptedTrackID: UUID?
+    private var interruptedPosition: TimeInterval = 0
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
@@ -425,10 +441,29 @@ final class PlaybackService {
                     return
                 }
             }
+            // Where this load starts. 0 for an ordinary one; for the retry of a
+            // track a failure interrupted, exactly where that failure caught it
+            // — see `interruptedTrackID`. Read and cleared here rather than at
+            // the failure site because this is the only place that knows which
+            // track is actually being loaded, including after the skip-forward
+            // loop above has moved on from the one that was asked for.
+            let resumePoint = track.id == interruptedTrackID
+                ? clampToDuration(interruptedPosition)
+                : 0
+            interruptedTrackID = nil
+            interruptedPosition = 0
+
             currentMetadata = metadata(from: track)
             currentTrackTitle = track.title
-            position = 0
-            playCountedForCurrent = false
+            position = resumePoint
+            // Only when there is something to seek to: handing a streaming
+            // player a 0 it is already at would park a pointless pending seek.
+            if resumePoint > 0 { player.currentTime = resumePoint }
+            // A resumed track has already been counted as played, if it got far
+            // enough. Same rule `restoreFromPersistedState()` applies, and for
+            // the same reason: one listen must not count twice because the
+            // network dropped in the middle of it.
+            playCountedForCurrent = resumePoint >= 30
             if autoPlay {
                 activateSessionIfNeeded()
                 player.play()
@@ -461,6 +496,11 @@ final class PlaybackService {
         // more. Leaving this set would let a late failure for the track we just
         // stopped raise a banner about playback the user has already ended.
         lastRequestedURL = nil
+        // Playback has ended, so there is no retry left for a remembered
+        // position to belong to. Leaving it would start some unrelated later
+        // session part way in.
+        interruptedTrackID = nil
+        interruptedPosition = 0
         queue = []
         queueIndex = 0
         currentMetadata = nil
@@ -555,8 +595,23 @@ final class PlaybackService {
     /// A repeat-one replay reloads the same URL and so passes the guard, which
     /// is correct rather than a hole: it is the same file failing for the same
     /// reason, and the report applies either way.
+    ///
+    /// **It records where the track had got to before it gives up.** Treating a
+    /// failed item as terminal is right — `AVPlayer` does not recover from a
+    /// stall, so pretending otherwise only produces a play button that flickers
+    /// — but on its own it made a momentary blip as expensive as a crash: the
+    /// retry restarted the track from 0 and immediately wrote that 0 to disk.
+    /// `interruptedTrackID` carries the position across the retry, and the
+    /// immediate persist carries it across a relaunch, which is the other way a
+    /// user answers a stall. This is the one thing a failure must *not* throw
+    /// away.
     private func handleFailure(_ error: Error, url: URL) {
         guard url == lastRequestedURL else { return }
+        // `position` is the tick timer's last reading, so at worst half a second
+        // behind where the audio actually stopped. Read here rather than from
+        // `player.currentTime`, which a failed item reports as 0.
+        interruptedTrackID = currentTrack?.id
+        interruptedPosition = position
         lastPlaybackError = error
         player.pause()
         isPlaying = false
@@ -571,6 +626,11 @@ final class PlaybackService {
         hasLoaded = false
         stopPositionUpdates()
         pushNowPlaying()
+        // Not deferred and not throttled. The throttled write runs at most every
+        // five seconds, so without this a failure could leave up to five seconds
+        // of listening unsaved — and a stalled app is one a user is unusually
+        // likely to force-quit rather than wait out.
+        persistImmediately()
     }
 
     private func tickPosition() {

@@ -155,6 +155,75 @@ final class StreamingFailureTests: XCTestCase {
         XCTAssertEqual(service.position, 100, accuracy: 0.01)
     }
 
+    // MARK: - A failure must not cost the user their place in the track
+
+    /// A three-second blip forty minutes into a track used to cost the forty
+    /// minutes. A failed `AVPlayerItem` is terminal, so recovery means loading
+    /// the track again — and every load started at 0 and then persisted that 0
+    /// straight over the saved position, with no undo anywhere.
+    func testRetryingTheTrackThatFailedResumesWhereItStopped() async throws {
+        let (service, player, library) = try makeStack()
+        let one = try track(library, title: "One")
+        player.duration = 3000
+        service.play(one, in: [one])
+        // Forty minutes in.
+        player.currentTime = 2400
+        service.tickForTesting()
+        XCTAssertEqual(service.position, 2400, accuracy: 0.01)
+
+        player.simulateFailure()
+        await Task.yield()
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertEqual(
+            library.playbackState.positionSeconds, 2400, accuracy: 0.01,
+            "a failure must write the position down — a stalled app gets force-quit"
+        )
+
+        // The user taps the same track again once the network is back.
+        service.play(one, in: [one])
+
+        XCTAssertEqual(service.position, 2400, accuracy: 0.01)
+        XCTAssertEqual(player.currentTime, 2400, accuracy: 0.01)
+    }
+
+    /// Scoped to the retry, not a general memory: playing something else after
+    /// a failure must start that track at its own beginning.
+    func testADifferentTrackAfterAFailureStillStartsAtTheTop() async throws {
+        let (service, player, library) = try makeStack()
+        let one = try track(library, title: "One")
+        let two = try track(library, title: "Two")
+        player.duration = 3000
+        service.play(one, in: [one, two])
+        player.currentTime = 2400
+        service.tickForTesting()
+        player.simulateFailure()
+        await Task.yield()
+
+        service.play(two, in: [one, two])
+
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
+    /// Consumed once. Coming back to the track a third time — after the retry
+    /// already worked — is an ordinary play and must start from the top, or the
+    /// resume point becomes a position the user can never get rid of.
+    func testTheResumePointIsSpentByTheRetryThatUsesIt() async throws {
+        let (service, player, library) = try makeStack()
+        let one = try track(library, title: "One")
+        player.duration = 3000
+        service.play(one, in: [one])
+        player.currentTime = 2400
+        service.tickForTesting()
+        player.simulateFailure()
+        await Task.yield()
+
+        service.play(one, in: [one])
+        XCTAssertEqual(service.position, 2400, accuracy: 0.01)
+        service.play(one, in: [one])
+
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+    }
+
     // MARK: - StreamingAudioPlayer itself
 
     /// A missing API key must not look like a network outage.
@@ -233,6 +302,50 @@ final class StreamingFailureTests: XCTestCase {
         player.currentTime = .infinity
 
         XCTAssertTrue(player.currentTime.isFinite)
+    }
+
+    // MARK: - A deferred seek must never be deferred forever
+
+    /// The trap the first fix set. Deferring on `!isDurationKnown` while
+    /// draining on `.readyToPlay` are two different conditions, and a Drive
+    /// `alt=media` response — served chunked, no `Content-Length` — is the item
+    /// that tells them apart: it reaches `.readyToPlay` with an indefinite
+    /// duration and keeps it for the whole track. `.readyToPlay` fires once and
+    /// is already gone, so every seek from that point on was written to
+    /// `pendingSeek` and never applied. Tapping Previous wrote 0 there, the
+    /// track never restarted, and the position display froze at 0:00 while the
+    /// audio played on — with nothing able to correct it, because the reconcile
+    /// in `tickPosition` compares `0 < 0 - 0.5`.
+    func testASeekIsAppliedOnceTheItemIsReadyEvenIfTheDurationNeverResolves() throws {
+        let player = StreamingAudioPlayer()
+        try player.load(url: URL(string: "https://example.invalid/chunked.mp3")!)
+        player.markReadyForTesting()
+        XCTAssertFalse(player.isDurationKnown, "the case only exists while the duration is indefinite")
+
+        player.currentTime = 30
+
+        XCTAssertNil(
+            player.pendingSeekForTesting,
+            "a ready item must be seeked, not have the request parked forever"
+        )
+    }
+
+    /// The other half of the same gate: a seek asked for before the item can
+    /// take one is held, reported to the scrubber meanwhile so the thumb does
+    /// not jump back, and applied the moment readiness arrives.
+    func testASeekAskedForBeforeReadinessIsHeldAndThenApplied() throws {
+        let player = StreamingAudioPlayer()
+        try player.load(url: URL(string: "https://example.invalid/a.mp3")!)
+
+        player.currentTime = 45
+
+        XCTAssertEqual(player.pendingSeekForTesting, 45)
+        XCTAssertEqual(player.currentTime, 45, accuracy: 0.01,
+                       "the scrubber must show where the user asked to be")
+
+        player.markReadyForTesting()
+
+        XCTAssertNil(player.pendingSeekForTesting, "readiness must drain the held seek")
     }
 
     // MARK: - Vietnamese copy on the failure path

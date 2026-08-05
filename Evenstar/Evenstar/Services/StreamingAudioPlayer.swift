@@ -32,13 +32,34 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
     /// so `PlaybackService` can tell a failure for the track it is playing from
     /// one for a track it abandoned two seconds ago.
     private var loadedURL: URL?
-    /// A seek asked for before the asset resolved, applied once it does.
+    /// A seek asked for before the item could take one, applied as soon as it
+    /// can.
     ///
     /// Seeking an `AVPlayer` whose item is not yet `.readyToPlay` is not
     /// reliable — the request can simply be discarded — so a restored position
     /// handed over in that window would be dropped on the floor and the track
     /// would start from the beginning.
+    ///
+    /// **The gate is readiness, and never `isDurationKnown`.** The two look
+    /// interchangeable and are not. A Drive `alt=media` response is served
+    /// chunked, with no `Content-Length`, so its item reaches `.readyToPlay`
+    /// with an *indefinite* duration and keeps it for the whole track. Gating
+    /// the deferral on the duration while draining on `.readyToPlay` — which
+    /// fires exactly once per item, and by then has already been and gone —
+    /// parks every subsequent seek here permanently: Previous would write
+    /// `pendingSeek = 0`, the track would never restart, and the `currentTime`
+    /// getter below would report 0:00 for the rest of a track that is still
+    /// playing. Deferring and draining must therefore test the *same*
+    /// condition, which is why both go through `canSeekNow` and why
+    /// `applyPendingSeekIfPossible()` is the only place a seek reaches
+    /// `AVPlayer`.
     private var pendingSeek: TimeInterval?
+    /// Whether the current item has reached `.readyToPlay`.
+    ///
+    /// Stored when the transition happens rather than read back off the item on
+    /// demand, so that the one condition governing both halves above lives in
+    /// exactly one place and cannot drift.
+    private var isItemReady: Bool = false
 
     var didFinishCallback: (() -> Void)?
     var didFailCallback: ((Error, URL) -> Void)?
@@ -61,13 +82,12 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
             // an Objective-C exception on an invalid time — not a Swift error,
             // so nothing downstream could catch it and the app would terminate.
             guard newValue.isFinite else { return }
-            let target = max(0, newValue)
-            guard isDurationKnown, let player else {
-                pendingSeek = target
-                return
-            }
-            pendingSeek = nil
-            player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+            // Recorded first and unconditionally, then drained through the one
+            // gate. Writing the request down before testing anything is what
+            // keeps the "defer" and "apply" decisions from being two separate
+            // conditions that can disagree; see `pendingSeek`.
+            pendingSeek = max(0, newValue)
+            applyPendingSeekIfPossible()
         }
     }
 
@@ -136,7 +156,7 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
                 case .failed:
                     self.report(item.error ?? URLError(.cannotLoadFromNetwork))
                 case .readyToPlay:
-                    self.applyPendingSeek()
+                    self.markItemReady()
                 default:
                     break
                 }
@@ -193,16 +213,46 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
     /// system text; `DriveError.classify` is the same mapping `DriveClient`
     /// applies to its own transport failures, so both paths describe an offline
     /// device identically.
+    ///
+    /// **Every failure is classified as a `DriveError`, and that is a
+    /// constraint, not an oversight.** This player exists to stream from Drive
+    /// and nothing else constructs it. Pointed at some other remote source it
+    /// would tell the user "Không thể kết nối tới Google Drive" about a host
+    /// that has nothing to do with Drive, so a second source has to bring its
+    /// own classifier past this line rather than inherit this one.
     private func report(_ error: Error) {
         guard let url = loadedURL else { return }
         didFailCallback?(DriveError.classify(error), url)
     }
 
-    private func applyPendingSeek() {
-        guard let pendingSeek, let player else { return }
-        self.pendingSeek = nil
-        player.seek(to: CMTime(seconds: pendingSeek, preferredTimescale: 600))
+    /// Whether the item can take a seek right now. The single condition behind
+    /// both deferring a seek and draining a deferred one — see `pendingSeek`.
+    private var canSeekNow: Bool { isItemReady && player != nil }
+
+    /// The only place a seek ever reaches `AVPlayer`. A request that cannot be
+    /// applied yet stays in `pendingSeek` and is drained by `markItemReady()`,
+    /// which tests the identical condition.
+    private func applyPendingSeekIfPossible() {
+        guard canSeekNow, let player, let target = pendingSeek else { return }
+        pendingSeek = nil
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
     }
+
+    /// The current item reached `.readyToPlay`.
+    private func markItemReady() {
+        isItemReady = true
+        applyPendingSeekIfPossible()
+    }
+
+    /// Test-only: drives the `.readyToPlay` transition, which no unit test can
+    /// make a real `AVPlayerItem` for an unreachable URL actually reach. Calls
+    /// straight into the shipping path rather than reproducing it, so a test
+    /// using this exercises the same code the KVO branch does. In the spirit of
+    /// `PlaybackService.tickForTesting()`.
+    func markReadyForTesting() { markItemReady() }
+
+    /// Test-only: the seek still waiting to be applied, or nil when none is.
+    var pendingSeekForTesting: TimeInterval? { pendingSeek }
 
     /// Runs `work` on the main thread, synchronously when already there.
     ///
@@ -234,6 +284,7 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
         observedItem = nil
         loadedURL = nil
         pendingSeek = nil
+        isItemReady = false
         player?.pause()
         player = nil
     }
