@@ -12,6 +12,7 @@ struct EvenstarApp: App {
     @State private var library: LibraryService
     @State private var importService: ImportService
     @State private var playback: PlaybackService
+    @State private var driveLibrary: DriveLibraryService
     private let remoteCommands: RemoteCommandsBridge
 
     init() {
@@ -27,11 +28,15 @@ struct EvenstarApp: App {
         let libService = LibraryService(context: container.mainContext)
         let imp = ImportService(library: libService, metadataReader: AudioMetadataReader())
         let now = NowPlayingService()
-        let player = AVAudioPlayerWrapper()
+        // Not `AVAudioPlayerWrapper()` directly any more: that one cannot open an
+        // https URL, so every Drive track would fail to load. The router owns one
+        // of each engine and picks by URL — see `RoutingAudioPlayer`.
+        let player = RoutingAudioPlayer()
         let play = PlaybackService(player: player, nowPlaying: now, library: libService)
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
+        _driveLibrary = State(initialValue: DriveLibraryService(library: libService))
         remoteCommands = RemoteCommandsBridge(playback: play)
         remoteCommands.install()
     }
@@ -42,6 +47,7 @@ struct EvenstarApp: App {
                 .environment(library)
                 .environment(importService)
                 .environment(playback)
+                .environment(driveLibrary)
         }
         .modelContainer(modelContainer)
     }

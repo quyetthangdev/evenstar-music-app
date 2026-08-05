@@ -18,6 +18,21 @@ struct SongsView: View {
     @State private var showImportSheet = false
     @State private var pickerErrorMessage: String?
 
+    /// Which source the list is showing. Local by default — the Drive chip is
+    /// an opt-in, and a user with no linked folder should never land on an
+    /// empty screen they did not ask for.
+    @State private var source: LibrarySource = .local
+
+    enum LibrarySource: String, CaseIterable {
+        case local, drive
+        var label: String {
+            switch self {
+            case .local: "Trên máy"
+            case .drive: "Drive"
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             content
@@ -36,7 +51,6 @@ struct SongsView: View {
                 // to the `TabView` itself, which is why it lives here on each
                 // tab's root view rather than in `RootView`.
                 .toolbar(.hidden, for: .tabBar)
-                .clearsBottomBar()
         }
         .fileImporter(
             isPresented: $showFileImporter,
@@ -81,6 +95,38 @@ struct SongsView: View {
 
     @ViewBuilder
     private var content: some View {
+        VStack(spacing: 0) {
+            Picker("Nguồn", selection: $source) {
+                ForEach(LibrarySource.allCases, id: \.self) { source in
+                    Text(source.label).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+
+            // `.clearsBottomBar()` sits on each branch rather than on this
+            // `VStack`, and that placement is load-bearing.
+            // `.safeAreaInset(edge: .bottom)` inserts its spacer into the safe
+            // area of the view it is applied to: on the stack it would shrink
+            // the stack and leave the list ending in a band of empty
+            // background, instead of extending the list's own scroll inset so
+            // the last row can scroll clear of the floating bar. Applied here,
+            // `localContent` receives exactly the modifier chain it had before
+            // the picker existed.
+            switch source {
+            case .local:
+                localContent
+                    .clearsBottomBar()
+            case .drive:
+                DriveSongsList(isMinimised: $isMinimised)
+                    .clearsBottomBar()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var localContent: some View {
         if tracks.isEmpty {
             EmptyLibraryView(onImportTap: { showFileImporter = true })
         } else {
