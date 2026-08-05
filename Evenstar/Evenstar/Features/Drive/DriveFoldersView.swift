@@ -6,8 +6,10 @@ import SwiftData
 // Task 7's brief presents `DriveSongsList` with `.sheet { DriveFoldersView() }`
 // and an empty state whose only button opens it, so Task 7 does not compile
 // without this type existing — an ordering gap in the plan, not a decision made
-// here. It is the plan's own code, copied as written; Task 8's Step 2 (the
-// Tài khoản row) is deliberately left undone so Task 8 still owns this screen.
+// here. It is the plan's own code, copied as written, with `unlink` reporting
+// errors instead of discarding them (see below) and `add`'s partial-failure
+// path fixed against a duplicate insert (see its doc comment) — both closed
+// out by Task 8, which also adds the Tài khoản → Nguồn nhạc row.
 
 /// Add, rescan and unlink Drive folders. Reached from the Drive list's `…`
 /// button and from Tài khoản → Nguồn nhạc — the same screen both times.
@@ -84,6 +86,35 @@ struct DriveFoldersView: View {
         }
     }
 
+    /// Task 7's review flagged this as carried-forward work: on the most
+    /// likely first run (a folder linked before the API key is configured),
+    /// `link()` succeeds and `scan()` throws. The plan's version left `link`
+    /// and `name` untouched in that case, so the folder sat in "Đã liên kết"
+    /// while the still-filled, still-enabled "Liên kết" button invited a
+    /// second tap. `folderID` carries `@Attribute(.unique)`, and SwiftData
+    /// resolves a second insert with the same key as a silent upsert — no
+    /// throw, just `linkedAt` (and, before this fix, `lastScannedAt`) reset
+    /// out from under the row that is already there.
+    ///
+    /// Two changes close both the accidental and the deliberate path to that
+    /// duplicate insert:
+    ///
+    /// 1. A folder already linked under this `folderID` — exactly the state
+    ///    left behind by a `link()`-succeeds/`scan()`-throws run — is looked
+    ///    up and reused instead of re-inserted. This is also what makes a
+    ///    manual retry (the user re-pastes the same link once the API key is
+    ///    fixed) a rescan rather than a duplicate.
+    /// 2. The fields are cleared the moment a `DriveFolder` exists for this
+    ///    text — right after `link()` succeeds or an existing folder is
+    ///    found, not after `scan()` also succeeds — so a same-state re-tap of
+    ///    "Liên kết" is no longer possible: the button disables itself.
+    ///
+    /// The folder *is* linked at that point; only the scan failed. So the
+    /// error surfaced here is scan-shaped ("Chưa cấu hình API key…", "Thư mục
+    /// này chưa được chia sẻ công khai…", …), not "linking failed" — and the
+    /// row is exactly where a user recovering from that error needs it: already
+    /// listed under "Đã liên kết", marked "Chưa quét", ready to rescan by
+    /// pasting the same link again.
     private func add() async {
         errorMessage = nil
         guard let folderID = DriveLinkParser.folderID(from: link) else {
@@ -93,10 +124,11 @@ struct DriveFoldersView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            let folder = try driveLibrary.link(folderID: folderID, displayName: name)
-            try await driveLibrary.scan(folder)
+            let folder = try folders.first(where: { $0.folderID == folderID })
+                ?? driveLibrary.link(folderID: folderID, displayName: name)
             link = ""
             name = ""
+            try await driveLibrary.scan(folder)
         } catch {
             errorMessage = error.localizedDescription
         }

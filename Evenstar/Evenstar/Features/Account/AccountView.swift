@@ -33,6 +33,12 @@ struct AccountView: View {
                     row("Dung lượng", value: storageText)
                 }
 
+                Section("Nguồn nhạc") {
+                    NavigationLink("Thư mục Drive") {
+                        DriveFoldersView()
+                    }
+                }
+
                 Section("Ứng dụng") {
                     row("Phiên bản", value: Self.versionText)
                 }
