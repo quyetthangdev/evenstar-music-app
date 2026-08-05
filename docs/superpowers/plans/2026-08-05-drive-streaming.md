@@ -672,7 +672,7 @@ git commit -m "feat: make the playback queue source-agnostic via Playable"
 - Produces, for Tasks 5–8:
   - `struct DriveFile { let id: String; let name: String; let mimeType: String }`
   - `enum DriveError: LocalizedError { case missingAPIKey, notShared, notFound, offline, quotaExceeded, server(Int), malformedResponse }`
-  - `struct DriveClient { init(session: URLSession = .shared); func listAudioFiles(inFolder: String) async throws -> [DriveFile]; static func mediaURL(fileID: String) -> URL }`
+  - `struct DriveClient { init(apiKey: String = DriveAPIKey.value, session: URLSession = .shared); func listAudioFiles(inFolder: String) async throws -> [DriveFile]; static func mediaURL(fileID: String) -> URL }`
 
 - [ ] **Step 1: Write the stub `URLProtocol`**
 
@@ -754,7 +754,7 @@ final class DriveClientTests: XCTestCase {
             .init(status: 200, body: page([("1", "a.mp3", "audio/mpeg")], nextToken: "T2")),
             .init(status: 200, body: page([("2", "b.mp3", "audio/mpeg")])),
         ]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         let files = try await client.listAudioFiles(inFolder: "F1")
 
@@ -773,7 +773,7 @@ final class DriveClientTests: XCTestCase {
             ("3", "notes.txt", "text/plain"),
             ("4", "song.m4a", "audio/mp4"),
         ]))]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         let files = try await client.listAudioFiles(inFolder: "F1")
 
@@ -782,7 +782,7 @@ final class DriveClientTests: XCTestCase {
 
     func testAnEmptyFolderIsNotAnError() async throws {
         StubURLProtocol.responses = [.init(status: 200, body: page([]))]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         let files = try await client.listAudioFiles(inFolder: "F1")
 
@@ -793,7 +793,7 @@ final class DriveClientTests: XCTestCase {
     /// share. It must be distinguishable so the message can say what to fix.
     func testAPrivateFolderReportsNotShared() async {
         StubURLProtocol.responses = [.init(status: 403, body: Data("{}".utf8))]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "F1")) { error in
             XCTAssertEqual(error as? DriveError, .notShared)
@@ -802,7 +802,7 @@ final class DriveClientTests: XCTestCase {
 
     func testAMissingFolderReportsNotFound() async {
         StubURLProtocol.responses = [.init(status: 404, body: Data("{}".utf8))]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "F1")) { error in
             XCTAssertEqual(error as? DriveError, .notFound)
@@ -811,7 +811,7 @@ final class DriveClientTests: XCTestCase {
 
     func testQuotaExhaustionIsItsOwnError() async {
         StubURLProtocol.responses = [.init(status: 429, body: Data("{}".utf8))]
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "F1")) { error in
             XCTAssertEqual(error as? DriveError, .quotaExceeded)
@@ -820,7 +820,7 @@ final class DriveClientTests: XCTestCase {
 
     /// No responses queued makes the stub fail the connection.
     func testNoConnectionReportsOffline() async {
-        let client = DriveClient(session: StubURLProtocol.session())
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
 
         await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "F1")) { error in
             XCTAssertEqual(error as? DriveError, .offline)
@@ -924,10 +924,15 @@ enum DriveError: Error, Equatable, LocalizedError {
 /// Drive and returns plain values, which is what lets every test here run
 /// against a stubbed `URLProtocol` instead of the network.
 struct DriveClient {
+    private let apiKey: String
     private let session: URLSession
     private static let base = "https://www.googleapis.com/drive/v3/files"
 
-    init(session: URLSession = .shared) {
+    /// The key is injected rather than read from `DriveAPIKey` inside, so tests
+    /// can supply one without making the real key a mutable global that every
+    /// test in the suite shares.
+    init(apiKey: String = DriveAPIKey.value, session: URLSession = .shared) {
+        self.apiKey = apiKey
         self.session = session
     }
 
@@ -938,7 +943,7 @@ struct DriveClient {
     /// 100-song folder with no error anywhere — a bug that looks exactly like a
     /// smaller folder.
     func listAudioFiles(inFolder folderID: String) async throws -> [DriveFile] {
-        guard DriveAPIKey.isConfigured else { throw DriveError.missingAPIKey }
+        guard !apiKey.isEmpty else { throw DriveError.missingAPIKey }
 
         var files: [DriveFile] = []
         var pageToken: String?
@@ -966,7 +971,7 @@ struct DriveClient {
             URLQueryItem(name: "q", value: "'\(folderID)' in parents and trashed=false"),
             URLQueryItem(name: "fields", value: "nextPageToken,files(id,name,mimeType)"),
             URLQueryItem(name: "pageSize", value: "100"),
-            URLQueryItem(name: "key", value: DriveAPIKey.value),
+            URLQueryItem(name: "key", value: apiKey),
         ]
         if let page { items.append(URLQueryItem(name: "pageToken", value: page)) }
         components.queryItems = items
@@ -1009,15 +1014,27 @@ struct DriveClient {
 }
 ```
 
-**The tests will fail on `missingAPIKey` while `DriveAPIKey.value` is empty.**
-Give the test target a way past it: change `DriveAPIKey.value` to
-`static var value = ""` and have `DriveClientTests.setUp` assign
-`DriveAPIKey.value = "test-key"`. Note that choice in your report — a `var`
-here is a deliberate testability trade, not an oversight.
+`DriveAPIKey.value` stays a `let`. Every test constructs its client as
+`DriveClient(apiKey: "test-key", session: StubURLProtocol.session())` — update
+the test bodies above accordingly. A mutable global would have worked too and is
+the wrong trade: tests share it, so one forgetting to reset it changes the
+outcome of another.
+
+Add one test for the guard itself:
+
+```swift
+    func testAnEmptyKeyIsItsOwnError() async {
+        let client = DriveClient(apiKey: "", session: StubURLProtocol.session())
+
+        await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "F1")) { error in
+            XCTAssertEqual(error as? DriveError, .missingAPIKey)
+        }
+    }
+```
 
 - [ ] **Step 6: Run the tests**
 
-Expected: **141 tests — 138 passing, 3 skipped, 0 failing.**
+Expected: **142 tests — 139 passing, 3 skipped, 0 failing.**
 
 - [ ] **Step 7: Prove pagination is really tested**
 
@@ -1061,7 +1078,6 @@ final class DriveLibraryServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         StubURLProtocol.reset()
-        DriveAPIKey.value = "test-key"
     }
 
     private func page(_ files: [(String, String)]) -> Data {
@@ -1072,7 +1088,8 @@ final class DriveLibraryServiceTests: XCTestCase {
     private func makeService() throws -> (DriveLibraryService, LibraryService) {
         let library = try InMemoryLibrary.make()
         let service = DriveLibraryService(
-            library: library, client: DriveClient(session: StubURLProtocol.session())
+            library: library,
+            client: DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
         )
         return (service, library)
     }
@@ -1250,7 +1267,7 @@ final class DriveLibraryService {
 
 - [ ] **Step 4: Run the tests**
 
-Expected: **147 tests — 144 passing, 3 skipped, 0 failing.**
+Expected: **148 tests — 145 passing, 3 skipped, 0 failing.**
 
 - [ ] **Step 5: Prove the failure test bites**
 
@@ -1509,7 +1526,7 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
 
 - [ ] **Step 6: Run the whole suite**
 
-Expected: **149 tests — 146 passing, 3 skipped, 0 failing.** Every pre-existing
+Expected: **150 tests — 147 passing, 3 skipped, 0 failing.** Every pre-existing
 `PlaybackService` test must still pass.
 
 - [ ] **Step 7: Commit**
@@ -1709,7 +1726,7 @@ Note `./run.sh` performs a plain `build`, which removes the test bundle — run
 
 - [ ] **Step 5: Rebuild and run the suite**
 
-Expected: **149 tests — 146 passing, 3 skipped, 0 failing.** No new tests here.
+Expected: **150 tests — 147 passing, 3 skipped, 0 failing.** No new tests here.
 
 - [ ] **Step 6: Commit**
 
@@ -1850,7 +1867,7 @@ error message appears rather than a generic one. Report what you saw.
 
 - [ ] **Step 4: Rebuild and run the suite**
 
-Expected: **149 tests — 146 passing, 3 skipped, 0 failing.**
+Expected: **150 tests — 147 passing, 3 skipped, 0 failing.**
 
 - [ ] **Step 5: Commit**
 
@@ -1905,4 +1922,4 @@ assertions, every verification step the command and the expected output.
 where consumed.
 
 **Test-count arithmetic.** 119 baseline → 124 (T1) → 128 (T2) → 133 (T3) →
-141 (T4) → 147 (T5) → 149 (T6) → 149 (T7) → 149 (T8). Three skips throughout.
+142 (T4) → 148 (T5) → 150 (T6) → 150 (T7) → 150 (T8). Three skips throughout.
