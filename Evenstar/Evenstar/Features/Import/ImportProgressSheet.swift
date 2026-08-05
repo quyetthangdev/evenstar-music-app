@@ -52,7 +52,7 @@ struct ImportProgressSheet: View {
                             failureReasonsList(for: summary)
                         }
                         Button("Done") { dismiss() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.prominentAction)
                             .padding(.top, 8)
                     }
                     .padding(40)

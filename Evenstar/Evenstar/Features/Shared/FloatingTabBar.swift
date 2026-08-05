@@ -752,7 +752,7 @@ private struct FloatingTabBarPreview: View {
                         isMinimised.toggle()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.prominentAction)
                 Spacer()
             }
             .padding(.top, 60)

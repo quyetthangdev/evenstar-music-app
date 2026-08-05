@@ -18,7 +18,7 @@ struct EmptyLibraryView: View {
                 Label("Import Music", systemImage: "plus.circle.fill")
                     .font(.body.bold())
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominentAction)
             .padding(.top, 8)
         }
         .padding(40)
