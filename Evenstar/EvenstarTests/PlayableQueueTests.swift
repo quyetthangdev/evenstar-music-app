@@ -71,11 +71,21 @@ final class PlayableQueueTests: XCTestCase {
         XCTAssertEqual(relaunched.currentTrack?.id, remote.id)
     }
 
-    /// The reason `Playable` is `AnyObject`. `PlaybackService` bumps
-    /// `playCount`/`lastPlayedAt` through the existential, expecting to mutate
-    /// the SwiftData row itself; a value-type protocol would let that write
-    /// land on a copy and vanish, and the local-only play-count tests would
-    /// stay green while every Drive track's count sat at zero forever.
+    /// The only coverage that play counting works for a queue member that is
+    /// not a `Track`. Every other play-count test builds a local queue, so all
+    /// of them would stay green if the count were only ever reachable for local
+    /// tracks.
+    ///
+    /// Concretely, this fails if `tickPosition()` is ever rewritten to resolve
+    /// the row it increments through `library.findTrack(byID:)` — a plausible
+    /// change, since that is how `restoreFromPersistedState()` finds its rows —
+    /// because that lookup only searches the `Track` table and would return nil
+    /// for the Drive track, silently counting nothing.
+    ///
+    /// It does *not* test the `AnyObject` constraint: `tickPosition()` binds
+    /// `let track = currentTrack`, so dropping `AnyObject` from `Playable` is a
+    /// compile error rather than a test failure, and both conformers are
+    /// classes anyway.
     func testPlayingADriveTrackCountsAgainstTheRowItself() throws {
         let (service, player, library) = try makeStack()
         let remote = try driveTrack(library)
@@ -90,11 +100,17 @@ final class PlayableQueueTests: XCTestCase {
 
     /// Unknown tags become the same placeholder the local library shows, rather
     /// than an empty line in the player.
+    ///
+    /// Asserted against `MetadataPlaceholder`, not against string literals. A
+    /// literal here would pass while `ImportService` used a different one,
+    /// which is exactly the divergence this test is supposed to prevent —
+    /// `ImportServiceTests` already pins the literal spelling from the other
+    /// side, so between them the pair is held to one value.
     func testADriveTrackWithNoTagsStillHasAnArtistAndAlbumToShow() throws {
         let library = try InMemoryLibrary.make()
         let remote = try driveTrack(library)
 
-        XCTAssertEqual(remote.artistName, "Nghệ sĩ không rõ")
-        XCTAssertEqual(remote.albumTitle, "Album không rõ")
+        XCTAssertEqual(remote.artistName, MetadataPlaceholder.artist)
+        XCTAssertEqual(remote.albumTitle, MetadataPlaceholder.album)
     }
 }

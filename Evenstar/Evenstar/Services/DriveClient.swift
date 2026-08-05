@@ -2,6 +2,15 @@ import Foundation
 
 // ⚠️ TEMPORARY STUB — REPLACE IN TASK 4 (Drive networking).
 //
+// This file sits at the exact path Task 4's brief says to *create*
+// (`Evenstar/Evenstar/Services/DriveClient.swift`), so that step is an
+// overwrite rather than a second declaration. It deliberately does not live
+// beside `DriveLinkParser` under `Features/Drive/`, even though that would be
+// the tidier home: with Xcode 16 synced folders both files would join the
+// target and Task 4 would hit `invalid redeclaration of 'DriveClient'` — an
+// error naming neither file's real problem, whose obvious "fix" (rename one)
+// leaves `Playable.playbackURL()` still calling this stub with the suite green.
+//
 // Task 3 needs `DriveTrack.playbackURL()` to hand `AVPlayer` an https URL, but
 // the real `DriveClient` — folder listing, redirect/confirm-token handling,
 // error surface — is Task 4's deliverable. This file exists only so Task 3

@@ -35,10 +35,17 @@ extension Track: Playable {
 extension DriveTrack: Playable {
     /// `artistName` and `albumTitle` are optional on the row because they are
     /// genuinely unknown until the track has been played once; the protocol
-    /// wants a string, so unknown becomes the same placeholder the local
-    /// library uses for untagged files.
-    var artistName: String { artistNameOrNil ?? "Nghệ sĩ không rõ" }
-    var albumTitle: String { albumTitleOrNil ?? "Album không rõ" }
+    /// wants a string, so unknown becomes the same placeholder `ImportService`
+    /// writes onto an untagged local file.
+    ///
+    /// It has to be *the same* string, not merely a similar one:
+    /// `NowPlayingContent.metadataSubtitle` decides whether to collapse its
+    /// subtitle to the artist alone by comparing the album against
+    /// `MetadataPlaceholder.album`. A second spelling here would miss that
+    /// check, and the expanded player would show "artist · album" for a Drive
+    /// track where the identical local file shows just the artist.
+    var artistName: String { artistNameOrNil ?? MetadataPlaceholder.artist }
+    var albumTitle: String { albumTitleOrNil ?? MetadataPlaceholder.album }
     var artworkRelativePath: String? { nil }
 
     func playbackURL() -> URL {

@@ -104,7 +104,7 @@ struct NowPlayingContent: View {
 
     private var metadataSubtitle: String {
         guard let track = playback.currentTrack else { return "" }
-        if track.albumTitle == "Unknown Album" { return track.artistName }
+        if track.albumTitle == MetadataPlaceholder.album { return track.artistName }
         return "\(track.artistName) · \(track.albumTitle)"
     }
 

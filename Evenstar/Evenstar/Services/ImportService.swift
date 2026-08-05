@@ -124,8 +124,8 @@ final class ImportService {
 
         let fallbackTitle = url.deletingPathExtension().lastPathComponent
         let title = extracted.title?.nonEmpty ?? fallbackTitle
-        let artist = extracted.artist?.nonEmpty ?? "Unknown Artist"
-        let album = extracted.album?.nonEmpty ?? "Unknown Album"
+        let artist = extracted.artist?.nonEmpty ?? MetadataPlaceholder.artist
+        let album = extracted.album?.nonEmpty ?? MetadataPlaceholder.album
 
         if let existing = try? library.findExistingTrack(
             title: title, artist: artist, duration: extracted.durationSeconds
