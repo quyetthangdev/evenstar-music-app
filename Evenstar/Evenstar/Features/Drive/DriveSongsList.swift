@@ -27,6 +27,28 @@ struct DriveSongsList: View {
         .sheet(isPresented: $showManager) {
             DriveFoldersView()
         }
+        // Gives `errorMessage` the same self-clearing rule `lastPlaybackError`
+        // already has: "playing something is what makes the banner stale, and
+        // playing something is what removes it" (see the comment on
+        // `PlaybackService.lastPlaybackError`), regardless of which source —
+        // a scan failure clears just as well on a *local* track starting as on
+        // a Drive one, matching that existing rule exactly.
+        //
+        // Two triggers, not one, because `isPlaying` alone misses a real case:
+        // it never toggles through `false` when an already-playing queue
+        // advances (Next/Previous/auto-advance while music is running), so a
+        // stale banner sat through a scan failure followed by a successful
+        // track change would outlive it. `currentTrackTitle` changes on every
+        // successful load reached through the live-playback paths, which
+        // catches that case; the `isPlaying` guard on it keeps a track loaded
+        // without starting (app-launch restore) from clearing a banner that
+        // has nothing to do with it.
+        .onChange(of: playback.isPlaying) { _, isPlaying in
+            if isPlaying { errorMessage = nil }
+        }
+        .onChange(of: playback.currentTrackTitle) { _, _ in
+            if playback.isPlaying { errorMessage = nil }
+        }
     }
 
     private var empty: some View {
@@ -124,8 +146,9 @@ struct DriveSongsList: View {
     /// messages — a missing API key, an offline device, a mid-track stall —
     /// were recorded and then thrown away, and a Drive track that would not
     /// start simply stopped with no explanation. `lastPlaybackError` clears
-    /// itself the moment anything plays successfully, so the banner does not
-    /// need to be dismissed.
+    /// itself the moment anything plays successfully, and `errorMessage` now
+    /// carries the same rule — see the `onChange` pair in `body` — so neither
+    /// half of this banner needs a dismiss affordance.
     private var bannerMessage: String? {
         errorMessage ?? playback.lastPlaybackError?.localizedDescription
     }
