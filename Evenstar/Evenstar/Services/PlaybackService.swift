@@ -122,11 +122,15 @@ final class PlaybackService {
     /// short enough that it never blocks a deliberate restart.
     static let restartThreshold: TimeInterval = 3
 
-    /// Restarts the current track, or steps back to the one before it.
+    /// Restarts the current track, steps back to the one before it, or — at
+    /// the head of the queue with a repeat mode armed — wraps to the last
+    /// track, the same "the queue doesn't end" logic `next()` applies going
+    /// forward.
     ///
     /// Never a no-op while a queue exists, which is why nothing disables the
-    /// button: at the head of the queue, and anywhere past the threshold,
-    /// "previous" still means restart.
+    /// button: past the threshold it restarts, at the head of the queue it
+    /// either wraps (repeat armed) or restarts (repeat off), and anywhere else
+    /// it steps back.
     func previous() {
         guard !queue.isEmpty else { return }
         // The threshold outranks the repeat mode. Past three seconds this

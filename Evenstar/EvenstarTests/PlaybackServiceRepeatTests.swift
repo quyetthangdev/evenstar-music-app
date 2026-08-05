@@ -300,6 +300,24 @@ final class PlaybackServiceRepeatTests: XCTestCase {
         XCTAssertEqual(service.currentTrack?.id, list[2].id)
     }
 
+    /// `.all` and `.one` take the same branch here, and only `.all` was
+    /// covered — so narrowing the condition to `repeatMode == .all` used to
+    /// pass the whole suite. This closes that.
+    func testPreviousWithRepeatOneAtTheHeadAlsoWrapsToTheLast() throws {
+        let (service, player, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        service.cycleRepeatMode()  // .one
+        player.currentTime = 1  // inside the restart threshold
+        service.tickForTesting()
+
+        service.previous()
+
+        XCTAssertEqual(service.queueIndex, 2)
+        XCTAssertEqual(service.currentTrack?.id, list[2].id)
+    }
+
     func testPreviousWithRepeatOffAtTheHeadStillRestarts() throws {
         let (service, player, library) = try makeStack()
         let list = try tracks(3, library: library)
