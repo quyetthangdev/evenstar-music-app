@@ -40,10 +40,6 @@ struct SystemVolumeSlider: UIViewRepresentable {
         view.showsRouteButton = false
         view.setVolumeThumbImage(Self.invisibleThumb, for: .normal)
         view.setVolumeThumbImage(Self.invisibleThumb, for: .highlighted)
-        // Neither of these is deprecated — checked deliberately, as the
-        // attribute above demands of anything added to this function.
-        view.setMinimumVolumeSliderImage(Self.trackImage, for: .normal)
-        view.setMaximumVolumeSliderImage(Self.trackImage, for: .normal)
         view.tintColor = .label
         return view
     }
@@ -92,7 +88,7 @@ struct SystemVolumeSlider: UIViewRepresentable {
     ///
     /// One image serves both ends: the caps make it stretch from the middle, so
     /// the same bitmap draws a short filled section and a long unfilled one.
-    private static let trackImage: UIImage = {
+    static let trackImage: UIImage = {
         let side = ScrubberBar.restingHeight
         let size = CGSize(width: side, height: side)
         let capsule = UIGraphicsImageRenderer(size: size).image { _ in
@@ -130,12 +126,43 @@ struct SystemVolumeSlider: UIViewRepresentable {
 /// track). That is deliberately different from driving the volume itself
 /// through the same traversal, which would fail silently and is why this
 /// design does not do it.
-private final class TintedVolumeView: MPVolumeView {
+/// Internal rather than private so `SystemVolumeSliderTests` can build one and
+/// ask the slider what it ended up with. The alternative was leaving the track
+/// thickness as an unverifiable claim: `MPVolumeView` draws nothing in the
+/// simulator, so no screenshot can show it, and the first attempt at this —
+/// through `MPVolumeView`'s own image setters — silently did nothing on device.
+final class TintedVolumeView: MPVolumeView {
     override func layoutSubviews() {
         super.layoutSubviews()
-        for case let slider as UISlider in subviews {
-            slider.minimumTrackTintColor = .label
-            slider.maximumTrackTintColor = UIColor.label.withAlphaComponent(0.25)
+        guard let slider = Self.findSlider(in: self) else { return }
+        slider.minimumTrackTintColor = .label
+        slider.maximumTrackTintColor = UIColor.label.withAlphaComponent(0.25)
+        // On the slider itself, not through
+        // `MPVolumeView.setMinimum/MaximumVolumeSliderImage`. Those were tried
+        // first and had no visible effect on device — which the simulator
+        // could not have shown either way, since `MPVolumeView` draws nothing
+        // there. `UISlider`'s own setters do land.
+        slider.setMinimumTrackImage(SystemVolumeSlider.trackImage, for: .normal)
+        slider.setMaximumTrackImage(SystemVolumeSlider.trackImage, for: .normal)
+    }
+
+    /// Searches the whole subtree, not just the direct children.
+    ///
+    /// The direct-children version silently found nothing. It was written when
+    /// only the tint went through here, and the tint appeared to work anyway —
+    /// `tintColor` on the outer view reaches the slider on its own, so the walk
+    /// contributed nothing and no one noticed it was dead. The track image has
+    /// no such fallback, which is what finally exposed it.
+    ///
+    /// A dump of `subviews` in a unit test shows `[UILabel, MPButton]` in the
+    /// simulator, where there is no audio hardware and so no slider at all.
+    /// Where a slider does exist, nothing documents how deep it sits, so this
+    /// does not assume.
+    private static func findSlider(in view: UIView) -> UISlider? {
+        for subview in view.subviews {
+            if let slider = subview as? UISlider { return slider }
+            if let found = findSlider(in: subview) { return found }
         }
+        return nil
     }
 }

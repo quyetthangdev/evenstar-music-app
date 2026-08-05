@@ -26,6 +26,10 @@ struct NowPlayingContent: View {
     /// the play button.
     private static let transportGlyphFrame: CGFloat = 44
 
+    /// Larger than the arrows beside it so it still reads as the primary
+    /// control now that it has no ring to set it apart.
+    private static let playGlyphSize: CGFloat = 42
+
     /// Larger than the `.subheadline` this started at, because the glyph now
     /// has to hold a legible digit inside its loop rather than just be
     /// recognised.
@@ -137,8 +141,11 @@ struct NowPlayingContent: View {
                 // lock-screen push and disk write.
                 playback.togglePlayPause()
             } label: {
-                Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 64))
+                // The bare glyph, not `.circle.fill`. The ring was doing no
+                // work the size and position were not already doing, and it
+                // made this the only transport control with a filled backdrop.
+                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: Self.playGlyphSize))
                     .contentTransition(.symbolEffect(.replace))
                     // No glyph handover: a handover says "that went somewhere",
                     // true of Previous and Next and false of this one, which
@@ -180,7 +187,7 @@ struct NowPlayingContent: View {
             // its solid triangular head matches the arrowheads on the
             // transport glyphs beside it; the thin-stroked head reads as a
             // refresh control from a different family.
-            Image(systemName: "arrow.trianglehead.clockwise")
+            Image(systemName: "repeat")
                 .font(.system(size: Self.repeatGlyphSize, weight: .semibold))
                 .overlay {
                     Text("1")
@@ -208,10 +215,16 @@ struct NowPlayingContent: View {
     // slider is the row's only flexible element, so it takes what the two
     // glyphs leave rather than being handed a width it would ignore.
     private var volume: some View {
+        // Every child is given the slider's own height, so `HStack`'s centre
+        // alignment puts all three on one axis. Left to their intrinsic
+        // heights the glyphs centre on their own boxes, which are shorter than
+        // the slider's and sit a little high against the bar.
         HStack(spacing: 10) {
             Image(systemName: "speaker.fill")
+                .frame(height: ScrubberBar.touchHeight)
             SystemVolumeSlider()
             Image(systemName: "speaker.wave.3.fill")
+                .frame(height: ScrubberBar.touchHeight)
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
