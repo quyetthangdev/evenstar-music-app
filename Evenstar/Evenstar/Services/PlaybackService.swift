@@ -11,11 +11,15 @@ final class PlaybackService {
     private(set) var currentTrackTitle: String?
     private(set) var currentMetadata: TrackMetadata?
     private(set) var position: TimeInterval = 0
-    private(set) var queue: [Track] = []
+    /// Holds `Track` and `DriveTrack` side by side — see `Playable`. Nothing
+    /// below this line may re-introduce a source-specific assumption about the
+    /// element type; the whole point is that repeat, restore, play counting and
+    /// the lock-screen push are written once.
+    private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
     var duration: TimeInterval { player.duration }
-    var currentTrack: Track? {
+    var currentTrack: (any Playable)? {
         queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
     }
 
@@ -59,7 +63,7 @@ final class PlaybackService {
 
     // MARK: - Public
 
-    func play(_ track: Track, in queueTracks: [Track]) {
+    func play(_ track: any Playable, in queueTracks: [any Playable]) {
         queue = queueTracks
         queueIndex = queueTracks.firstIndex(where: { $0.id == track.id }) ?? 0
         loadCurrentAndPlay()
@@ -172,6 +176,10 @@ final class PlaybackService {
     /// wraps to the top under repeat-all and otherwise stops. Tracks that
     /// aren't current are just removed, shifting `queueIndex` if they sat
     /// before the current position.
+    ///
+    /// Keeps its concrete `Track` parameter on purpose: deleting is a
+    /// local-library action, and it matches queue members by `id`, so a mixed
+    /// queue needs nothing else here.
     func handleTrackDeleted(_ track: Track) {
         let wasPlaying = isPlaying
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
@@ -244,8 +252,11 @@ final class PlaybackService {
         // off for anyone who finished their queue before quitting.
         repeatMode = RepeatMode(rawValue: state.repeatModeRaw) ?? .off
         guard !state.queueTrackIDs.isEmpty else { return }
-        let resolved: [Track] = state.queueTrackIDs.compactMap { id in
-            try? library.findTrack(byID: id)
+        let resolved: [any Playable] = state.queueTrackIDs.compactMap { id -> (any Playable)? in
+            // Local first: it is the commoner case and needs no second query
+            // when it hits.
+            if let track = try? library.findTrack(byID: id) { return track }
+            return try? library.findDriveTrack(byID: id)
         }
         guard !resolved.isEmpty else {
             // Stale state — clear it.
@@ -267,7 +278,7 @@ final class PlaybackService {
                 stopPlayback()
                 return
             }
-            let url = FileLocation.absoluteURL(forRelative: track.relativePath)
+            let url = track.playbackURL()
             do {
                 try player.load(url: url)
                 hasLoaded = true
@@ -354,7 +365,7 @@ final class PlaybackService {
                 stopPlayback()
                 return
             }
-            let url = FileLocation.absoluteURL(forRelative: track.relativePath)
+            let url = track.playbackURL()
             do {
                 try player.load(url: url)
                 hasLoaded = true
@@ -570,7 +581,7 @@ final class PlaybackService {
     /// track change. That put a file read and a full-size `UIImage` decode
     /// between a tap on Next and anything happening on screen. It arrives
     /// separately now; see `loadArtworkIntoNowPlaying`.
-    private func metadata(from track: Track) -> TrackMetadata {
+    private func metadata(from track: any Playable) -> TrackMetadata {
         TrackMetadata(
             title: track.title,
             artist: track.artistName,
@@ -607,9 +618,11 @@ final class PlaybackService {
     /// bounded, cached, downsampled read. If this ever goes back to decoding at
     /// full size, the fan-out has to be bounded too.
     ///
-    /// Takes the path out of the `Track` before hopping: `Track` is a SwiftData
-    /// `@Model`, neither `Sendable` nor safe to touch from another executor.
-    private func loadArtworkIntoNowPlaying(for track: Track) {
+    /// Takes the path out of the row before hopping: both `Playable`
+    /// conformers are SwiftData `@Model`s, neither `Sendable` nor safe to touch
+    /// from another executor. A Drive track always reports a nil path, so this
+    /// simply finds no artwork for one rather than needing a source check.
+    private func loadArtworkIntoNowPlaying(for track: any Playable) {
         let path = track.artworkRelativePath
         let id = track.id
         Task { @MainActor in
