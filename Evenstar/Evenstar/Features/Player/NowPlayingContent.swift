@@ -30,11 +30,10 @@ struct NowPlayingContent: View {
     /// control now that it has no ring to set it apart.
     private static let playGlyphSize: CGFloat = 42
 
-    /// Larger than the `.subheadline` this started at, because the glyph now
-    /// has to hold a legible digit inside its loop rather than just be
-    /// recognised.
+    /// Larger than the `.subheadline` this started at: `repeat.1` carries a
+    /// digit as well as the loop, and at the smaller size the digit was a
+    /// smudge.
     private static let repeatGlyphSize: CGFloat = 22
-    private static let repeatDigitSize: CGFloat = 12
     private static let repeatFrame: CGFloat = 36
 
     /// Dim when off, accent when armed — the glyph alone cannot carry it,
@@ -177,29 +176,16 @@ struct NowPlayingContent: View {
             // feedback: both the glyph and its tint read from `repeatMode`.
             playback.cycleRepeatMode()
         } label: {
-            // One arrowhead, not the two of `repeat`, and the digit sits in
-            // the loop's own hollow. SF Symbols' `repeat.1` hangs its `1`
-            // outside the loop at the top right, which is the one thing this
-            // is not allowed to look like — so the digit is composed on top
-            // rather than taken from a symbol.
-            //
-            // `arrow.trianglehead.clockwise` over `arrow.clockwise` because
-            // its solid triangular head matches the arrowheads on the
-            // transport glyphs beside it; the thin-stroked head reads as a
-            // refresh control from a different family.
-            Image(systemName: "repeat")
+            // `repeat.1` hangs its digit outside the loop at the top right.
+            // Composing it inside instead was tried on both the two-arrow
+            // `repeat` and a single-arrow circular loop: the circle has a
+            // hollow and reads well, but `repeat`'s interior is a narrow
+            // horizontal slot between the two arrows, and a digit dropped in
+            // there merges with both and reads as a bar joining them rather
+            // than as a numeral. Two arrows won, so the digit goes outside.
+            Image(systemName: playback.repeatMode == .one ? "repeat.1" : "repeat")
                 .font(.system(size: Self.repeatGlyphSize, weight: .semibold))
-                .overlay {
-                    Text("1")
-                        .font(.system(size: Self.repeatDigitSize, weight: .bold))
-                        .opacity(playback.repeatMode == .one ? 1 : 0)
-                        .scaleEffect(playback.repeatMode == .one ? 1 : 0.4)
-                }
-                // The base glyph no longer changes between modes, so there is
-                // no symbol swap left to transition — only the digit arrives
-                // and leaves, and it does so on the same short curve the other
-                // small controls use.
-                .animation(BottomBarStyle.control, value: playback.repeatMode)
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(repeatTint)
                 .frame(width: Self.repeatFrame, height: Self.repeatFrame)
         }
