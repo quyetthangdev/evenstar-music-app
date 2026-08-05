@@ -11,6 +11,7 @@ final class MockAudioPlayer: AudioPlayerProtocol {
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 180
     var didFinishCallback: (() -> Void)?
+    var didFailCallback: ((Error) -> Void)?
 
     /// URLs that `load(url:)` should fail for, in the spirit of
     /// `MockMetadataReader.outcomesByURL`. Lets tests simulate an
@@ -42,6 +43,12 @@ final class MockAudioPlayer: AudioPlayerProtocol {
     func simulateFinish() {
         isPlaying = false
         didFinishCallback?()
+    }
+
+    /// Drives the async-failure path the way `AVPlayer` would.
+    func simulateFailure(_ error: Error = URLError(.notConnectedToInternet)) {
+        isPlaying = false
+        didFailCallback?(error)
     }
 }
 

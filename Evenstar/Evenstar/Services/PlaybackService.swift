@@ -18,6 +18,9 @@ final class PlaybackService {
     private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
+    /// The last playback failure, for the UI to show. Cleared whenever a track
+    /// starts successfully.
+    private(set) var lastPlaybackError: Error?
     var duration: TimeInterval { player.duration }
     var currentTrack: (any Playable)? {
         queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
@@ -58,6 +61,9 @@ final class PlaybackService {
         self.persistInterval = persistInterval
         self.player.didFinishCallback = { [weak self] in
             Task { @MainActor in self?.handleFinish() }
+        }
+        self.player.didFailCallback = { [weak self] error in
+            Task { @MainActor in self?.handleFailure(error) }
         }
     }
 
@@ -405,6 +411,15 @@ final class PlaybackService {
                 player.play()
                 isPlaying = true
                 startPositionUpdates()
+                // A track is starting, so whatever went wrong last time is no
+                // longer what the user is looking at. Cleared here rather than
+                // at the top of the method because the skip-forward loop above
+                // can pass through several failing tracks first; clearing early
+                // would wipe the explanation before anything had actually
+                // started. `autoPlay == false` paths (restore, a delete that
+                // reloads without playing) deliberately leave it alone —
+                // nothing began playing there either.
+                lastPlaybackError = nil
             } else {
                 isPlaying = false
             }
@@ -470,6 +485,19 @@ final class PlaybackService {
                 stopPlayback()
             }
         }
+    }
+
+    /// A player that failed after `load()` returned.
+    ///
+    /// Deliberately does not skip to the next track: the commonest cause is no
+    /// network, and skipping would march through the whole queue failing once
+    /// per track. Stopping and saying why is the useful behaviour.
+    private func handleFailure(_ error: Error) {
+        lastPlaybackError = error
+        player.pause()
+        isPlaying = false
+        stopPositionUpdates()
+        pushNowPlaying()
     }
 
     private func tickPosition() {
