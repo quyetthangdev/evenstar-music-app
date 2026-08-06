@@ -724,7 +724,7 @@ struct PlayerCard: View {
                 trailingInset: isDragging || progress > 0 ? 0 : collapsedTrailingMargin
             )
         )
-        .gesture(drag(travel: dragTravel))
+        .gesture(drag(travel: dragTravel, threshold: Self.dragThreshold(progress: progress)))
         .onTapGesture { if progress < 0.5 { expand() } }
         // At progress 0 this holds the card's bottom `collapsedBottomOffset`
         // above the **physical** bottom edge, so the pill floats clear of the
@@ -1081,8 +1081,49 @@ struct PlayerCard: View {
         return min(max(relative, -BottomBarStyle.maxSettleVelocity), BottomBarStyle.maxSettleVelocity)
     }
 
-    private func drag(travel: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
+    /// How far the finger must move before the card starts following it.
+    ///
+    /// **Near zero once the card is open, because there is nothing left to
+    /// disambiguate.** A threshold exists to stop a tap being read as a drag,
+    /// and the tap it protects — `onTapGesture`, which expands — is guarded on
+    /// `progress < 0.5` and does nothing at all while the card is open. Paying
+    /// for that protection when it cannot fire is what put a dead zone at the
+    /// start of every downward swipe.
+    ///
+    /// Not literally zero: at zero this gesture recognises on touch-down and
+    /// competes with the controls inside the expanded card for the same touch.
+    /// Two points is below the threshold of a deliberate movement and above the
+    /// jitter of a stationary finger.
+    static func dragThreshold(progress: Double) -> CGFloat {
+        progress > 0.5 ? 2 : 10
+    }
+
+    /// The finger's travel with the recognition threshold taken back out.
+    ///
+    /// `DragGesture.Value.translation` is measured from **touch-down**, not from
+    /// the moment the gesture recognised — so the very first `onChanged` already
+    /// carries the whole threshold, and assigning it straight across makes the
+    /// card jump that far in a single frame. Ten points of jump after ten points
+    /// of nothing is the stutter at the start of a swipe: the dead zone and the
+    /// catch-up are one defect with two halves.
+    ///
+    /// Subtracting leaves the card trailing the finger by the threshold forever
+    /// after, which at two points is not visible and is the right trade: a
+    /// constant offset nobody can see, against a discontinuity everybody can.
+    ///
+    /// Clamped to the movement's own magnitude rather than subtracted blindly.
+    /// `minimumDistance` measures distance in two dimensions, so a finger that
+    /// moved mostly sideways can recognise with a vertical component smaller
+    /// than the threshold — and a blind subtraction would flip its sign and send
+    /// the card the wrong way.
+    static func dragOffset(translationHeight: CGFloat, threshold: CGFloat) -> CGFloat {
+        if translationHeight > 0 { return max(0, translationHeight - threshold) }
+        if translationHeight < 0 { return min(0, translationHeight + threshold) }
+        return 0
+    }
+
+    private func drag(travel: CGFloat, threshold: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: threshold)
             .onChanged { value in
                 // Guarded rather than assigned unconditionally: this fires on
                 // every touch move, and a redundant `@State` write would
@@ -1098,7 +1139,10 @@ struct PlayerCard: View {
                 // it had no visible effect at any input — the code and its
                 // comment disagreed. See F5; overshoot geometry was judged
                 // more risk than the interaction is worth for this pass.
-                dragDelta = -value.translation.height / travel
+                dragDelta = -Self.dragOffset(
+                    translationHeight: value.translation.height,
+                    threshold: threshold
+                ) / travel
             }
             .onEnded { value in
                 // Cleared outside the `withAnimation` below: the hit region
@@ -1109,7 +1153,13 @@ struct PlayerCard: View {
                 // quick flick settles the card even though the finger barely
                 // moved. Comparing raw distance is what makes hand-rolled
                 // sheets feel heavy.
-                let predicted = settled - value.predictedEndTranslation.height / travel
+                // Compensated the same way as the live position above, so the
+                // decision is taken in the same coordinates the card was moving
+                // in rather than ones a threshold apart.
+                let predicted = settled - Self.dragOffset(
+                    translationHeight: value.predictedEndTranslation.height,
+                    threshold: threshold
+                ) / travel
                 let target: Double = predicted > 0.5 ? 1 : 0
                 withAnimation(
                     BottomBarStyle.settle(
