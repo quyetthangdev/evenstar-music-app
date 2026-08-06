@@ -317,6 +317,31 @@ struct PlayerCard: View {
         )
     }
 
+    /// What has to change for the card to reload its artwork.
+    ///
+    /// **The path, not only the track ID.** Keyed on the ID alone — which is
+    /// what this was — the card kept whatever picture it had loaded when the
+    /// track started, because a `Track`'s `id` does not change when its cover
+    /// does. Changing a cover from the list updated the row (`ArtworkThumbnail`
+    /// keys on the path) and left the mini pill and the expanded player showing
+    /// the old one, for as long as that track stayed loaded.
+    ///
+    /// Same class of bug as the one `LibraryService.setArtwork`'s fresh-filename
+    /// rule exists to prevent, in the one place that rule could not reach: the
+    /// card has its own copy of the image, so a new path on disk means nothing
+    /// until something tells the card to go and read it.
+    private struct ArtworkIdentity: Equatable {
+        let trackID: UUID?
+        let artworkPath: String?
+    }
+
+    private var artworkIdentity: ArtworkIdentity {
+        ArtworkIdentity(
+            trackID: playback.currentTrack?.id,
+            artworkPath: playback.currentTrack?.artworkRelativePath
+        )
+    }
+
     var body: some View {
         // `outer` must NOT itself ignore the safe area: only a reader that
         // still respects it reports real `safeAreaInsets`. `ignoresSafeArea()`
@@ -331,7 +356,7 @@ struct PlayerCard: View {
                 // Attached here, rather than outside the reader, so the
                 // artwork's target size can be derived from the same
                 // `outer` geometry the card lays out with. See F2.
-                .task(id: playback.currentTrack?.id) {
+                .task(id: artworkIdentity) {
                     await loadArtwork(safeAreaSize: outer.size, insets: outer.safeAreaInsets)
                 }
         }
@@ -889,13 +914,26 @@ struct PlayerCard: View {
         // `backgroundTintHold`, which is below where the artwork ends.
         //
         // Both stops collapse to location 1 at progress 0, which makes the
-        // whole gradient the first stop's `.clear` — so the collapsed pill's
-        // thumbnail is untouched, with no view inserted or removed mid-morph
-        // to pop.
+        // whole gradient the first stop's transparent tint — so the collapsed
+        // pill's thumbnail is untouched, with no view inserted or removed
+        // mid-morph to pop.
+        //
+        // The transparent end is `tintColour.opacity(0)`, NOT `.clear`, and the
+        // difference is visible. `.clear` is *black* at zero alpha, so a
+        // gradient running from it to an opaque colour interpolates through
+        // partly-transparent black: the fade darkens and greys before it
+        // arrives at the tint, then meets the background's flat tint at the
+        // artwork's edge. The result was a dirty band with a crease along its
+        // bottom — the fold visible above the title in the first build of this
+        // layout. Fading a colour to its own zero-alpha keeps the hue constant
+        // and varies only alpha, which is what "fade out" is supposed to mean.
         .overlay(
             LinearGradient(
                 stops: [
-                    .init(color: .clear, location: 1 - Self.artworkFadeFraction * progress),
+                    .init(
+                        color: tintColour.opacity(0),
+                        location: 1 - Self.artworkFadeFraction * progress
+                    ),
                     .init(color: tintColour, location: 1)
                 ],
                 startPoint: .top,
