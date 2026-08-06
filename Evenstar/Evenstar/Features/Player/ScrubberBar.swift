@@ -58,7 +58,7 @@ struct ScrubberBar: View {
         // announced; the two time labels below are read as loose text with
         // nothing between them.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Playback position")
+        .accessibilityLabel("Vị trí phát")
         .accessibilityValue(Self.formatTime(displayedPosition))
         .accessibilityAdjustableAction { direction in
             let step: TimeInterval = 15

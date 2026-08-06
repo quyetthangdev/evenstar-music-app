@@ -60,23 +60,20 @@ struct DriveSongsList: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "cloud")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-            Text("Chưa có thư mục nào")
-                .font(.title3.bold())
+        // `ContentUnavailableView`, like every other empty state in the app.
+        // The privacy sentence survives the move intact — it is the whole
+        // reason this screen needed a description longer than one line, and
+        // the framework's `description` slot takes it without truncating.
+        ContentUnavailableView {
+            Label("Chưa có thư mục nào", systemImage: "cloud")
+        } description: {
             // The privacy cost, stated plainly at the moment it is incurred.
             // This is a product requirement, not copy — see the spec.
             Text("Nhạc trên Drive được phát trực tiếp, không tốn dung lượng máy. Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”, nghĩa là ai có link cũng xem được.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        } actions: {
             Button("Thêm thư mục") { showManager = true }
                 .buttonStyle(.prominentAction)
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
             // Same entry point as the list below it. Without this the `…`
             // button vanishes exactly when there is nothing else on screen to

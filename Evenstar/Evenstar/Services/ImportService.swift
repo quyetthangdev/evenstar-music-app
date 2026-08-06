@@ -11,13 +11,13 @@ enum ImportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedFormat(let ext): return "Unsupported format: .\(ext)"
-        case .metadataExtractionFailed: return "Could not extract audio metadata."
-        case .copyFailed(let error): return "Copy failed: \(error.localizedDescription)"
-        case .persistFailed(let error): return "Couldn't save to the library: \(error.localizedDescription)"
-        case .diskFull: return "Storage is full."
+        case .unsupportedFormat(let ext): return "Định dạng không hỗ trợ: .\(ext)"
+        case .metadataExtractionFailed: return "Không đọc được thông tin bài hát."
+        case .copyFailed(let error): return "Chép file thất bại: \(error.localizedDescription)"
+        case .persistFailed(let error): return "Không lưu được vào thư viện: \(error.localizedDescription)"
+        case .diskFull: return "Máy đã hết dung lượng."
         case .fileNotAccessible(let url):
-            return "Couldn't access \(url.lastPathComponent). It may have been moved or removed."
+            return "Không mở được \(url.lastPathComponent). File có thể đã bị di chuyển hoặc xoá."
         }
     }
 }

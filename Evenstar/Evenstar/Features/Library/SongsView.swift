@@ -79,7 +79,7 @@ struct SongsView: View {
             .presentationDetents([.medium, .large])
         }
         .alert(
-            "Couldn't open files",
+            "Không mở được file",
             isPresented: Binding(
                 get: { pickerErrorMessage != nil },
                 set: { isPresented in
@@ -140,7 +140,7 @@ struct SongsView: View {
                         Button(role: .destructive) {
                             deleteTrack(track)
                         } label: {
-                            Label("Delete", systemImage: "trash")
+                            Label("Xoá", systemImage: "trash")
                         }
                     }
             }

@@ -21,7 +21,7 @@ struct ImportProgressSheet: View {
                     )
                     .progressViewStyle(.linear)
                     .padding(.horizontal, 32)
-                    Text("Importing \(importer.progress.completed) of \(importer.progress.total)")
+                    Text("Đang nhập \(importer.progress.completed)/\(importer.progress.total)")
                         .font(.body)
                 }
                 .padding(40)
@@ -37,21 +37,21 @@ struct ImportProgressSheet: View {
                               : "exclamationmark.triangle.fill")
                             .font(.system(size: 48))
                             .foregroundStyle(summary.failures.isEmpty ? .green : .orange)
-                        Text("Import complete")
+                        Text("Đã nhập xong")
                             .font(.title2.bold())
                         VStack(spacing: 4) {
-                            summaryLine(count: summary.imported.count, text: "imported")
+                            summaryLine(Text("\(summary.imported.count) bài đã thêm"))
                             if summary.duplicates.count > 0 {
-                                summaryLine(count: summary.duplicates.count, text: "duplicate(s) skipped")
+                                summaryLine(Text("\(summary.duplicates.count) bài trùng, đã bỏ qua"))
                             }
                             if summary.failures.count > 0 {
-                                summaryLine(count: summary.failures.count, text: "failed")
+                                summaryLine(Text("\(summary.failures.count) bài lỗi"))
                             }
                         }
                         if !failureReasons(for: summary).isEmpty {
                             failureReasonsList(for: summary)
                         }
-                        Button("Done") { dismiss() }
+                        Button("Xong") { dismiss() }
                             .buttonStyle(.prominentAction)
                             .padding(.top, 8)
                     }
@@ -78,8 +78,14 @@ struct ImportProgressSheet: View {
         }
     }
 
-    private func summaryLine(count: Int, text: String) -> some View {
-        Text("\(count) \(text)")
+    /// Takes a built `Text`, not a count and a noun fragment.
+    ///
+    /// The old `"\(count) \(text)"` form assembled the sentence at runtime from
+    /// a number and a loose word, which a String Catalog cannot extract — it
+    /// would see `"%lld %@"` and nothing translatable. Each call site now holds
+    /// one whole sentence, so the coming localization đợt gets three real keys.
+    private func summaryLine(_ text: Text) -> some View {
+        text
             .font(.subheadline)
             .foregroundStyle(.secondary)
     }
@@ -101,7 +107,7 @@ struct ImportProgressSheet: View {
     }
 
     /// Caps the visible list at 4 distinct reasons, folding the rest into a
-    /// "+N more" line to keep the common case tidy. The sheet also scrolls
+    /// "+N lỗi khác" line to keep the common case tidy. The sheet also scrolls
     /// and can be dragged to `.large`, so the cap is about readability now
     /// rather than about fitting a fixed height.
     private func failureReasonsList(for summary: ImportSummary) -> some View {
@@ -117,7 +123,7 @@ struct ImportProgressSheet: View {
                     .multilineTextAlignment(.leading)
             }
             if remaining > 0 {
-                Text("+\(remaining) more")
+                Text("+\(remaining) lỗi khác")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
