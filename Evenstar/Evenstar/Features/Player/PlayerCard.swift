@@ -76,8 +76,8 @@ struct PlayerCard: View {
     ///
     /// The artwork is full-bleed, so it has to end *somewhere*; a hard edge
     /// across the screen would read as a seam. Its bottom is therefore masked
-    /// away into the blurred backdrop beneath it — same picture, out of focus —
-    /// so nothing about the transition is a boundary the eye can find.
+    /// away into the drifting field of its own colours beneath it, so nothing
+    /// about the transition is a boundary the eye can find.
     private static let artworkFadeFraction: Double = 0.30
 
     /// Where the frosted layer in `background` stops being rendered at all.
@@ -102,9 +102,9 @@ struct PlayerCard: View {
 
     @State private var artwork: UIImage?
     @State private var tint: Color?
-    /// The cover at 24px, drawn across the whole card as the expanded
-    /// background. See `ArtworkStore.backdrop(for:)`.
-    @State private var backdrop: UIImage?
+    /// Nine colours from the cover, laid out 3×3, driving the expanded
+    /// background. See `ArtworkStore.meshPalette(for:)` and `AmbientMesh`.
+    @State private var meshColours: [Color]?
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
@@ -754,40 +754,29 @@ struct PlayerCard: View {
                     .fill(.thinMaterial)
                     .opacity(1 - progress)
             }
-            // The cover's own colours, blurred, filling the whole card.
+            // The cover's own colours as a slowly drifting mesh.
             //
             // This replaced a flat `tintColour` held down the card and blended
-            // away below the artwork, and it is what finally removed the crease
-            // above the title. That crease was never a colour mismatch — both
-            // sides of the artwork's bottom edge were the same colour. It was a
-            // mismatch in *slope*: above the edge the colour was constant, and
-            // below it the gradient started moving immediately. The eye reads a
+            // away below the artwork, and that is what removed the crease above
+            // the title. The crease was never a colour mismatch — both sides of
+            // the artwork's bottom edge were the same colour. It was a mismatch
+            // in *slope*: above the edge the colour was constant, and below it
+            // the gradient started moving immediately. The eye reads a
             // discontinuity in the first derivative as a line (a Mach band),
-            // and no amount of matching the colours themselves removes it.
+            // and no amount of matching the colours themselves removes it. A
+            // field that varies continuously through the seam has no slope to
+            // break.
             //
-            // A field that varies continuously through the seam has no slope to
-            // break. It is also simply what the reference design does: the
-            // background under the controls is the cover, out of focus, not one
-            // averaged colour.
-            //
-            // `.interpolation(.high)` is load-bearing — see
-            // `ArtworkStore.backdrop(for:)`. The source is 24px, and the whole
-            // blur is the scaler smoothing it up to full screen; at the default
-            // interpolation the same image draws as visible squares.
-            if let backdrop {
-                Color.clear
-                    .overlay {
-                        Image(uiImage: backdrop)
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFill()
-                    }
-                    .clipped()
+            // Gated on `progress` rather than merely faded by it: `AmbientMesh`
+            // drives a `TimelineView`, which would otherwise keep redrawing the
+            // whole card thirty times a second behind a collapsed pill nobody
+            // is looking at.
+            if let meshColours, progress > 0 {
+                AmbientMesh(colours: meshColours)
                     .opacity(progress)
-            } else {
-                // No cover to take colours from. The averaged tint is all there
-                // is, and with nothing to be continuous *with* the old flat
-                // gradient is exactly right here.
+            } else if meshColours == nil {
+                // No cover to take colours from, so there is nothing to be
+                // continuous *with* and the flat gradient is right here.
                 LinearGradient(
                     colors: [tintColour, Color(.systemGroupedBackground)],
                     startPoint: .top,
@@ -798,7 +787,7 @@ struct PlayerCard: View {
             // Darkens everything below the artwork so the controls stay
             // readable.
             //
-            // Needed now that the backdrop is the cover rather than a colour
+            // Needed now that the background is the cover rather than a colour
             // this view chose: a pale cover would otherwise put white text — the
             // card forces dark styling, see `preferredColorScheme` — on a pale
             // field. The first build anchored this at `.center`, which measured
@@ -939,12 +928,12 @@ struct PlayerCard: View {
         // `backgroundTintHold`, which is below where the artwork ends.
         //
         // A mask, so the artwork genuinely becomes transparent at its bottom
-        // and the blurred backdrop shows through.
+        // and the drifting colour field behind it shows through.
         //
         // This was an overlay painting flat `tintColour`, chosen because an
         // overlay costs nothing while a mask forces an offscreen pass. That
         // reasoning held only while the thing underneath was a single colour a
-        // vertical gradient could reproduce. The backdrop now varies
+        // vertical gradient could reproduce. The mesh behind it varies
         // horizontally as well, and no vertical gradient can match it — an
         // overlay would paint a uniform band across a field that is not
         // uniform, and put back a visible edge on the other side of the seam.
@@ -1071,14 +1060,14 @@ struct PlayerCard: View {
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         // Concurrently with the other two, not after them: all three read the
-        // same cached decode chain, and the backdrop is the cheapest of the
-        // three by a wide margin — 24px against the full artwork side.
-        async let blurred = ArtworkStore.backdrop(for: path)
-        let (loadedImage, loadedColour, loadedBackdrop) = await (image, colour, blurred)
+        // same cached decode chain, and the palette is the cheapest of the
+        // three by a wide margin — a 48px decode and a nine-pixel draw.
+        async let palette = ArtworkStore.meshPalette(for: path)
+        let (loadedImage, loadedColour, loadedPalette) = await (image, colour, palette)
 
         guard playback.currentTrack?.artworkRelativePath == path else { return }
         artwork = loadedImage
         tint = loadedColour
-        backdrop = loadedBackdrop
+        meshColours = loadedPalette
     }
 }

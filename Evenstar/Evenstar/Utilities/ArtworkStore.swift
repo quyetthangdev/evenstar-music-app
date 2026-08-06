@@ -123,31 +123,35 @@ enum ArtworkStore {
         "\(relativePath)@\(Int(maxPixel))" as NSString
     }
 
-    /// A blurred field of the artwork's own colours, for the expanded player's
-    /// background.
+    /// Nine colours laid out as a 3×3 grid over the cover, for the expanded
+    /// player's animated background.
     ///
-    /// **There is no blur pass here, and there must not be one.** This decodes
-    /// the cover at 24 pixels on its long edge and hands that back; drawn across
-    /// a whole phone screen with high-quality interpolation, a 24px image *is*
-    /// a blur — the scaler does the smoothing, once, on the GPU, as part of a
-    /// draw that was happening anyway. A real `.blur(radius:)` over the same
-    /// area would be recomputed on every frame of the expand drag, for a result
-    /// no one could tell apart.
+    /// **A grid rather than a set of "dominant colours".** The usual palette
+    /// extractor clusters an image into its most common colours and throws away
+    /// where they were. That loses the thing worth keeping: a cover with a
+    /// bright sky over dark ground should still read as bright above dark. Nine
+    /// cells in reading order preserve the composition, and handed to a
+    /// `MeshGradient` in the same order they reconstruct it — softened into a
+    /// colour field rather than a picture.
     ///
-    /// 24 rather than 10 (which `dominantColor` uses): at 10 the upscaled field
-    /// is so coarse that the card reads as four flat quadrants, and rather than
-    /// following the picture it looks like a bug. At 24 it keeps the cover's
-    /// broad shapes — a bright sky above a dark ground stays a bright band above
-    /// a dark one — which is the whole point of using the image instead of one
-    /// averaged colour.
+    /// The averaging is free: the cover is drawn into a 3×3 bitmap context and
+    /// Core Graphics' own scaler averages each ninth on the way in. No pixel
+    /// loop, no clustering.
     @concurrent
-    static func backdrop(for relativePath: String?) async -> UIImage? {
-        await image(for: relativePath, maxPixel: backdropMaxPixel)
+    static func meshPalette(for relativePath: String?) async -> [Color]? {
+        guard let small = await image(for: relativePath, maxPixel: palettePreScale),
+              let cgImage = small.cgImage else { return nil }
+        return grid3x3(of: cgImage)?.map { Color(uiColor: $0) }
     }
 
-    /// See `backdrop(for:)`. Small enough that the upscale blurs it, large
-    /// enough to keep the cover's layout.
-    private static let backdropMaxPixel: CGFloat = 24
+    /// The cover is downsampled to this before the 3×3 draw rather than being
+    /// drawn from full size.
+    ///
+    /// Not for speed — the draw is nine pixels either way — but to reuse the
+    /// decode `dominantColor` and the thumbnail path have very likely already
+    /// cached at some size. Small enough to be nearly free, large enough that
+    /// each ninth still averages over hundreds of pixels rather than dozens.
+    private static let palettePreScale: CGFloat = 48
 
     /// The average colour of the artwork, used to tint the expanded player's
     /// background. Derived from a 10px decode, so it costs almost nothing.
@@ -183,6 +187,87 @@ enum ArtworkStore {
             return nil
         }
         return UIImage(cgImage: thumbnail)
+    }
+
+    /// Nine cell averages, top-left first, reading order.
+    ///
+    /// **The row order is load-bearing and is not obvious.** A `CGBitmapContext`
+    /// has its coordinate origin at the bottom left, which invites the
+    /// assumption that row 0 of the buffer is the bottom of the picture — the
+    /// first version of this reversed the rows on exactly that reasoning and
+    /// came out upside down. The buffer is laid out top row first;
+    /// `CGContext.draw` renders the image the right way up within it. Reading
+    /// straight out is correct.
+    ///
+    /// Getting this wrong is invisible: an upside-down colour field taken from
+    /// an abstract cover looks entirely plausible, and nothing but a test with
+    /// a known top and bottom would ever report it. `ArtworkPaletteTests` is
+    /// that test.
+    static func grid3x3(of cgImage: CGImage) -> [UIColor]? {
+        let side = 3
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drew = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let base = buffer.baseAddress,
+                  let context = CGContext(
+                      data: base,
+                      width: side,
+                      height: side,
+                      bitsPerComponent: 8,
+                      bytesPerRow: side * 4,
+                      space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            context.interpolationQuality = .high
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drew else { return nil }
+
+        var colours: [UIColor] = []
+        colours.reserveCapacity(side * side)
+        for row in 0..<side {
+            for column in 0..<side {
+                let index = (row * side + column) * 4
+                let alpha = Double(pixels[index + 3]) / 255
+                guard alpha > 0.01 else {
+                    colours.append(.black)
+                    continue
+                }
+                // The buffer is premultiplied; undo it before using the
+                // channels, or a semi-transparent cover reads as muddy.
+                colours.append(
+                    enrich(
+                        red: Double(pixels[index]) / 255 / alpha,
+                        green: Double(pixels[index + 1]) / 255 / alpha,
+                        blue: Double(pixels[index + 2]) / 255 / alpha
+                    )
+                )
+            }
+        }
+        return colours
+    }
+
+    /// Pushes a cell average back toward the colour a person would say the
+    /// cover *is*.
+    ///
+    /// Averaging nine ninths of a photograph greys everything: mixed hues
+    /// cancel, and what comes out is duller than any part of the picture. A
+    /// modest saturation lift undoes that much of it. The brightness ceiling is
+    /// a legibility rule, not taste — the expanded player draws white text over
+    /// this field, and a cover that averages to near-white would leave it
+    /// invisible in the moment before the darkening gradient takes hold.
+    private static func enrich(red: Double, green: Double, blue: Double) -> UIColor {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        let base = UIColor(red: red, green: green, blue: blue, alpha: 1)
+        guard base.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return base
+        }
+        return UIColor(
+            hue: hue,
+            saturation: min(saturation * 1.35, 1),
+            brightness: min(brightness, 0.88),
+            alpha: 1
+        )
     }
 
     private static func averageColor(of image: UIImage) -> UIColor? {
