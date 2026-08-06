@@ -109,12 +109,15 @@ struct DriveSongsList: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(tracks) { track in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title)
-                    Text(folderName(for: track))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                // The folder name stands in for the artist only while the
+                // artist is still the placeholder — so this row corrects itself
+                // the moment real tags start arriving, without being touched.
+                SongRow(
+                    track: track,
+                    subtitle: track.artistName == MetadataPlaceholder.artist
+                        ? folderName(for: track)
+                        : nil
+                )
                 .contentShape(Rectangle())
                 .onTapGesture { playback.play(track, in: tracks) }
             }
