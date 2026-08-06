@@ -313,6 +313,23 @@ struct PlayerCard: View {
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
+        // Picking a track from a list opens the full player.
+        //
+        // Keyed on `explicitSelections`, NOT on `currentTrack` changing. The
+        // track changes for reasons the user did not ask for and must not be
+        // interrupted by: auto-advance when one finishes, Next from the lock
+        // screen, a skip past a file that failed to load. Yanking the screen
+        // open on any of those would be hostile — the phone is in a pocket for
+        // most of them. `explicitSelections` counts only the one gesture that
+        // means "show me this": a row tapped in a list.
+        //
+        // No `guard progress < 1`: `expand()` from an already-expanded card
+        // animates 1 to 1, which is a no-op the spring resolves on its first
+        // frame. Adding the guard would only skip work that costs nothing, and
+        // would be one more branch to get wrong.
+        .onChange(of: playback.explicitSelections) { _, _ in
+            expand()
+        }
     }
 
     /// - Parameter size: the *safe-area* size of the reader (not the full

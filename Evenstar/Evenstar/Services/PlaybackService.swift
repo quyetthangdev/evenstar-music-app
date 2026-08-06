@@ -18,6 +18,24 @@ final class PlaybackService {
     private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
+    /// How many times the user has explicitly picked a track to play.
+    ///
+    /// Incremented by `play(_:in:)` and by nothing else. That method is the only
+    /// entry point a *deliberate choice* comes through — a row tapped in a list.
+    /// Next, Previous, auto-advance at the end of a track, the lock screen and
+    /// session restore all reach playback through `advance(to:)` or
+    /// `loadCurrentAndPlay()` and leave this untouched.
+    ///
+    /// A count rather than a flag or a `Bool` that has to be reset: two taps on
+    /// the same row are two separate events, and a consumer that only reacts to
+    /// `false -> true` would miss the second. A count rather than a `Date` so a
+    /// test can assert on it without a clock.
+    ///
+    /// This is a playback fact, not a UI one: it says a selection happened, not
+    /// what should be shown. `PlayerCard` is what decides that a selection opens
+    /// the full-screen player, and it is the only reader.
+    private(set) var explicitSelections: Int = 0
+
     /// The last playback failure, for the UI to show.
     ///
     /// Cleared when a track actually *starts playing* — the end of the
@@ -160,6 +178,7 @@ final class PlaybackService {
         // A deliberate tap starts a new run: whatever the last one skipped past
         // has nothing to do with what the user just asked for.
         failureSkipRun = 0
+        explicitSelections += 1
         loadCurrentAndPlay()
         persistImmediately()
     }
