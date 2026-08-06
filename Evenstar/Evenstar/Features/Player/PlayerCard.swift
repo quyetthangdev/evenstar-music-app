@@ -367,6 +367,31 @@ struct PlayerCard: View {
         // without this a screen reader can still reach the "—" title, the
         // scrubber and the transport buttons of a card no one can see. See F4.
         .accessibilityHidden(playback.currentTrack == nil)
+        // The expanded player is a dark screen whatever the phone is set to.
+        //
+        // This is the only thing in SwiftUI that turns the status bar's clock
+        // and battery white, and they need to be white because the artwork now
+        // runs underneath them. The alternative that shipped first — a
+        // translucent scrim biased toward the scheme's background colour —
+        // worked, but it washed the top of a dark cover to grey, which is the
+        // one part of the picture the design is built around.
+        //
+        // It also matches the reference the layout came from: Apple Music's Now
+        // Playing screen is dark-styled in both light and dark mode, because
+        // the backdrop is the artwork rather than the system background.
+        //
+        // **Threshold at 0.5, not at the point the card actually covers the
+        // status bar (~0.92 on a 874pt screen).** Later is where the status bar
+        // wants it, but the card's own colours flip with the same modifier, and
+        // at 0.92 the title and artist are at 83% opacity — the text would
+        // visibly change colour just before the card settled. At 0.5
+        // `expandedContent`'s opacity is exactly 0, so nothing of the card's is
+        // on screen to be seen changing. The cost is the reverse: for the back
+        // half of the animation the white clock sits over the still-visible
+        // library. In dark mode that is invisible; in light mode it is about
+        // two tenths of a second, against a text colour change landing on a
+        // settled screen. The brief one wins.
+        .preferredColorScheme(progress > 0.5 ? .dark : nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
@@ -516,8 +541,6 @@ struct PlayerCard: View {
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
             artworkView(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
-            // After the artwork, because it exists to sit on top of it.
-            topScrim(topInset: insets.top)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
@@ -778,45 +801,6 @@ struct PlayerCard: View {
         return min(0.95, max(0, Double(artworkSide / fullHeight)))
     }
 
-    /// Keeps the status bar legible now that the artwork runs underneath it.
-    ///
-    /// The clock and the battery are drawn by the system in the current colour
-    /// scheme's foreground colour, and nothing in SwiftUI lets this view
-    /// override that for a plain overlay — `preferredColorScheme` would work
-    /// only by forcing the scheme for the whole card, changing every other
-    /// colour in it. So instead of fighting the text, this biases what is
-    /// behind it back toward the scheme's own background: white-ish in light
-    /// mode, near-black in dark. Whatever the artwork is, the strip under the
-    /// status bar is pulled toward the colour the system already assumed when
-    /// it chose the text colour.
-    ///
-    /// `systemBackground`, not a literal black: a fixed dark scrim is right in
-    /// dark mode and actively wrong in light, where it would put dark text on a
-    /// darkened image — worse than no scrim at all.
-    ///
-    /// Fades in with `progress`, so the collapsed pill — which is nowhere near
-    /// the status bar — is untouched.
-    private func topScrim(topInset: CGFloat) -> some View {
-        LinearGradient(
-            colors: [Color(.systemBackground).opacity(0.38), .clear],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        // Well past the inset, not level with it. A gradient that ends near
-        // where the status bar does leaves a discernible horizontal edge along
-        // its baseline — visible in the first screenshot of this layout at
-        // `topInset + 28` and 0.55 opacity, reading as a hazy band laid over
-        // the top of the artwork rather than as shading. Weaker, spread over
-        // more than twice the distance, is the same protection with no edge to
-        // see: what matters for legibility is the value directly behind the
-        // glyphs, and that is set by the first stop, not by how far the tail
-        // runs.
-        .frame(height: topInset + 72)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .opacity(progress)
-        .allowsHitTesting(false)
-    }
-
     /// Hints that the expanded card can be dragged away, the way the
     /// `.sheet` this replaced showed `.presentationDragIndicator(.visible)`.
     /// Fades in with `progress` so it is invisible while collapsed. See F8.
@@ -868,7 +852,7 @@ struct PlayerCard: View {
         )
         // Flush with the card's top edge: the artwork's centre sits exactly
         // half its own height down, with no safe-area term. The status bar is
-        // drawn over it — see `topScrim`, which is what keeps it legible.
+        // drawn over it, in white — see `preferredColorScheme` on the body.
         let expandedCentre = CGPoint(
             x: size.width / 2,
             y: artworkSide / 2
