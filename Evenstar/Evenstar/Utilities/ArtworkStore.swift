@@ -41,7 +41,7 @@ enum ArtworkStore {
     @concurrent
     static func image(for relativePath: String?, maxPixel: CGFloat) async -> UIImage? {
         guard let relativePath else { return nil }
-        let key = "\(relativePath)@\(Int(maxPixel))" as NSString
+        let key = cacheKey(relativePath, maxPixel)
         if let cached = images.object(forKey: key) { return cached }
 
         let url = FileLocation.absoluteURL(forRelative: relativePath)
@@ -49,6 +49,34 @@ enum ArtworkStore {
 
         images.setObject(image, forKey: key, cost: cost(of: image))
         return image
+    }
+
+    /// The cached image, or nil — never decodes, never suspends.
+    ///
+    /// Exists so a view can render an already-decoded thumbnail on its **first**
+    /// frame. `image(for:maxPixel:)` above is `@concurrent`, so awaiting it
+    /// always suspends, even on a cache hit: a row scrolling into a list would
+    /// draw its placeholder for at least one frame before the image it already
+    /// had in memory could be shown. That is the grey flicker during a fast
+    /// scroll, and no amount of making the decode faster addresses it, because
+    /// on a hit there is no decode.
+    ///
+    /// Synchronous on the caller's thread by design, main included: an
+    /// `NSCache` lookup is a lock and a hash, and the whole point is to have the
+    /// answer before the frame is drawn. `NSCache` is thread-safe, so this is
+    /// safe to call from anywhere — including concurrently with the writes in
+    /// `image(for:maxPixel:)` above.
+    static func cachedImage(for relativePath: String?, maxPixel: CGFloat) -> UIImage? {
+        guard let relativePath else { return nil }
+        return images.object(forKey: cacheKey(relativePath, maxPixel))
+    }
+
+    /// One key builder for both paths above. Inlining the format string in each
+    /// would let the async writer and the synchronous reader drift apart, and
+    /// the symptom would be silent: every probe misses, the flicker returns, and
+    /// nothing anywhere reports an error.
+    private static func cacheKey(_ relativePath: String, _ maxPixel: CGFloat) -> NSString {
+        "\(relativePath)@\(Int(maxPixel))" as NSString
     }
 
     /// The average colour of the artwork, used to tint the expanded player's

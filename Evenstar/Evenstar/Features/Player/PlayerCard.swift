@@ -67,6 +67,15 @@ struct PlayerCard: View {
     /// Gap between the top safe area and the expanded artwork.
     private static let expandedArtworkTopGap: CGFloat = 72
 
+    /// Where the frosted layer in `background` stops being rendered at all.
+    ///
+    /// Tied to the opaque base's `min(1, progress * 3)`, which reaches 1 at
+    /// exactly 1/3. Anything at or above that point is fully covered. A hair
+    /// above 1/3 rather than 1/3 itself, so floating-point comparison at the
+    /// boundary can only ever keep the layer a frame too long — never drop it a
+    /// frame too early, which would be a visible flash.
+    private static let materialCutoff: Double = 0.34
+
     /// Where the card rests: 0 collapsed, 1 expanded. Changed only on release.
     @State private var settled: Double = 0
     /// How far the in-flight drag has moved it. Zeroed when the drag settles.
@@ -630,9 +639,20 @@ struct PlayerCard: View {
             // See R3.
             Color(.systemGroupedBackground)
                 .opacity(min(1, progress * 3))
-            Rectangle()
-                .fill(.thinMaterial)
-                .opacity(1 - progress)
+            // Dropped entirely — not merely faded — once the opaque base above
+            // reaches full opacity at progress = 1/3.
+            //
+            // A material is a live blur of everything behind it, recomputed
+            // every frame, and it costs the same at opacity 0.01 as at 1. Held
+            // at `1 - progress` alone it stayed alive for the whole drag, so
+            // two thirds of every expand was spent blurring a layer sitting
+            // underneath a fully opaque one. Nothing on screen changes: at the
+            // moment it is removed it is already completely covered.
+            if progress < Self.materialCutoff {
+                Rectangle()
+                    .fill(.thinMaterial)
+                    .opacity(1 - progress)
+            }
             LinearGradient(
                 colors: [tint ?? Color(.systemGroupedBackground), Color(.systemGroupedBackground)],
                 startPoint: .top,
@@ -721,7 +741,19 @@ struct PlayerCard: View {
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: side * 0.12))
-        .shadow(radius: 10 * progress, y: 4 * progress)
+        // Constant, for the same reason the card's own shadow is constant —
+        // see the note at `.floatingBarShadow()` above. This was
+        // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
+        // the one view in the card that has it worst: the artwork changes
+        // *size* every frame as well as position, so an interpolated shadow
+        // could not be cached between frames even in principle. It had to be
+        // regenerated from scratch, 36pt to 280pt, for the whole drag.
+        //
+        // Constant means the collapsed thumbnail now carries the shadow too,
+        // where it used to fade to nothing. At 36pt under a 6pt radius that
+        // reads as the same lift the pill itself has, which is the intent —
+        // one lighting model for every surface on this screen.
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         .position(centre)
     }
 

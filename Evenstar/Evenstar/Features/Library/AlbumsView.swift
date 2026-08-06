@@ -14,6 +14,27 @@ struct AlbumsView: View {
     /// and missing the two pushed detail screens.
     @Binding var isMinimised: Bool
 
+    /// The grouped library, recomputed only when `tracks` actually changes.
+    ///
+    /// `LibraryGrouping.albums` is a `Dictionary(grouping:)` plus a sort of
+    /// every group plus a sort of the groups. Computed inline in `content` — a
+    /// computed property — it ran on **every** body pass, and this view's body
+    /// runs far more often than the library changes: `isMinimised` lives in
+    /// `RootView`, whose body reads it, so every scroll past the 12pt threshold
+    /// rebuilds all five tabs and regroups the whole library mid-scroll. That
+    /// cost scales with library size, which is exactly the direction Drive
+    /// streaming pushes it.
+    ///
+    /// **Known limitation, currently unreachable.** `onChange(of: tracks)`
+    /// compares `Track` by identity (SwiftData models are `Hashable` by
+    /// persistent identity), so it fires on insert, delete and reorder but NOT
+    /// on a property edited in place — renaming a track's album would leave
+    /// this stale. Nothing in the app edits track metadata today: import
+    /// creates, delete removes, and Drive tracks are a separate model that
+    /// never appears here. **Whoever adds metadata editing must revisit this**,
+    /// or albums will not regroup after a rename.
+    @State private var albums: [AlbumGroup] = []
+
     private let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16)
@@ -22,6 +43,12 @@ struct AlbumsView: View {
     var body: some View {
         NavigationStack {
             content
+                // `initial: true` because the first body pass runs before any
+                // change: without it the grid renders empty once and the empty
+                // state flashes on every launch.
+                .onChange(of: tracks, initial: true) { _, updated in
+                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: updated))
+                }
                 .navigationTitle("Album")
                 // Hoisted above the empty/non-empty branch in `content` so it
                 // stays attached to the navigation path even if the library
@@ -40,7 +67,6 @@ struct AlbumsView: View {
 
     @ViewBuilder
     private var content: some View {
-        let albums = paddedForScrollTesting(LibraryGrouping.albums(from: tracks))
         if albums.isEmpty {
             ContentUnavailableView(
                 "Chưa có album",

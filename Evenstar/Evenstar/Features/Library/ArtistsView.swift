@@ -14,6 +14,11 @@ struct ArtistsView: View {
     /// and missing the two pushed detail screens.
     @Binding var isMinimised: Bool
 
+    /// The grouped library, recomputed only when `tracks` actually changes.
+    /// See `AlbumsView.albums` for why this is state rather than a computed
+    /// property, and for the in-place-edit limitation it carries.
+    @State private var artists: [ArtistGroup] = []
+
     private let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16)
@@ -22,6 +27,9 @@ struct ArtistsView: View {
     var body: some View {
         NavigationStack {
             content
+                .onChange(of: tracks, initial: true) { _, updated in
+                    artists = LibraryGrouping.artists(from: updated)
+                }
                 .navigationTitle("Nghệ sĩ")
                 // Hoisted above the empty/non-empty branch in `content` so it
                 // stays attached to the navigation path even if the library
@@ -40,7 +48,6 @@ struct ArtistsView: View {
 
     @ViewBuilder
     private var content: some View {
-        let artists = LibraryGrouping.artists(from: tracks)
         if artists.isEmpty {
             ContentUnavailableView(
                 "Chưa có nghệ sĩ",
