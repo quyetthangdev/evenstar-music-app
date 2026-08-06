@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 import UniformTypeIdentifiers
 
 struct SongsView: View {
@@ -17,6 +18,18 @@ struct SongsView: View {
     @State private var inaccessibleFailures: [(url: URL, error: ImportError)] = []
     @State private var showImportSheet = false
     @State private var pickerErrorMessage: String?
+
+    /// The track whose cover the photo picker is about to replace.
+    ///
+    /// Held separately from the picker's own selection because the two are
+    /// answered at different moments: the row is known when the menu item is
+    /// tapped, the image only when the picker returns. Keeping the track here
+    /// rather than deriving it later is what stops a slow picker from writing
+    /// its result onto whatever row happens to be current afterwards.
+    @State private var artworkTarget: Track?
+    @State private var showArtworkPicker = false
+    @State private var pickedPhoto: PhotosPickerItem?
+    @State private var artworkErrorMessage: String?
 
     /// Which source the list is showing. Local by default — the Drive chip is
     /// an opt-in, and a user with no linked folder should never land on an
@@ -77,6 +90,33 @@ struct SongsView: View {
             )
             // Drag indicator lives inside ImportProgressSheet — it depends on importer.isImporting.
             .presentationDetents([.medium, .large])
+        }
+        // `matching: .images` keeps videos and Live Photos out of a picker whose
+        // result has to end up as a still JPEG.
+        .photosPicker(
+            isPresented: $showArtworkPicker,
+            selection: $pickedPhoto,
+            matching: .images
+        )
+        // Keyed on the item, not on the picker closing: the picker dismisses
+        // before its selection has been transferred, and a dismissal with no
+        // change — the user tapping Cancel — must do nothing at all.
+        .onChange(of: pickedPhoto) { _, item in
+            guard let item, let target = artworkTarget else { return }
+            Task { await applyArtwork(from: item, to: target) }
+        }
+        .alert(
+            "Không đặt được ảnh bìa",
+            isPresented: Binding(
+                get: { artworkErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented { artworkErrorMessage = nil }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(artworkErrorMessage ?? "")
         }
         .alert(
             "Không mở được file",
@@ -143,12 +183,55 @@ struct SongsView: View {
                             Label("Xoá", systemImage: "trash")
                         }
                     }
+                    // Only on the local list. A `DriveTrack` is a file on
+                    // someone else's server with no artwork column to write and
+                    // nowhere to put the image — offering the action there
+                    // would be a menu item that cannot work.
+                    .contextMenu {
+                        Button {
+                            // Set before the picker opens, not read back after
+                            // it closes. See `artworkTarget`.
+                            artworkTarget = track
+                            pickedPhoto = nil
+                            showArtworkPicker = true
+                        } label: {
+                            Label("Đổi ảnh bìa", systemImage: "photo")
+                        }
+                    }
             }
             .listStyle(.plain)
             // On the scrollable container itself rather than on the branch
             // above it, so what the modifier observes is unambiguous.
             .minimisesBottomBar($isMinimised)
         }
+    }
+
+    /// Loads the picked photo, shrinks it, and writes it onto the track.
+    ///
+    /// Three failures, each with its own message rather than one catch-all: the
+    /// transfer can fail (the photo lives in iCloud and cannot be fetched), the
+    /// bytes can fail to decode, and the write can fail. Only the last one is
+    /// something the user can act on, but a silent no-op for the first two is
+    /// exactly the "I picked an image and nothing happened" the fresh-filename
+    /// rule in `setArtwork` exists to prevent — so none of them is swallowed.
+    @MainActor
+    private func applyArtwork(from item: PhotosPickerItem, to track: Track) async {
+        let raw: Data?
+        do { raw = try await item.loadTransferable(type: Data.self) }
+        catch {
+            artworkErrorMessage = "Không tải được ảnh đã chọn: \(error.localizedDescription)"
+            return
+        }
+        guard let raw else {
+            artworkErrorMessage = "Không tải được ảnh đã chọn."
+            return
+        }
+        guard let jpeg = await ArtworkStore.jpegForStorage(from: raw) else {
+            artworkErrorMessage = "Không đọc được ảnh đã chọn."
+            return
+        }
+        do { try library.setArtwork(jpeg, for: track) }
+        catch { artworkErrorMessage = error.localizedDescription }
     }
 
     /// Document Picker delivers security-scoped URLs. We start access here and

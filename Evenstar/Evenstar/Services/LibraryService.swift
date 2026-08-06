@@ -4,11 +4,14 @@ import Observation
 
 enum LibraryError: LocalizedError {
     case persistenceFailed(underlying: Error)
+    case artworkWriteFailed(underlying: Error)
 
     var errorDescription: String? {
         switch self {
         case .persistenceFailed(let error):
-            return "Couldn't save changes: \(error.localizedDescription)"
+            return "Không lưu được thay đổi: \(error.localizedDescription)"
+        case .artworkWriteFailed(let error):
+            return "Không lưu được ảnh bìa: \(error.localizedDescription)"
         }
     }
 }
@@ -47,6 +50,53 @@ final class LibraryService {
         context.delete(track)
         do { try context.save() }
         catch { throw LibraryError.persistenceFailed(underlying: error) }
+    }
+
+    /// Replaces a track's cover with an image the user picked.
+    ///
+    /// **Writes to a fresh filename every time, and never overwrites the old
+    /// one.** That is not tidiness, it is the whole correctness of the feature:
+    /// `ArtworkStore` caches decoded images under `path@pixelSize`, so writing
+    /// new bytes to the *same* relative path leaves every cached size still
+    /// serving the previous picture. The user would pick an image, see nothing
+    /// change, and pick again. A new UUID makes a new key, so the change is
+    /// visible on the next render with no cache to invalidate.
+    ///
+    /// Order matters in the failure paths, and both directions were considered:
+    ///
+    ///   - the old file is removed only *after* `save()` succeeds, so a failed
+    ///     save leaves the track pointing at artwork that still exists rather
+    ///     than at a hole;
+    ///   - the new file is removed *if* `save()` fails, so a rejected write
+    ///     does not leave an orphan in `Artwork/` that nothing references and
+    ///     `delete(_:)` will never clean up.
+    ///
+    /// Removing the old file is best-effort, matching `delete(_:)`: the user's
+    /// intent is the new cover, and a stale file left on disk must not fail an
+    /// operation that has already succeeded.
+    @discardableResult
+    func setArtwork(_ jpegData: Data, for track: Track) throws -> String {
+        let folder = FileLocation.artworkFolderURL(fileManager)
+        try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let previous = track.artworkRelativePath
+        let relative = "Artwork/\(UUID().uuidString).jpg"
+        let url = FileLocation.absoluteURL(forRelative: relative, fileManager: fileManager)
+        do { try jpegData.write(to: url) }
+        catch { throw LibraryError.artworkWriteFailed(underlying: error) }
+
+        track.artworkRelativePath = relative
+        do { try context.save() }
+        catch {
+            try? fileManager.removeItem(at: url)
+            throw LibraryError.persistenceFailed(underlying: error)
+        }
+
+        if let previous, previous != relative {
+            let oldURL = FileLocation.absoluteURL(forRelative: previous, fileManager: fileManager)
+            try? fileManager.removeItem(at: oldURL)
+        }
+        return relative
     }
 
     func fetchAllTracks(sortedByTitle: Bool = true) throws -> [Track] {

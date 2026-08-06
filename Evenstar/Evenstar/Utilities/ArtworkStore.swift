@@ -71,6 +71,50 @@ enum ArtworkStore {
         return images.object(forKey: cacheKey(relativePath, maxPixel))
     }
 
+    /// The longest edge, in pixels, worth keeping for a stored cover.
+    ///
+    /// The widest iPhone is 440pt across at `@3x`, so 1320px is the most the
+    /// full-bleed expanded artwork can ever draw. 1400 clears that with a
+    /// margin and nothing beyond it is ever visible.
+    static let storedArtworkMaxPixel: CGFloat = 1400
+
+    /// Re-encodes a picked photo into something worth writing to disk.
+    ///
+    /// A photo out of the library is routinely 4000px on its long edge and
+    /// several megabytes of HEIC. Stored as-is it would cost the user's disk
+    /// many times what it can ever display, and every first decode of it would
+    /// be slow. Downsampling through the same ImageIO path the read side uses
+    /// keeps one behaviour rather than two.
+    ///
+    /// Returns JPEG, so what lands in `Artwork/` matches what `ImportService`
+    /// writes from an embedded tag — one folder, one format, one thing for
+    /// `delete(_:)` to clean up.
+    ///
+    /// `nil` when the data is not a decodable image, which is the honest answer
+    /// for a file the picker handed over but the system cannot read.
+    @concurrent
+    static func jpegForStorage(
+        from data: Data,
+        maxPixel: CGFloat = storedArtworkMaxPixel
+    ) async -> Data? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+            source, 0, options as CFDictionary
+        ) else {
+            return nil
+        }
+        return UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.85)
+    }
+
     /// One key builder for both paths above. Inlining the format string in each
     /// would let the async writer and the synchronous reader drift apart, and
     /// the symptom would be silent: every probe misses, the flicker returns, and
