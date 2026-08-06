@@ -212,6 +212,45 @@ final class DriveClientTests: XCTestCase {
             XCTAssertEqual(error as? DriveError, .connectionFailed)
         }
     }
+
+    /// `folderID` is interpolated into a quoted Drive query string —
+    /// `q='<folderID>' in parents and trashed=false` — where an apostrophe
+    /// closes the quote early and the rest is read as query syntax. Nothing in
+    /// the shipping app can reach that today, because `DriveLinkParser` already
+    /// restricts what it returns to `[A-Za-z0-9_-]`; that is a property of one
+    /// caller rather than of `DriveClient`, and a second caller would inherit
+    /// the hole in silence. The guard belongs where the interpolation is.
+    ///
+    /// The request-count assertion is the load-bearing half: it must be rejected
+    /// *before* anything reaches the network, not answered and then discarded.
+    func testAFolderIDCarryingQuerySyntaxIsRejectedWithoutIssuingARequest() async {
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3", "audio/mpeg")]))]
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
+
+        await XCTAssertThrowsErrorAsync(
+            try await client.listAudioFiles(inFolder: "F1' in parents or 'x")
+        ) { error in
+            XCTAssertEqual(error as? DriveError, .notFound)
+        }
+        XCTAssertTrue(StubURLProtocol.requestedURLs.isEmpty)
+    }
+
+    func testAnEmptyFolderIDIsRejectedToo() async {
+        let client = DriveClient(apiKey: "test-key", session: StubURLProtocol.session())
+
+        await XCTAssertThrowsErrorAsync(try await client.listAudioFiles(inFolder: "")) { error in
+            XCTAssertEqual(error as? DriveError, .notFound)
+        }
+    }
+
+    /// The whitelist must still accept every ID Drive actually issues —
+    /// mixed case, digits, underscores and hyphens.
+    func testARealShapedFolderIDIsAccepted() {
+        XCTAssertTrue(DriveClient.isPlausibleFolderID("1A2b3C_4d-5E6f7G8h9I0jKlMnOpQr"))
+        XCTAssertFalse(DriveClient.isPlausibleFolderID("has space"))
+        XCTAssertFalse(DriveClient.isPlausibleFolderID("has'quote"))
+        XCTAssertFalse(DriveClient.isPlausibleFolderID("has/slash"))
+    }
 }
 
 /// Marks a regression that reintroduces the pagination hang `DriveClient`

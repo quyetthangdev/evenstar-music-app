@@ -1884,16 +1884,46 @@ The simulator can list and can fail. Only a device proves playback.
 
 1. Fill in `DriveAPIKey.value`, restrict the key to the Drive API and this bundle ID in Google Cloud Console.
 2. Link a folder of 5 songs. They appear with file-name titles.
-3. Play one. It starts within a few seconds and the scrubber shows a real duration once loading finishes.
-4. Lock the phone mid-track. Playback continues; the lock screen shows the title; next/previous work.
-5. Turn on Airplane Mode mid-track. Playback stops and an error appears — it does not hang, and it does not march through the queue failing once per track.
-6. Turn Airplane Mode off, play again. The error clears.
-7. Link a folder with **more than 100 songs**. All of them appear, not 100.
-8. Add a song to the folder on Drive, pull to refresh. It appears.
-9. Delete a song on Drive, pull to refresh. It disappears.
-10. Link a folder that is *not* shared publicly. The message names link-sharing as the fix.
-11. Play a Drive track, force-quit, relaunch. The session restores and the track is still current.
-12. Arm repeat-all on a Drive queue and let the last track finish. It wraps.
+3. **Does a Drive stream's duration ever resolve? Check this first — several
+   other steps below only mean something once it is answered.** Play a track and
+   watch the scrubber's right-hand time label, and the lock screen's progress
+   bar, for a full minute.
+
+   The codebase currently contradicts itself about the answer, and neither side
+   can be settled without hardware and a live API key. `StreamingAudioPlayer`'s
+   `pendingSeek` doc comment asserts that an `alt=media` response is served
+   chunked with **no `Content-Length`**, so the item reaches `.readyToPlay` with
+   an *indefinite* duration and keeps it for the whole track. Step 4 below
+   assumes the opposite. Do not guess which is right; observe it.
+
+   - **A real duration appears.** The `pendingSeek` comment's premise is wrong
+     for `alt=media` and should be corrected — including the reasoning it hangs
+     off, which is why deferring and draining a seek both test readiness rather
+     than the duration. That gate is still correct either way (readiness is the
+     honest condition), but the justification would need rewriting rather than
+     being left asserting something false. `PlaybackService.pushedDuration` then
+     does its job: the lock screen gets the number on the first tick after it
+     resolves, and its scrubber has a range.
+   - **It stays `--:--` for the whole track.** The comment is right, and the
+     consequence has to be written down as a shipped limitation rather than
+     rediscovered: the scrubber's thumb has no range, the lock screen's
+     progress bar sits at zero, and its scrubber cannot be dragged — for every
+     Drive track, always. `pushedDuration` costs nothing in that case (it fires
+     only when the number changes, and it never changes) but fixes nothing
+     either, and the real fix would be to obtain a duration some other way —
+     the deferred ID3 đợt, or a `HEAD` request for `Content-Length`.
+4. Play one. It starts within a few seconds; the scrubber shows a real duration once loading finishes **if step 3 said one ever arrives**.
+5. Lock the phone mid-track. Playback continues; the lock screen shows the title; next/previous work.
+6. Turn on Airplane Mode mid-track. Playback stops and an error appears — it does not hang, and it does not march through the queue failing once per track.
+7. Turn Airplane Mode off, play again. The error clears.
+8. Link a folder with **more than 100 songs**. All of them appear, not 100.
+9. Add a song to the folder on Drive, pull to refresh. It appears.
+10. Delete a song on Drive, pull to refresh. It disappears.
+11. **Delete a song on Drive *while it is playing*.** Playback skips to the next track rather than stopping, and the banner says the file was deleted or unshared — not "Không thể kết nối tới Google Drive", which would be false. This is the one path `DriveError.classify`'s HTTP-shaped branch cannot be verified without: the exact `NSError` domain and code AVFoundation reports for a Drive 404 is unobserved, and if it is not in the list the symptom is the old generic connection message rather than anything broken.
+12. Link a folder that is *not* shared publicly. The message names link-sharing as the fix.
+13. Play a Drive track, force-quit, relaunch. The session restores and the track is still current.
+14. Arm repeat-all on a Drive queue and let the last track finish. It wraps.
+15. Play a Drive track, then unlink its folder from Tài khoản → Nguồn nhạc while it plays. Playback moves on or stops cleanly; the app does not crash. (The crash it must not produce is `NSObjectInaccessibleException` from the queue reading a deleted row — an Objective-C exception, so it terminates the app rather than throwing.)
 
 ---
 
@@ -1906,6 +1936,16 @@ Task 7. Two entry points, one management screen → Tasks 7 and 8. Errors →
 Task 4's `DriveError` plus Task 6's `lastPlaybackError`. Out-of-scope items
 (offline download, bulk ID3, artwork, background sync, OAuth, Drive in
 Album/Artist/Search) appear in no task, correctly.
+
+**Correction, from the whole-feature review.** This paragraph claimed coverage
+it did not have. The spec's **second metadata stage** — reading a played track's
+real ID3 tags over the network and setting `metadataResolved` — appears in no
+task either, and unlike the list above that was not deliberate: it was simply
+missed, and every per-task review passed because no task owned it. It is now
+deferred to its own đợt and the spec says so explicitly, with the consequences
+spelled out (every Drive track shows its file name, "Unknown Artist" and
+"Unknown Album", permanently, and has no duration from metadata). See "Not in
+this đợt" under Metadata in the design.
 
 **Deliberate refinement of the spec:** `DriveTrack.durationSeconds` is a
 non-optional `Double` defaulting to 0, not `Double?`. `Playable` needs a

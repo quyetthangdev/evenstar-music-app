@@ -44,7 +44,31 @@ struct DriveFoldersView: View {
     // site in `DriveSongsList` supplies its own `NavigationStack` instead.
     var body: some View {
         List {
-            Section("Thêm thư mục") {
+            // The privacy warning is this section's **footer**, not a section of
+            // its own further down the list. That is a product requirement, not
+            // layout: the spec calls saying a link-shared folder is readable by
+            // anyone with the link "the single most important thing for a
+            // reviewer to check", and it has to be said *at the moment of
+            // linking*.
+            //
+            // It used to be section 3 of 3, below "Đã liên kết" — a list that
+            // grows without bound. Task 8 verified it by screenshot in the
+            // zero-folder state, where it is one row down and perfectly visible;
+            // with six folders linked it is off the bottom of the screen, and a
+            // user reaching this screen from Tài khoản → Nguồn nhạc could paste,
+            // type, tap Liên kết and never see the sentence. A footer cannot
+            // drift that way: it is bound to the section it explains and renders
+            // immediately under the "Liên kết" button, which is the last thing
+            // the eye passes before the tap.
+            //
+            // **Tapping "Liên kết" deliberately does not restate it in a
+            // confirmation dialog.** The sentence is on screen, adjacent to the
+            // button, at the instant of the tap — a dialog would be a second
+            // reading of text the user is already looking at, and one shown on
+            // every folder becomes a dialog people dismiss without reading. That
+            // trains the warning to be ignored, which is a worse outcome than
+            // stating it once, in the right place, and leaving it there.
+            Section {
                 TextField("Dán link thư mục Drive", text: $link)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -54,6 +78,10 @@ struct DriveFoldersView: View {
                 }
                 Button("Liên kết") { Task { await add() } }
                     .disabled(link.isEmpty || name.isEmpty || isWorking)
+            } header: {
+                Text("Thêm thư mục")
+            } footer: {
+                Text("Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó.")
             }
 
             Section("Đã liên kết") {
@@ -75,12 +103,6 @@ struct DriveFoldersView: View {
                         }
                     }
                 }
-            }
-
-            Section {
-                Text("Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Thư mục Drive")

@@ -75,10 +75,25 @@ struct NowPlayingContent: View {
             Text(playback.currentTrack?.title ?? "—")
                 .font(.title2.bold())
                 .lineLimit(2, reservesSpace: true)
-            Text(metadataSubtitle)
+            // One line, whether it is carrying metadata or a failure — see
+            // `PlayerSubtitle` for why a failure replaces the metadata instead
+            // of being added below it, and `PlayerCard.artworkSide` for what
+            // adding a sixth element to this stack would cost.
+            //
+            // `minimumScaleFactor` rather than a second line for the same
+            // reason: the longest Vietnamese failure message is about 90
+            // characters and would otherwise truncate mid-sentence, and a
+            // truncated explanation is barely better than none. Shrinking keeps
+            // the block exactly as tall as it has always been.
+            Text(subtitle.text)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(
+                    subtitle.isFailure
+                        ? AnyShapeStyle(Color.red)
+                        : AnyShapeStyle(HierarchicalShapeStyle.secondary)
+                )
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
         // Leading, and greedy, so both lines start at the same x whatever their
         // length — a centred block makes the artist appear to move when the
@@ -102,10 +117,13 @@ struct NowPlayingContent: View {
         Task { @MainActor in command() }
     }
 
-    private var metadataSubtitle: String {
-        guard let track = playback.currentTrack else { return "" }
-        if track.albumTitle == MetadataPlaceholder.album { return track.artistName }
-        return "\(track.artistName) · \(track.albumTitle)"
+    /// Moved into `PlayerSubtitle` so the collapsed player applies the identical
+    /// rule and so the rule has a test. It had neither before.
+    private var subtitle: PlayerSubtitle {
+        PlayerSubtitle.line(
+            track: playback.currentTrack,
+            error: playback.stalledPlaybackError
+        )
     }
 
     private var scrubber: some View {

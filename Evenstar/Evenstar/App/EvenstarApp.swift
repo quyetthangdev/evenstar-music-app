@@ -33,10 +33,22 @@ struct EvenstarApp: App {
         // of each engine and picks by URL — see `RoutingAudioPlayer`.
         let player = RoutingAudioPlayer()
         let play = PlaybackService(player: player, nowPlaying: now, library: libService)
+        let driveLib = DriveLibraryService(library: libService)
+        // The only wiring that keeps a deleted `DriveTrack` out of the playing
+        // queue. Unlinking a folder, and a rescan that finds a file gone from
+        // Drive, both delete rows the queue may be holding; `SongsView` does the
+        // same call by hand for the local library. Without it the queue reads
+        // properties off deleted-and-saved rows and raises an uncatchable
+        // Objective-C exception. See `DriveLibraryService.onTrackWillBeDeleted`.
+        //
+        // No retain cycle: `PlaybackService` holds no reference to
+        // `DriveLibraryService`, and both are owned for the app's lifetime by
+        // the `@State` properties above.
+        driveLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
-        _driveLibrary = State(initialValue: DriveLibraryService(library: libService))
+        _driveLibrary = State(initialValue: driveLib)
         remoteCommands = RemoteCommandsBridge(playback: play)
         remoteCommands.install()
     }

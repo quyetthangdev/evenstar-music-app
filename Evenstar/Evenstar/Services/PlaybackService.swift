@@ -27,6 +27,23 @@ final class PlaybackService {
     /// behalf of. Playing something is what makes the banner stale, and playing
     /// something is what removes it.
     private(set) var lastPlaybackError: Error?
+
+    /// The failure the user is *currently stuck on*, as opposed to one that has
+    /// already been recovered from.
+    ///
+    /// `lastPlaybackError` answers "what was the last thing that went wrong",
+    /// which is what the Drive list's banner wants: a track skipped past because
+    /// its file is gone from Drive should still say so while the next one plays
+    /// — the spec's "Skip to next, note it". The player surfaces want the
+    /// narrower question. They put the message where the artist line goes, and a
+    /// track that is playing perfectly well must not be captioned with the
+    /// failure of the one before it.
+    ///
+    /// `hasLoaded` is exactly that distinction and needs no new state to track
+    /// it: `handleFailure` clears it, and any load that succeeds — including the
+    /// one a skip performs — sets it again.
+    var stalledPlaybackError: Error? { hasLoaded ? nil : lastPlaybackError }
+
     var duration: TimeInterval { player.duration }
     var currentTrack: (any Playable)? {
         queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
@@ -81,6 +98,43 @@ final class PlaybackService {
     /// for — and cannot resurrect a stale position much later.
     private var interruptedTrackID: UUID?
     private var interruptedPosition: TimeInterval = 0
+    /// The `duration` the last `pushNowPlaying()` actually published, or `nil`
+    /// when nothing has been pushed since the last `stopPlayback()`.
+    ///
+    /// **Exists because a streaming duration arrives after the push that should
+    /// have carried it.** `AVAudioPlayer` knows its duration the instant
+    /// `load(url:)` returns, so publishing `player.duration` from
+    /// `loadCurrentAndPlay()` is correct for a local file. `AVPlayer` does not:
+    /// `StreamingAudioPlayer.duration` reports 0 until the item resolves one,
+    /// and the push that follows `player.play()` happens squarely inside that
+    /// window. Nothing re-pushed afterwards, so `MPMediaItemPropertyPlayback
+    /// Duration` stayed 0.0 for the whole track — the lock-screen progress bar
+    /// sat at zero and its scrubber, enabled in Phase 1, had no range to drag.
+    ///
+    /// Recorded here rather than re-pushing on every tick because assigning
+    /// `nowPlayingInfo` ships the payload across XPC to the media server twice a
+    /// second for the life of every track. Comparing costs nothing and fires
+    /// once, when the number actually changes.
+    private var pushedDuration: TimeInterval?
+    /// How many tracks the current run of "Drive refused to serve this file"
+    /// failures has already skipped past, without anything having played in
+    /// between.
+    ///
+    /// **The bound on an otherwise unbounded loop.** `handleFailure` skipping
+    /// forward means the next track loads, and a streaming load reports its own
+    /// failure asynchronously — straight back into `handleFailure`. With a
+    /// repeat mode armed, `canGoNext` is true forever, so a folder whose sharing
+    /// was revoked wholesale would circle its own queue issuing requests until
+    /// the user force-quit. Capping the run at `queue.count` means each position
+    /// is tried at most once per run, exactly the bound `loadCurrentAndPlay()`'s
+    /// skip loop uses for the synchronous version of the same problem.
+    ///
+    /// Reset when playback actually gets somewhere — a fresh `play(_:in:)`, or a
+    /// tick that finds the position past 0 — rather than when a track merely
+    /// starts. Starting is not evidence: on the streaming path a track starts
+    /// and *then* fails, so resetting there would clear the counter before every
+    /// failure and restore the unbounded loop.
+    private var failureSkipRun: Int = 0
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
@@ -103,6 +157,9 @@ final class PlaybackService {
     func play(_ track: any Playable, in queueTracks: [any Playable]) {
         queue = queueTracks
         queueIndex = queueTracks.firstIndex(where: { $0.id == track.id }) ?? 0
+        // A deliberate tap starts a new run: whatever the last one skipped past
+        // has nothing to do with what the user just asked for.
+        failureSkipRun = 0
         loadCurrentAndPlay()
         persistImmediately()
     }
@@ -214,10 +271,26 @@ final class PlaybackService {
     /// aren't current are just removed, shifting `queueIndex` if they sat
     /// before the current position.
     ///
-    /// Keeps its concrete `Track` parameter on purpose: deleting is a
-    /// local-library action, and it matches queue members by `id`, so a mixed
-    /// queue needs nothing else here.
-    func handleTrackDeleted(_ track: Track) {
+    /// **Takes `any Playable`, and the widening is the fix rather than
+    /// tidiness.** It was `Track` while only `SongsView.deleteTrack` called it,
+    /// on the reasoning that deleting is a local-library action. That stopped
+    /// being true the moment `DriveLibraryService` gained two paths that delete
+    /// `DriveTrack` rows — its scan's reconciliation loop and `unlink` — and
+    /// neither could reach this method at all. The queue then kept strong
+    /// references to deleted-and-saved `PersistentModel`s, and reading any
+    /// property off one raises `NSObjectInaccessibleException`: an Objective-C
+    /// exception, so uncatchable in Swift and unhelped by `try?`. It is
+    /// intermittent rather than reliable, because a row whose attributes are
+    /// still materialised answers silently for a while.
+    ///
+    /// The body needs nothing else: it has always matched queue members purely
+    /// by `id`, so the parameter was already only carrying an identity.
+    ///
+    /// **Must be called while the row is still live**, i.e. before the delete
+    /// and before the save that flushes it — reading `track.id` afterwards is
+    /// the very crash this exists to prevent. `SongsView.deleteTrack` and
+    /// `DriveLibraryService`'s two delete paths all order it that way.
+    func handleTrackDeleted(_ track: any Playable) {
         let wasPlaying = isPlaying
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
         let wasCurrent = (removalIndex == queueIndex)
@@ -501,6 +574,14 @@ final class PlaybackService {
         // session part way in.
         interruptedTrackID = nil
         interruptedPosition = 0
+        // Nothing has been published any more, so there is no last-published
+        // duration for the next track's tick to compare against. Left set, the
+        // first tick of the next track would see a stale number and push once
+        // for nothing.
+        pushedDuration = nil
+        // The queue is gone, so there is nothing left for a skip run to be
+        // counted against.
+        failureSkipRun = 0
         queue = []
         queueIndex = 0
         currentMetadata = nil
@@ -579,9 +660,21 @@ final class PlaybackService {
 
     /// A player that failed after `load()` returned.
     ///
-    /// Deliberately does not skip to the next track: the commonest cause is no
-    /// network, and skipping would march through the whole queue failing once
-    /// per track. Stopping and saying why is the useful behaviour.
+    /// **Whether it skips forward depends on the cause, because the spec asks
+    /// for two behaviours and they are genuinely different.** For anything that
+    /// looks like the network — the commonest case — it stops: skipping would
+    /// march through the whole queue failing once per track and end in silence
+    /// with nothing said. For `DriveError.fileUnavailable`, which means the
+    /// server answered and refused this one file, stopping the whole session
+    /// over a track someone deleted from Drive is the wrong answer; the spec's
+    /// error table asks for "Skip to next, note it", and both halves of that
+    /// matter. The note is what stops the skip from being silent — see the
+    /// re-assignment of `lastPlaybackError` at the end.
+    ///
+    /// The skip runs *after* the full stop-and-record below rather than instead
+    /// of it, so a skip that cannot happen (last track, repeat off) leaves
+    /// exactly the state the non-skipping path would have left, and so the
+    /// position is written down before anything moves.
     ///
     /// **The `url` guard is the whole safety of this method.** An asynchronous
     /// failure arrives with no inherent claim on the present: a Drive item can
@@ -631,15 +724,52 @@ final class PlaybackService {
         // of listening unsaved — and a stalled app is one a user is unusually
         // likely to force-quit rather than wait out.
         persistImmediately()
+
+        guard (error as? DriveError) == .fileUnavailable else { return }
+        // `canGoNext` covers both "there is a track after this one" and "a
+        // repeat mode says the queue has no end"; `failureSkipRun` is what stops
+        // the second of those from circling forever. See its doc comment.
+        guard canGoNext, failureSkipRun < queue.count else { return }
+        failureSkipRun += 1
+        // The resume point belongs to the track being left behind, and this
+        // failure is not one a retry recovers from — the file is gone. Left set,
+        // it would start some later replay of that same track part way in.
+        interruptedTrackID = nil
+        interruptedPosition = 0
+        next()
+        // Restored deliberately, and it has to be after: `loadCurrentAndPlay()`
+        // clears `lastPlaybackError` when a track starts, which is right for
+        // every other path and wrong for this one — the whole point is that the
+        // user is told a track was skipped. `stalledPlaybackError` is what keeps
+        // the note off the player's own subtitle, where it would caption a track
+        // that is now playing fine; the Drive list's banner reads the full
+        // `lastPlaybackError` and shows it. If the skip ended in
+        // `stopPlayback()` — nothing loadable left — this still reports the
+        // reason instead of stopping mutely.
+        lastPlaybackError = error
     }
 
     private func tickPosition() {
         position = player.currentTime
+        // Audio has actually got somewhere, so whatever run of unplayable files
+        // preceded it is over. See `failureSkipRun` for why "a track started" is
+        // not good enough evidence on the streaming path.
+        if position > 0 { failureSkipRun = 0 }
         if !playCountedForCurrent, position >= 30, let track = currentTrack {
             track.playCount += 1
             track.lastPlayedAt = .now
             try? library.save()
             playCountedForCurrent = true
+        }
+        // A streaming item's duration resolves after the load that published
+        // it, and nothing else re-publishes: `markItemReady()` drains a pending
+        // seek and stops. This timer is already running, already on the main
+        // actor and already holds everything the push needs, so it is where the
+        // late number is noticed. Guarded on a change, so a local track — whose
+        // duration is right from the first push — never pushes twice, and a
+        // streaming one pushes exactly once more. See `pushedDuration`.
+        if let pushedDuration, pushedDuration != player.duration {
+            pushNowPlaying()
         }
         // The player can stop underneath us without going through pause()/
         // stopPlayback() — a phone call, a headphone unplug. Reconcile our
@@ -724,15 +854,17 @@ final class PlaybackService {
 
     private func pushNowPlaying() {
         guard let metadata = currentMetadata else { return }
+        let duration = player.duration
         nowPlaying.update(
             title: metadata.title,
             artist: metadata.artist,
             album: metadata.album,
             artwork: metadata.artwork,
-            duration: player.duration,
+            duration: duration,
             elapsed: position,
             isPlaying: isPlaying
         )
+        pushedDuration = duration
     }
 
     /// Everything except the artwork — all of it already in memory, so it costs

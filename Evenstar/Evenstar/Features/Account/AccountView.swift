@@ -125,8 +125,14 @@ struct AccountView: View {
 #Preview {
     let container: ModelContainer
     do {
+        // `DriveFolder`/`DriveTrack` are registered here even though this screen
+        // queries neither: Task 8 gave it a `NavigationLink` to
+        // `DriveFoldersView`, which `@Query`s both. Pushing that row in a
+        // preview against a container that does not know those models traps at
+        // the point of the push — a preview that looks fine until the one row
+        // this section exists for is tapped.
         container = try ModelContainer(
-            for: Track.self, PlaybackState.self,
+            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
     } catch {
@@ -149,8 +155,13 @@ struct AccountView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
+    // Same reason as the two extra models above: the pushed `DriveFoldersView`
+    // reads `DriveLibraryService` out of the environment, so without this the
+    // Nguồn nhạc row crashes the preview rather than showing the screen.
+    let driveLibrary = DriveLibraryService(library: library)
     return AccountView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
+        .environment(driveLibrary)
         .modelContainer(container)
 }

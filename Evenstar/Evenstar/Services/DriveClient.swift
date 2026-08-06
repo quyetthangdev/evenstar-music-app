@@ -17,6 +17,28 @@ enum DriveError: Error, Equatable, LocalizedError {
     /// the message never claims something untrue about the user's connection
     /// on a device that is, in fact, online.
     case connectionFailed
+    /// The server answered while the track was loading or playing, and the
+    /// answer was not the bytes: a 403/404 for a file deleted from Drive or a
+    /// folder whose sharing was revoked, a rejected range request, a body that
+    /// is an error document rather than audio.
+    ///
+    /// Kept apart from `.connectionFailed` because the two ask for opposite
+    /// things from the user. "Không thể kết nối tới Google Drive. Vui lòng thử
+    /// lại sau." is advice for a connection that is down; here the connection is
+    /// fine, the file is gone, and waiting fixes nothing. It is also the only
+    /// classification `PlaybackService.handleFailure` skips forward on — see the
+    /// spec's error table, "File deleted from Drive mid-playback → Skip to next,
+    /// note it."
+    ///
+    /// **A 429 that arrives on the playback path lands here too, and that is a
+    /// known limitation rather than a slip.** The listing path reads a real
+    /// `HTTPURLResponse.statusCode` and distinguishes 429 from 403 exactly (see
+    /// `DriveClient.check`); `AVPlayer` never hands one back, so on the playback
+    /// path a quota rejection and a revoked share are the same shape and cannot
+    /// honestly be told apart. Both mean "Drive refused to serve this file",
+    /// which is what the message below says, and the two most likely causes are
+    /// what it names.
+    case fileUnavailable
     case quotaExceeded
     case server(Int)
     case malformedResponse
@@ -33,6 +55,8 @@ enum DriveError: Error, Equatable, LocalizedError {
             "Không có kết nối mạng."
         case .connectionFailed:
             "Không thể kết nối tới Google Drive. Vui lòng thử lại sau."
+        case .fileUnavailable:
+            "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
         case .quotaExceeded:
             "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút."
         case .server(let status):
@@ -58,19 +82,47 @@ enum DriveError: Error, Equatable, LocalizedError {
     /// the real cause under `NSUnderlyingErrorKey` — a plain `as? URLError`
     /// misses it and reports every streaming failure as `.connectionFailed`,
     /// including a genuinely offline device.
+    /// The order matters, and connectivity has to be tested first: a device
+    /// with no network can report `.badServerResponse` on a retry, and calling
+    /// that "the file is gone" would send the user hunting for a file that is
+    /// still there.
     static func classify(_ error: Error) -> DriveError {
-        let ns = error as NSError
-        if isConnectivityFailure(ns) { return .offline }
-        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
-           isConnectivityFailure(underlying) {
-            return .offline
-        }
+        let chain = underlyingChain(error as NSError)
+        if chain.contains(where: isConnectivityFailure) { return .offline }
+        // The server answered, and the answer was not the file. Its own case and
+        // its own message, because "thử lại sau" is wrong advice for it — see
+        // `.fileUnavailable`.
+        if chain.contains(where: isFileUnavailable) { return .fileUnavailable }
         // Everything else `URLSession` or `AVFoundation` can report — DNS
         // failure, TLS/certificate failure, timeout, a malformed stream, and
         // anything unrecognised. Deliberately distinct from `.offline`: the
         // device can be fully online while one of these happens, and saying
         // "no internet" would be flatly wrong.
         return .connectionFailed
+    }
+
+    /// The error and everything nested under `NSUnderlyingErrorKey`, outermost
+    /// first.
+    ///
+    /// `AVPlayerItem.error` is an `AVFoundationErrorDomain` wrapper whose real
+    /// cause hangs underneath, and on the streaming path that nesting is
+    /// sometimes two deep rather than one — an `AVFoundationErrorDomain` error
+    /// wrapping an `NSOSStatusErrorDomain`/`CoreMediaErrorDomain` one wrapping
+    /// the `URLError`. The previous single-level unwrap read the outer two and
+    /// stopped, so a genuinely offline device three levels down was reported as
+    /// a generic connection failure.
+    ///
+    /// Bounded rather than a plain `while`: nothing stops a framework from
+    /// handing back an error whose underlying error is itself, and an unbounded
+    /// walk over that hangs the failure path.
+    private static func underlyingChain(_ error: NSError) -> [NSError] {
+        var chain: [NSError] = []
+        var current: NSError? = error
+        while let next = current, chain.count < 8 {
+            chain.append(next)
+            current = next.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return chain
     }
 
     /// Whether an error genuinely means "this device has no network
@@ -85,6 +137,56 @@ enum DriveError: Error, Equatable, LocalizedError {
             return false
         }
     }
+
+    /// Whether an error means the server replied and the reply was not the file.
+    ///
+    /// Two shapes, because the streaming path can report the same HTTP answer
+    /// through either:
+    ///
+    /// 1. **`NSURLErrorDomain`**, when `URLSession` itself judged the response.
+    ///    `.fileDoesNotExist` and `.resourceUnavailable` are the direct 404
+    ///    shapes; `.userAuthenticationRequired` and `.noPermissionsToReadFile`
+    ///    are the 401/403 ones a folder whose sharing was revoked produces;
+    ///    `.badServerResponse` and `.cannotParseResponse` are what a Drive JSON
+    ///    error document delivered where audio was expected looks like; and
+    ///    `.zeroByteResource` is an empty body.
+    /// 2. **`CoreMediaErrorDomain`** (bridged into `NSOSStatusErrorDomain` on
+    ///    some paths), when AVFoundation's own HTTP loader judged it. These
+    ///    codes are not in any header Apple publishes; they are the ones
+    ///    consistently observed for an HTTP error status behind a progressive
+    ///    download — `-12660` for a 403, `-12661` for an unusable response,
+    ///    `-12938`/`-12939` for a range request the server answered with an
+    ///    error document instead of bytes, and `-12937` for a truncated one.
+    ///
+    /// **Undocumented and unverified against real Drive traffic.** Reaching this
+    /// list needs a live API key and a folder whose file is deleted mid-track,
+    /// which this repository has neither of. The failure mode if a code is
+    /// missing is the old behaviour — the message says "connection failed" —
+    /// rather than anything new breaking, so the list is kept to codes with a
+    /// specific HTTP meaning rather than widened speculatively. In particular
+    /// `AVFoundationErrorDomain`'s "file format not recognized" is deliberately
+    /// *not* here: a genuinely corrupt audio file produces it too, and telling
+    /// the user their file was deleted from Drive when it is sitting there is a
+    /// worse answer than the generic one.
+    private static func isFileUnavailable(_ error: NSError) -> Bool {
+        if error.domain == NSURLErrorDomain {
+            switch URLError.Code(rawValue: error.code) {
+            case .fileDoesNotExist, .resourceUnavailable, .badServerResponse,
+                 .cannotParseResponse, .userAuthenticationRequired,
+                 .noPermissionsToReadFile, .zeroByteResource:
+                return true
+            default:
+                return false
+            }
+        }
+        if error.domain == coreMediaDomain || error.domain == NSOSStatusErrorDomain {
+            return httpRejectionCodes.contains(error.code)
+        }
+        return false
+    }
+
+    private static let coreMediaDomain = "CoreMediaErrorDomain"
+    private static let httpRejectionCodes: Set<Int> = [-12660, -12661, -12937, -12938, -12939]
 }
 
 /// Reads a link-shared Drive folder with a plain API key. No OAuth, no SDK.
@@ -117,8 +219,22 @@ struct DriveClient {
     /// skew — that is not a next page; following it would refetch the same
     /// page indefinitely, an unbounded hang with no error. Treated the same as
     /// any other response shape the client cannot make sense of.
+    ///
+    /// **`folderID` is validated here rather than trusted.** It is interpolated
+    /// into a quoted Drive query string — `q='<folderID>' in parents and
+    /// trashed=false` — where an apostrophe would close the quote early and the
+    /// rest of the value would be read as query syntax. Today every caller's ID
+    /// has come through `DriveLinkParser`, which already restricts it to
+    /// `[A-Za-z0-9_-]`, so nothing is exploitable in the shipping app; that is a
+    /// property of one caller, not of this method, and a second caller — a
+    /// deep link, a restored row, a future import — would inherit the hole
+    /// silently. Checking it where the interpolation happens closes it for good.
     func listAudioFiles(inFolder folderID: String) async throws -> [DriveFile] {
         guard !apiKey.isEmpty else { throw DriveError.missingAPIKey }
+        // `.notFound` rather than a new case: an ID that cannot be a Drive
+        // folder ID names no folder, and "Link có thể sai hoặc thư mục đã bị
+        // xoá." is exactly what the user needs to hear about it.
+        guard Self.isPlausibleFolderID(folderID) else { throw DriveError.notFound }
 
         var files: [DriveFile] = []
         var pageToken: String?
@@ -136,6 +252,19 @@ struct DriveClient {
         } while pageToken != nil
 
         return files
+    }
+
+    /// The character set a Google Drive folder ID is drawn from, and the same
+    /// one `DriveLinkParser` accepts. Deliberately a whitelist: a blacklist of
+    /// "characters that break the query" has to enumerate the ways a quoted
+    /// string can be escaped, and a whitelist does not.
+    private static let folderIDCharacters = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    )
+
+    static func isPlausibleFolderID(_ folderID: String) -> Bool {
+        !folderID.isEmpty
+            && folderID.unicodeScalars.allSatisfy(folderIDCharacters.contains)
     }
 
     /// Returned by `mediaURL(fileID:)` instead of a URL with `key=` left blank

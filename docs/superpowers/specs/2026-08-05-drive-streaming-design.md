@@ -36,8 +36,9 @@ to check.
 **In:** linking public Drive folders, listing their audio files, streaming
 playback, rescanning, and the errors all of that can produce.
 
-**Out:** downloading for offline use, bulk ID3 reading at scan time, artwork,
-background sync, OAuth, and Drive tracks appearing in Album, Artist or Search.
+**Out:** downloading for offline use, ID3 reading of any kind — at scan time or
+on first play, see "Not in this đợt" under Metadata — artwork, background sync,
+OAuth, and Drive tracks appearing in Album, Artist or Search.
 
 ## What the user sees
 
@@ -127,16 +128,41 @@ new, removes rows whose file has disappeared from Drive, and stamps
 
 ## Metadata
 
-Two stages, on purpose.
-
 At scan time the title is the file name with its extension stripped; artist,
 album and duration are unknown. A 500-file folder therefore appears
 **immediately**, and rescanning costs one request per 100 files.
 
-When a track is played, `AVURLAsset` reads its real ID3 tags over the network
-(range requests, tens of kilobytes) and the row is updated with
-`metadataResolved = true`. Metadata becomes correct for the tracks the user
-actually listens to, which is the subset that matters.
+### Not in this đợt: reading tags on first play
+
+This design originally described a **second stage**: when a track is played,
+`AVURLAsset` reads its real ID3 tags over the network (range requests, tens of
+kilobytes) and the row is updated with `metadataResolved = true`.
+
+**No task implemented it, and it is deferred to its own đợt rather than being
+squeezed into this one.** It is a separable feature — a network read, a write
+back to the row, and a rule for when to re-read — and this đợt is already the
+largest in the project. What follows is the state that actually ships, stated
+plainly, because a spec whose Self-Review claims coverage it does not have is
+worse than one that admits the gap:
+
+- `metadataResolved` is written only by its default (`false`) and read only by a
+  test. Nothing ever sets it.
+- `artistNameOrNil`, `albumTitleOrNil` and `durationSeconds` are never written
+  after insert.
+- **Every Drive track therefore shows its file name as the title, "Unknown
+  Artist" and "Unknown Album", permanently** — however many times it is played.
+  In the player this collapses to the artist alone (see `PlayerSubtitle`), so
+  what the user actually reads under the title is the literal string
+  "Unknown Artist".
+- **No Drive track has a duration from metadata.** `durationSeconds` stays 0.
+  The scrubber and the lock screen get a duration only from the player once
+  `AVPlayer` resolves the asset's own — see the device-QA note in the plan about
+  whether that ever happens for a chunked `alt=media` response.
+
+The rest of the design does not depend on this stage: `Playable` already reports
+non-optional `artistName`/`albumTitle` computed from the optional columns, and
+those columns exist and are nullable, so the deferred đợt has somewhere to write
+without a migration.
 
 ## The audio engine
 

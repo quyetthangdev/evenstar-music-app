@@ -373,6 +373,173 @@ final class StreamingFailureTests: XCTestCase {
         XCTAssertEqual(DriveError.offline.errorDescription, "Không có kết nối mạng.")
     }
 
+    // MARK: - A duration that arrives late must still reach the lock screen
+
+    /// `pushNowPlaying()` publishes `player.duration`, and the push that follows
+    /// `player.play()` happens while a streaming item still reports 0. Nothing
+    /// re-published afterwards — `markItemReady()` drains a pending seek and
+    /// stops — so `MPMediaItemPropertyPlaybackDuration` stayed 0.0 for the whole
+    /// track: the lock-screen progress bar sat at zero and its scrubber, enabled
+    /// in Phase 1, had no range to drag.
+    func testADurationThatResolvesAfterTheLoadIsPushedToNowPlaying() throws {
+        let player = MockAudioPlayer()
+        let nowPlaying = MockNowPlayingPublisher()
+        let library = try InMemoryLibrary.make()
+        let service = PlaybackService(player: player, nowPlaying: nowPlaying, library: library)
+        let one = try track(library, title: "One")
+        // What a freshly-started AVPlayer item looks like.
+        player.isDurationKnown = false
+        player.duration = 0
+
+        service.play(one, in: [one])
+        XCTAssertEqual(nowPlaying.updates.last?.duration, 0, "the first push cannot know it yet")
+
+        // The asset resolves a few hundred milliseconds later.
+        player.isDurationKnown = true
+        player.duration = 211
+        service.tickForTesting()
+
+        XCTAssertEqual(nowPlaying.updates.last?.duration, 211)
+    }
+
+    /// The other half: the timer must not re-publish twice a second for the life
+    /// of every track. Assigning `nowPlayingInfo` ships the payload across XPC to
+    /// the media server, and a local file's duration is right from the first
+    /// push, so there is nothing to correct.
+    func testASettledDurationIsNotRePushedOnEveryTick() throws {
+        let player = MockAudioPlayer()
+        let nowPlaying = MockNowPlayingPublisher()
+        let library = try InMemoryLibrary.make()
+        let service = PlaybackService(player: player, nowPlaying: nowPlaying, library: library)
+        let one = try track(library, title: "One")
+        player.duration = 180
+        service.play(one, in: [one])
+        let pushesAfterLoad = nowPlaying.updates.count
+
+        service.tickForTesting()
+        service.tickForTesting()
+
+        XCTAssertEqual(nowPlaying.updates.count, pushesAfterLoad)
+    }
+
+    // MARK: - A file gone from Drive is not a connection failure
+
+    /// The spec's error table asks for two behaviours from two causes, and
+    /// `handleFailure` used to collapse them: everything stopped, and everything
+    /// said "Không thể kết nối tới Google Drive. Vui lòng thử lại sau." about a
+    /// connection that was working perfectly.
+    func testAnHTTPShapedFailureIsClassifiedApartFromAConnectionFailure() {
+        XCTAssertEqual(DriveError.classify(URLError(.fileDoesNotExist)), .fileUnavailable)
+        XCTAssertEqual(DriveError.classify(URLError(.resourceUnavailable)), .fileUnavailable)
+        XCTAssertEqual(DriveError.classify(URLError(.badServerResponse)), .fileUnavailable)
+        XCTAssertEqual(DriveError.classify(URLError(.userAuthenticationRequired)), .fileUnavailable)
+        XCTAssertEqual(DriveError.classify(URLError(.noPermissionsToReadFile)), .fileUnavailable)
+
+        // What AVFoundation hands back when its own HTTP loader judged the
+        // response: the real code sits under `NSUnderlyingErrorKey` in
+        // CoreMedia's domain.
+        let coreMedia = NSError(domain: "CoreMediaErrorDomain", code: -12660)
+        let wrapped = NSError(
+            domain: AVFoundationErrorDomain, code: -11800,
+            userInfo: [NSUnderlyingErrorKey: coreMedia]
+        )
+        XCTAssertEqual(DriveError.classify(wrapped), .fileUnavailable)
+
+        // And it must not steal the offline case: a timeout is still a
+        // connection failure, not a missing file.
+        XCTAssertEqual(DriveError.classify(URLError(.timedOut)), .connectionFailed)
+        XCTAssertEqual(
+            DriveError.fileUnavailable.errorDescription,
+            "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
+        )
+    }
+
+    /// Connectivity is tested before the HTTP shapes, and the walk down
+    /// `NSUnderlyingErrorKey` no longer stops after one level. An offline device
+    /// three wrappers deep used to be reported as a generic connection failure.
+    func testOfflineIsStillFoundUnderTwoLayersOfWrapping() {
+        let urlError = URLError(.notConnectedToInternet) as NSError
+        let coreMedia = NSError(
+            domain: "CoreMediaErrorDomain", code: -12660,
+            userInfo: [NSUnderlyingErrorKey: urlError]
+        )
+        let wrapped = NSError(
+            domain: AVFoundationErrorDomain, code: -11800,
+            userInfo: [NSUnderlyingErrorKey: coreMedia]
+        )
+
+        XCTAssertEqual(DriveError.classify(wrapped), .offline)
+    }
+
+    /// Spec: "File deleted from Drive mid-playback → Skip to next, note it."
+    /// Both halves. The note lands on `lastPlaybackError`, which the Drive list's
+    /// banner reads — and deliberately *not* on `stalledPlaybackError`, which the
+    /// player's own subtitle reads, because the track now playing is fine and
+    /// must not be captioned with the previous one's failure.
+    func testAFileMissingFromDriveSkipsToTheNextTrackAndSaysSo() async throws {
+        let (service, player, library) = try makeStack()
+        let one = try track(library, title: "One")
+        let two = try track(library, title: "Two")
+        service.play(one, in: [one, two])
+
+        player.simulateFailure(DriveError.fileUnavailable)
+        await Task.yield()
+
+        XCTAssertEqual(service.currentTrack?.id, two.id, "the queue must move on past a dead file")
+        XCTAssertTrue(service.isPlaying)
+        XCTAssertEqual(service.lastPlaybackError as? DriveError, .fileUnavailable,
+                       "a silent skip is a track vanishing for no stated reason")
+        XCTAssertNil(service.stalledPlaybackError,
+                     "the track that is playing must not wear the failure of the one before it")
+    }
+
+    /// The offline case keeps the behaviour it was given on purpose: skipping
+    /// would march through the whole queue failing once per track.
+    func testAConnectivityFailureStillStopsRatherThanSkipping() async throws {
+        let (service, player, library) = try makeStack()
+        let one = try track(library, title: "One")
+        let two = try track(library, title: "Two")
+        service.play(one, in: [one, two])
+
+        player.simulateFailure(DriveError.offline)
+        await Task.yield()
+
+        XCTAssertEqual(service.currentTrack?.id, one.id)
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertEqual(service.stalledPlaybackError as? DriveError, .offline,
+                       "a dead play button with no message is what this exists to prevent")
+    }
+
+    /// The bound on the skip. A streaming load reports its failure
+    /// asynchronously, straight back into `handleFailure`, and with a repeat mode
+    /// armed `canGoNext` is true forever — a folder whose sharing was revoked
+    /// wholesale would circle its own queue issuing requests until the user
+    /// force-quit.
+    func testARunOfMissingFilesStopsInsteadOfCirclingARepeatingQueue() async throws {
+        let (service, player, library) = try makeStack()
+        let list = [
+            try track(library, title: "One"),
+            try track(library, title: "Two"),
+            try track(library, title: "Three"),
+        ]
+        service.play(list[0], in: list)
+        service.cycleRepeatMode()
+        XCTAssertEqual(service.repeatMode, .all)
+
+        for _ in 0..<12 {
+            player.simulateFailure(DriveError.fileUnavailable)
+            await Task.yield()
+        }
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertEqual(service.queue.count, 3, "the queue itself is untouched — only playback stops")
+        XCTAssertEqual(service.stalledPlaybackError as? DriveError, .fileUnavailable)
+        XCTAssertEqual(
+            player.playCallCount, 1 + list.count,
+            "each position may be tried at most once per run: the first play plus three skips"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Boxes rather than captured `var`s, because these callbacks are stored on

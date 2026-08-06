@@ -30,10 +30,25 @@ struct MiniPlayerChrome: View {
                     Text(current.title)
                         .font(.footnote)
                         .lineLimit(1)
-                    Text(current.artistName)
+                    // The same substitution the expanded player makes, from the
+                    // same rule — see `PlayerSubtitle`. It matters more here,
+                    // not less: the collapsed pill is the screen a user is on
+                    // while browsing, so it is where a stalled Drive track is
+                    // most likely to be discovered. Replacing the artist line
+                    // rather than adding one keeps the pill exactly 54pt tall.
+                    let subtitle = PlayerSubtitle.collapsedLine(
+                        track: current,
+                        error: playback.stalledPlaybackError
+                    )
+                    Text(subtitle.text)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(
+                            subtitle.isFailure
+                                ? AnyShapeStyle(Color.red)
+                                : AnyShapeStyle(HierarchicalShapeStyle.secondary)
+                        )
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 Spacer()
                 Button {

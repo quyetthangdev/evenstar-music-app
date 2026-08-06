@@ -143,6 +143,97 @@ final class DriveLibraryServiceTests: XCTestCase {
         XCTAssertEqual(rows.first?.displayName, "New name")
     }
 
+    // MARK: - Deleting a row must reach the playing queue
+
+    /// The wiring `EvenstarApp` installs, reproduced so these tests exercise the
+    /// same contract the app relies on rather than a test-only shortcut.
+    private func makePlayback(_ library: LibraryService,
+                              notifiedBy service: DriveLibraryService) -> PlaybackService {
+        let playback = PlaybackService(
+            player: MockAudioPlayer(), nowPlaying: MockNowPlayingPublisher(), library: library
+        )
+        service.onTrackWillBeDeleted = { playback.handleTrackDeleted($0) }
+        return playback
+    }
+
+    private func scannedTracks(_ library: LibraryService) throws -> [DriveTrack] {
+        try library.context
+            .fetch(FetchDescriptor<DriveTrack>())
+            .sorted { $0.fileID < $1.fileID }
+    }
+
+    /// Swipe "Gỡ" on the folder whose track is playing.
+    ///
+    /// `AVPlayer` holds the item, so the audio carries on regardless — and until
+    /// this wiring existed the queue carried on too, holding
+    /// deleted-and-saved rows. The 30-second play-count write, the ≤5s
+    /// `queue.map(\.id)` persist and a tap on Next then each read a property off
+    /// one, which raises `NSObjectInaccessibleException`: an Objective-C
+    /// exception, so uncatchable in Swift and unhelped by `try?`. It presents as
+    /// intermittent because a row whose attributes are still materialised
+    /// answers quietly for a while.
+    func testUnlinkingAFolderTakesItsPlayingTrackOutOfTheQueue() async throws {
+        let (service, library) = try makeService()
+        let playback = makePlayback(library, notifiedBy: service)
+        let folder = try service.link(folderID: "F1", displayName: "Chill mix")
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3"), ("2", "b.mp3")]))]
+        _ = try await service.scan(folder)
+        let tracks = try scannedTracks(library)
+        playback.play(tracks[0], in: tracks)
+        XCTAssertEqual(playback.queue.count, 2)
+
+        try service.unlink(folder)
+
+        XCTAssertTrue(playback.queue.isEmpty, "the queue must not hold deleted rows")
+        XCTAssertNil(playback.currentTrack)
+        XCTAssertTrue(
+            library.playbackState.queueTrackIDs.isEmpty,
+            "and the persisted queue must not resurrect them on the next launch"
+        )
+    }
+
+    /// The other deletion path: a rescan that finds the playing track gone from
+    /// Drive. The queue must move on to a row that still exists rather than keep
+    /// pointing at the one just deleted.
+    func testARescanThatDropsThePlayingTrackTakesItOutOfTheQueue() async throws {
+        let (service, library) = try makeService()
+        let playback = makePlayback(library, notifiedBy: service)
+        let folder = try service.link(folderID: "F1", displayName: "Chill mix")
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3"), ("2", "b.mp3")]))]
+        _ = try await service.scan(folder)
+        let tracks = try scannedTracks(library)
+        let survivorID = tracks[1].id
+        playback.play(tracks[0], in: tracks)
+
+        // "1" has been deleted from the folder on Drive.
+        StubURLProtocol.responses = [.init(status: 200, body: page([("2", "b.mp3")]))]
+        _ = try await service.scan(folder)
+
+        XCTAssertEqual(playback.queue.count, 1)
+        XCTAssertEqual(playback.currentTrack?.id, survivorID)
+        XCTAssertEqual(library.playbackState.queueTrackIDs, [survivorID])
+    }
+
+    /// A track that is merely *in* the queue rather than playing must be dropped
+    /// too — it is just as deleted, and `persistImmediately` reads every id in
+    /// the queue, not only the current one.
+    func testARescanDropsAQueuedTrackThatIsNotTheCurrentOne() async throws {
+        let (service, library) = try makeService()
+        let playback = makePlayback(library, notifiedBy: service)
+        let folder = try service.link(folderID: "F1", displayName: "Chill mix")
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3"), ("2", "b.mp3")]))]
+        _ = try await service.scan(folder)
+        let tracks = try scannedTracks(library)
+        let playingID = tracks[0].id
+        playback.play(tracks[0], in: tracks)
+
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3")]))]
+        _ = try await service.scan(folder)
+
+        XCTAssertEqual(playback.queue.map(\.id), [playingID])
+        XCTAssertEqual(playback.currentTrack?.id, playingID, "the playing track must be undisturbed")
+    }
+
     func testUnlinkRemovesTheFolderAndItsTracks() async throws {
         let (service, library) = try makeService()
         let folder = try service.link(folderID: "F1", displayName: "Chill mix")
