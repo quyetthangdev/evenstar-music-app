@@ -34,8 +34,15 @@ struct AccountView: View {
                 }
 
                 Section("Nguồn nhạc") {
+                    // `showsDoneButton: false` — this `NavigationLink` pushes
+                    // onto the `NavigationStack` this screen already owns, so
+                    // the pushed bar's native back chevron is the way out.
+                    // `DriveFoldersView`'s default `true` is for its other
+                    // call site, `DriveSongsList`'s sheet, which has no back
+                    // chevron to rely on. See `DriveFoldersView`'s doc
+                    // comment on `showsDoneButton`.
                     NavigationLink("Thư mục Drive") {
-                        DriveFoldersView()
+                        DriveFoldersView(showsDoneButton: false)
                     }
                 }
 

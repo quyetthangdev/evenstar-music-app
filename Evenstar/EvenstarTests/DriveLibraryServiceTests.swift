@@ -125,6 +125,24 @@ final class DriveLibraryServiceTests: XCTestCase {
         XCTAssertEqual(rowsAfterSecondScan.first?.id, originalID)
     }
 
+    /// `link` must fetch-existing-or-insert against `library.context`
+    /// directly — not rely on a caller's `@Query` snapshot — so a retry with
+    /// the same `folderID` never double-inserts, and a retyped display name
+    /// is honored on the existing row rather than silently dropped. See
+    /// `DriveLibraryService.link`'s doc comment.
+    func testLinkingTheSameFolderIDTwiceReusesTheRowAndUpdatesTheName() throws {
+        let (service, library) = try makeService()
+        let first = try service.link(folderID: "F1", displayName: "Old name")
+
+        let second = try service.link(folderID: "F1", displayName: "New name")
+
+        let rows = try library.context.fetch(FetchDescriptor<DriveFolder>())
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(second.persistentModelID, first.persistentModelID)
+        XCTAssertEqual(second.displayName, "New name")
+        XCTAssertEqual(rows.first?.displayName, "New name")
+    }
+
     func testUnlinkRemovesTheFolderAndItsTracks() async throws {
         let (service, library) = try makeService()
         let folder = try service.link(folderID: "F1", displayName: "Chill mix")

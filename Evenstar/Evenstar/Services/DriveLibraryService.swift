@@ -22,7 +22,33 @@ final class DriveLibraryService {
         self.client = client
     }
 
+    /// Fetches an existing folder linked under this `folderID` and reuses it
+    /// instead of constructing a second row.
+    ///
+    /// This check used to live in `DriveFoldersView`, reading its `@Query`
+    /// snapshot — the array SwiftUI had assembled for the *last* render pass,
+    /// not a live fetch. It worked there only because every call path
+    /// happened to force a re-render before a retry read it; that is an
+    /// accident of one call site's timing, not a contract, and "do not
+    /// double-insert on retry" is business logic that belongs on the service
+    /// regardless of which view calls it or when that view last redrew.
+    /// Fetching `library.context` directly here is correct no matter what any
+    /// view has or has not rendered yet.
+    ///
+    /// A retyped display name is honored even when the folder is reused,
+    /// rather than dropped. Silently keeping the old name would be exactly
+    /// the failure `unlink` below is written to avoid: the user retypes a
+    /// name, taps Liên kết, the fields clear as if it worked, and the row
+    /// still shows the stale name with no signal the edit never landed.
     func link(folderID: String, displayName: String) throws -> DriveFolder {
+        let existing = try library.context.fetch(
+            FetchDescriptor<DriveFolder>(predicate: #Predicate { $0.folderID == folderID })
+        ).first
+        if let existing {
+            existing.displayName = displayName
+            try library.save()
+            return existing
+        }
         let folder = DriveFolder(folderID: folderID, displayName: displayName)
         library.context.insert(folder)
         try library.save()

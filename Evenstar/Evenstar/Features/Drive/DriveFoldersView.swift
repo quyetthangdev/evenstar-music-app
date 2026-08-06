@@ -12,61 +12,80 @@ import SwiftData
 // out by Task 8, which also adds the Tài khoản → Nguồn nhạc row.
 
 /// Add, rescan and unlink Drive folders. Reached from the Drive list's `…`
-/// button and from Tài khoản → Nguồn nhạc — the same screen both times.
+/// button and from Tài khoản → Nguồn nhạc — the same screen both times, but
+/// not the same navigation context: see `showsDoneButton` below.
 struct DriveFoldersView: View {
     @Environment(DriveLibraryService.self) private var driveLibrary
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\DriveFolder.linkedAt)]) private var folders: [DriveFolder]
+
+    /// Whether this instance draws its own "Xong" button to leave the screen.
+    ///
+    /// Defaults to `true` for the sheet call site (`DriveSongsList`): a sheet
+    /// has no back chevron, so without this button there is no way off the
+    /// screen at all. The pushed call site (`AccountView`'s `NavigationLink`)
+    /// passes `false`: the pushed navigation bar already supplies a back
+    /// chevron that does the same job, and a second "Xong" button beside it
+    /// would be redundant chrome, not a second way to leave.
+    var showsDoneButton: Bool = true
 
     @State private var link = ""
     @State private var name = ""
     @State private var errorMessage: String?
     @State private var isWorking = false
 
+    // No `NavigationStack` here — matching `AlbumDetailView` and
+    // `ArtistDetailView`, the app's other two push destinations, which also
+    // leave navigation context to their caller and add a `NavigationStack`
+    // only inside `#Preview`. `AccountView` already owns a `NavigationStack`;
+    // wrapping this body in a second one gave the pushed route two stacked
+    // title bars — an outer "‹ Tài khoản" above an inner "Thư mục Drive" —
+    // which also pushed the sharing warning below the fold. The sheet call
+    // site in `DriveSongsList` supplies its own `NavigationStack` instead.
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Thêm thư mục") {
-                    TextField("Dán link thư mục Drive", text: $link)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Tên hiển thị", text: $name)
-                    if let errorMessage {
-                        Text(errorMessage).font(.footnote).foregroundStyle(.red)
-                    }
-                    Button("Liên kết") { Task { await add() } }
-                        .disabled(link.isEmpty || name.isEmpty || isWorking)
+        List {
+            Section("Thêm thư mục") {
+                TextField("Dán link thư mục Drive", text: $link)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Tên hiển thị", text: $name)
+                if let errorMessage {
+                    Text(errorMessage).font(.footnote).foregroundStyle(.red)
                 }
+                Button("Liên kết") { Task { await add() } }
+                    .disabled(link.isEmpty || name.isEmpty || isWorking)
+            }
 
-                Section("Đã liên kết") {
-                    if folders.isEmpty {
-                        Text("Chưa có thư mục nào").foregroundStyle(.secondary)
+            Section("Đã liên kết") {
+                if folders.isEmpty {
+                    Text("Chưa có thư mục nào").foregroundStyle(.secondary)
+                }
+                ForEach(folders) { folder in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(folder.displayName)
+                        Text(folder.lastScannedAt == nil ? "Chưa quét" : "Đã quét")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    ForEach(folders) { folder in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(folder.displayName)
-                            Text(folder.lastScannedAt == nil ? "Chưa quét" : "Đã quét")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                unlink(folder)
-                            } label: {
-                                Label("Gỡ", systemImage: "trash")
-                            }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            unlink(folder)
+                        } label: {
+                            Label("Gỡ", systemImage: "trash")
                         }
                     }
-                }
-
-                Section {
-                    Text("Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Thư mục Drive")
-            .toolbar {
+
+            Section {
+                Text("Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Thư mục Drive")
+        .toolbar {
+            if showsDoneButton {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Xong") { dismiss() }
                 }
@@ -99,17 +118,20 @@ struct DriveFoldersView: View {
     /// Two changes close both the accidental and the deliberate path to that
     /// duplicate insert:
     ///
-    /// 1. A folder already linked under this `folderID` — exactly the state
-    ///    left behind by a `link()`-succeeds/`scan()`-throws run — is looked
-    ///    up and reused instead of re-inserted. This is also what makes a
-    ///    manual retry (the user re-pastes the same link once the API key is
-    ///    fixed) a rescan rather than a duplicate.
-    /// 2. The fields are cleared the moment a `DriveFolder` exists for this
-    ///    text — right after `link()` succeeds or an existing folder is
-    ///    found, not after `scan()` also succeeds — so a same-state re-tap of
-    ///    "Liên kết" is no longer possible: the button disables itself.
+    /// 1. `driveLibrary.link` now fetches an existing folder for this
+    ///    `folderID` and reuses it instead of always inserting — see its own
+    ///    doc comment for why that check lives there and not here as a read
+    ///    of `folders`, the `@Query` snapshot from the last render pass. This
+    ///    is what makes a manual retry (the user re-pastes the same link once
+    ///    the API key is fixed) a rescan rather than a duplicate, and it also
+    ///    means a retyped display name lands on the existing row rather than
+    ///    being silently dropped.
+    /// 2. The fields are cleared the moment `link()` returns — whether it
+    ///    inserted or reused — not after `scan()` also succeeds, so a
+    ///    same-state re-tap of "Liên kết" is no longer possible: the button
+    ///    disables itself.
     ///
-    /// The folder *is* linked at that point; only the scan failed. So the
+    /// The folder *is* linked at that point; only the scan may fail. So the
     /// error surfaced here is scan-shaped ("Chưa cấu hình API key…", "Thư mục
     /// này chưa được chia sẻ công khai…", …), not "linking failed" — and the
     /// row is exactly where a user recovering from that error needs it: already
@@ -124,8 +146,7 @@ struct DriveFoldersView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            let folder = try folders.first(where: { $0.folderID == folderID })
-                ?? driveLibrary.link(folderID: folderID, displayName: name)
+            let folder = try driveLibrary.link(folderID: folderID, displayName: name)
             link = ""
             name = ""
             try await driveLibrary.scan(folder)
@@ -133,4 +154,23 @@ struct DriveFoldersView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+#Preview {
+    let container: ModelContainer
+    do {
+        container = try ModelContainer(
+            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    } catch {
+        fatalError("Failed to create preview ModelContainer: \(error)")
+    }
+    let library = LibraryService(context: container.mainContext)
+    let driveLibrary = DriveLibraryService(library: library)
+    return NavigationStack {
+        DriveFoldersView()
+    }
+    .environment(driveLibrary)
+    .modelContainer(container)
 }

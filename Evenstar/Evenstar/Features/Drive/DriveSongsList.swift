@@ -25,7 +25,15 @@ struct DriveSongsList: View {
             }
         }
         .sheet(isPresented: $showManager) {
-            DriveFoldersView()
+            // `DriveFoldersView` no longer supplies its own `NavigationStack`
+            // — see its doc comment — so the sheet owns one here, matching
+            // `AlbumDetailView`/`ArtistDetailView`'s push call sites doing the
+            // same inside `navigationDestination`. `showsDoneButton` is left
+            // at its default `true`: a sheet has no back chevron, so the
+            // "Xong" button is the only way off this screen.
+            NavigationStack {
+                DriveFoldersView()
+            }
         }
         // Gives `errorMessage` the same self-clearing rule `lastPlaybackError`
         // already has: "playing something is what makes the banner stale, and
