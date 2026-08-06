@@ -6,9 +6,12 @@
 #   ./run.sh "iPhone SE (3rd generation)" any other simulator
 #   xcrun simctl list devices available   what you can pass
 #
-# For a real device, use Xcode and ⌘R — that is the only way to get a debugger
-# attached, and the drag, the lock screen and landscape safe-area insets are all
-# things a simulator cannot answer.
+# For a real device use ./device.sh, which does the same thing over USB. The
+# drag, the lock screen and landscape safe-area insets are all things a simulator
+# cannot answer, so most visual checks belong there rather than here.
+#
+# Xcode and ⌘R remain the only way to get a debugger attached — breakpoints, the
+# view hierarchy inspector, Instruments.
 #
 # Tip: drag .mp3 files from Finder onto the Simulator window. They land in the
 # Files app, and the + button in Evenstar imports them. Most of the app is
