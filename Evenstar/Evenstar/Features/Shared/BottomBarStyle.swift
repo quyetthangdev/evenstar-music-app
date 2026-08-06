@@ -70,6 +70,44 @@ enum BottomBarStyle {
     /// "snappier"; it was in fact the slower of the two.
     static let settle = Animation.spring(duration: 0.42, bounce: 0.14)
 
+    private static let settleDuration: Double = 0.42
+    private static let settleBounce: Double = 0.14
+
+    /// `settle`, but starting at the speed the finger was already moving.
+    ///
+    /// **This is the difference between a surface that was let go of and one
+    /// that was told where to be.** A plain spring always starts from rest, so a
+    /// violent flick and a gentle release produce animations identical to the
+    /// pixel — they differ in where they end up, never in how they get there,
+    /// and the moment of release has a visible discontinuity in speed. Handing
+    /// the gesture's own velocity to the spring removes that seam, and it is
+    /// what every system sheet does.
+    ///
+    /// `interpolatingSpring` rather than `spring`: only that family accepts an
+    /// initial velocity, and it is also velocity-preserving if it is retargeted
+    /// mid-flight, which is the right behaviour for a surface the user may grab
+    /// again before it has settled.
+    ///
+    /// - Parameter initialVelocity: in units of the *remaining* distance per
+    ///   second — 1 means "would arrive in one second at this speed". The caller
+    ///   converts, because only it knows the travel and how far is left.
+    static func settle(initialVelocity: Double) -> Animation {
+        .interpolatingSpring(
+            duration: settleDuration,
+            bounce: settleBounce,
+            initialVelocity: initialVelocity
+        )
+    }
+
+    /// The largest initial velocity worth handing to `settle(initialVelocity:)`.
+    ///
+    /// A hard flick released a few points from its destination divides a large
+    /// speed by a nearly-zero remaining distance, and the result is a spring
+    /// that shoots far past its target and swings back. The clamp is not a
+    /// fudge for that arithmetic — it is the same limit a real sheet has, which
+    /// is that past a certain speed the surface simply arrives.
+    static let maxSettleVelocity: Double = 18
+
     /// The collapsed player opening to full screen, and closing again.
     ///
     /// Separate from `settle`, and this distinction is real where the one it

@@ -1041,6 +1041,46 @@ struct PlayerCard: View {
 
     // MARK: - Gesture
 
+    /// The finger's speed at release, in the units
+    /// `BottomBarStyle.settle(initialVelocity:)` wants.
+    ///
+    /// Three conversions, and each one is a place this could be silently wrong:
+    ///
+    ///   1. **Sign.** `value.velocity.height` is positive downward, while
+    ///      `progress` grows as the card is dragged *up*. Miss the negation and
+    ///      every flick hands the spring a velocity pointing away from where the
+    ///      card is going, which reads as the card being knocked backwards
+    ///      before it recovers.
+    ///   2. **Points to progress.** Dividing by `travel` turns points per second
+    ///      into progress per second, the same conversion `onChanged` makes for
+    ///      the position.
+    ///   3. **Progress to remaining.** SwiftUI wants the velocity relative to
+    ///      the distance the animation still has to cover, not to the whole
+    ///      range — so it is divided again by what is left.
+    ///
+    /// Zero when there is nothing left to travel: dividing by that remainder is
+    /// undefined, and a spring with no distance to cover has no use for a speed.
+    ///
+    /// Takes the bare number rather than the `DragGesture.Value` it comes from.
+    /// That type has no public initialiser, so a function that took one could
+    /// not be tested at all — and the three conversions below are exactly the
+    /// kind that stay silently wrong.
+    ///
+    /// - Parameter verticalVelocity: points per second, positive downward, as
+    ///   `DragGesture.Value.velocity.height` reports it.
+    static func settleVelocity(
+        verticalVelocity: CGFloat,
+        travel: CGFloat,
+        from current: Double,
+        to target: Double
+    ) -> Double {
+        let remaining = target - current
+        guard abs(remaining) > 0.0001, travel > 0 else { return 0 }
+        let progressPerSecond = Double(-verticalVelocity / travel)
+        let relative = progressPerSecond / remaining
+        return min(max(relative, -BottomBarStyle.maxSettleVelocity), BottomBarStyle.maxSettleVelocity)
+    }
+
     private func drag(travel: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
@@ -1070,10 +1110,20 @@ struct PlayerCard: View {
                 // moved. Comparing raw distance is what makes hand-rolled
                 // sheets feel heavy.
                 let predicted = settled - value.predictedEndTranslation.height / travel
-                withAnimation(BottomBarStyle.settle) {
-                    settled = predicted > 0.5 ? 1 : 0
+                let target: Double = predicted > 0.5 ? 1 : 0
+                withAnimation(
+                    BottomBarStyle.settle(
+                        initialVelocity: Self.settleVelocity(
+                            verticalVelocity: value.velocity.height,
+                            travel: travel,
+                            from: progress,
+                            to: target
+                        )
+                    )
+                ) {
+                    settled = target
                     dragDelta = 0
-                    expansion.progress = settled
+                    expansion.progress = target
                 }
             }
     }
