@@ -66,8 +66,8 @@ struct PlayerCard: View {
     /// else. Any fixed number works — see the note at the placeholder in
     /// `artworkView` for why the glyph is drawn at a constant `.font(size:)`
     /// and scaled rather than sized directly. It is emphatically **not** the
-    /// expanded artwork's size any more; that is `artworkSide(fullSize:insets:)`
-    /// and it varies by device.
+    /// expanded artwork's size any more; that is
+    /// `artworkHeight(fullSize:)` and it varies by device.
     private static let placeholderGlyphBase: CGFloat = 280
     private static let expandedCornerRadius: CGFloat = 38
 
@@ -284,13 +284,11 @@ struct PlayerCard: View {
     /// been corrected for twice.
     ///
     /// Why the value is what the content actually gets: when the height term
-    /// of `artworkSide` binds, `artworkSide == fullSize.height - 440`, and
-    /// `expandedContent` offsets by `artworkSide + 40`. Those cancel, so the
-    /// region left below the artwork is exactly `440 - 40 = 400pt`, whatever
-    /// the device. When the *width* term binds instead — every phone in
-    /// portrait, now that the artwork is full-bleed — the region is larger than
-    /// that, never smaller, because the width term is the smaller of the two.
-    /// Against a ~380pt stack that leaves ~20pt at worst. Do not
+    /// of this used to bind, the region left below the artwork came to exactly
+    /// `440 - 40 = 400pt`. It is now that 400pt directly and unconditionally:
+    /// `contentOffset(fullSize:)` measures up from the card's bottom, so the
+    /// region is the same on every device and no longer depends on the artwork
+    /// at all. Against a ~380pt stack that leaves ~20pt. Do not
     /// read that as headroom: `NowPlayingContent` has no `.dynamicTypeSize`
     /// cap, so one step up in accessibility text grows the two `.title2` lines
     /// and the `.subheadline` beneath them by more than 20pt and clips the
@@ -322,38 +320,62 @@ struct PlayerCard: View {
     /// it — a stack that tall does not fit a screen that short. Landscape on
     /// every taller iPhone fits at 440.
     ///
-    /// `artworkSide` is deliberately allowed to go negative when this budget
-    /// exceeds `fullSize.height` (e.g. landscape on a compact device); see the
-    /// note on the negative case at the call sites in `expandedContent` and
-    /// `loadArtwork` — SwiftUI clamps a negative frame side to zero, but
-    /// `expandedContent`'s offset consumes that *signed* value directly, and
-    /// that is the only reason landscape still reserves its full content region
-    /// instead of being pushed down and clipped. Clamping it to zero at the
-    /// source (e.g. wrapping `artworkSide`'s `min(...)` in `max(0, …)`) would
-    /// leave the artwork looking unchanged while silently breaking landscape —
-    /// do not do that.
+    /// **This no longer bounds the artwork, and that is the change.** The two
+    /// regions overlap now: the controls are anchored to the bottom of the card
+    /// and the artwork reaches down behind them, dissolved to near-nothing by
+    /// the time it gets there. Before, the artwork stopped where this region
+    /// began, which is what held it to a square on every phone.
     private static let contentBudget: CGFloat = 440
 
-    /// Two terms now, where there were three plus a cap.
+    /// The gap between where the artwork's frame ends and where the content
+    /// starts, back when the two could not overlap. Kept as the amount the
+    /// content region is *smaller* than `contentBudget`, so the region below the
+    /// controls stays exactly the 400pt every measurement in that doc was taken
+    /// against.
+    private static let contentInset: CGFloat = 40
+
+    /// How tall the expanded artwork is, as a fraction of the card.
     ///
-    /// The artwork is full-bleed: it spans the card's whole width and starts at
-    /// the physical top edge, under the status bar. So the width term is the
-    /// width itself rather than `width - 48`, there is no top gap to subtract,
-    /// and the 280pt cap is gone — it was the binding term on every phone in
-    /// portrait and was what kept the artwork small on a large screen.
+    /// **Taller than it is wide, which means the cover is cropped left and
+    /// right.** That is a deliberate trade, chosen over the alternative:
+    /// a square full-bleed cover can only ever reach the card's *width* down the
+    /// screen — 46% on an iPhone 12 — and everything below that is background.
+    /// Reaching further down the screen requires a taller frame, and
+    /// `scaledToFill` pays for extra height by cropping width. At 0.59 a square
+    /// cover keeps 78% of its width.
     ///
-    /// What this buys, measured: iPhone 17 goes 280 -> 402 (+44%), a 4.7"
-    /// device goes ~135 -> ~207 (+53%). The small screen gains more, because a
-    /// fixed 48pt of side margin and 72pt of top gap are a larger share of it.
+    /// Not pushed further: at the 0.67 that would put the background in the
+    /// bottom third exactly, the cover keeps only 69% — enough to cut a face or
+    /// the artist's name off both sides of a typical sleeve.
+    private static let artworkHeightFraction: CGFloat = 0.59
+
+    /// The artwork's height. Its width is always the card's full width.
     ///
-    /// `contentBudget` is unchanged and still does the same job — see its own
-    /// doc for why it is a floor rather than a margin, and for the landscape
-    /// case where this whole expression goes negative on purpose.
-    private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
+    /// Clamped so that something of the card is always left below it. The
+    /// fraction alone is safe in portrait but not in landscape, where the card
+    /// is short and 59% of it can be less than the dissolve needs to work with.
+    private static func artworkHeight(fullSize: CGSize) -> CGFloat {
         min(
-            fullSize.width,
-            fullSize.height - Self.contentBudget
+            fullSize.height * Self.artworkHeightFraction,
+            max(fullSize.height - 120, 0)
         )
+    }
+
+    /// Where `NowPlayingContent` starts, measured from the card's top.
+    ///
+    /// **Anchored to the bottom of the card, not to the artwork.** It used to be
+    /// `artworkHeight + 40`, which was correct only while the artwork could not
+    /// reach the controls; with the two overlapping, that expression would push
+    /// the stack off the bottom. Measuring from the bottom also makes the
+    /// controls sit in the same place on every track and every device, which the
+    /// old form only did by coincidence of the artwork being square.
+    ///
+    /// Allowed to go negative on a card shorter than the content region — see
+    /// `contentBudget`'s note on landscape. The offset consumes the signed
+    /// value, which is what keeps a short screen reserving its full region
+    /// rather than being pushed down and clipped.
+    private static func contentOffset(fullSize: CGSize) -> CGFloat {
+        fullSize.height - (Self.contentBudget - Self.contentInset)
     }
 
     /// What has to change for the card to reload its artwork.
@@ -505,16 +527,16 @@ struct PlayerCard: View {
         let trailingMargin = collapsedTrailingMargin * (1 - progress)
         let cardWidth = fullWidth - leadingMargin - trailingMargin
         // The size everything laid out *inside* the card measures against.
-        // Note this is deliberately NOT what `artworkSide` below is given —
+        // Note this is deliberately NOT what `artworkHeight` below is given —
         // see the comment there.
         let cardSize = CGSize(width: cardWidth, height: fullHeight)
         // `fullSize`, never `cardSize`: this is the artwork's *expanded*
         // target side, which must not vary with `progress`. Feeding it the
         // interpolating `cardWidth` would make the artwork pulse through the
         // morph, and `loadArtwork` computes its decode target by calling
-        // `artworkSide(fullSize:insets:)` from its own geometry — the two must
+        // `artworkHeight(fullSize:)` from its own geometry — the two must
         // agree or the decoded image no longer matches what is drawn.
-        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
+        let artworkHeight = Self.artworkHeight(fullSize: fullSize)
         // Distinct from `travel` above: that one sizes the frame so it
         // still reaches exactly `fullHeight` at progress 1. This one is
         // only the pixel-to-progress divisor for the gesture below. The
@@ -576,8 +598,8 @@ struct PlayerCard: View {
         return ZStack(alignment: .topLeading) {
             background
             miniChrome(width: cardWidth)
-            expandedContent(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
-            artworkView(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
+            expandedContent(size: cardSize)
+            artworkView(size: cardSize, artworkHeight: artworkHeight)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
@@ -898,21 +920,27 @@ struct PlayerCard: View {
             .allowsHitTesting(progress < 0.1)
     }
 
-    private func expandedContent(size: CGSize, topInset: CGFloat, artworkSide: CGFloat) -> some View {
+    private func expandedContent(size: CGSize) -> some View {
         NowPlayingContent(playback: playback)
             .padding(.horizontal, 24)
             .frame(width: size.width)
-            // No `topInset` term any more: the artwork starts at the physical
-            // top edge, under the status bar, so the content below it is
-            // measured from the artwork's own bottom and nothing else.
-            .offset(y: artworkSide + 40)
+            // Measured from the card's bottom, not from the artwork — see
+            // `contentOffset(fullSize:)`. The artwork reaches down behind this,
+            // dissolved to almost nothing by the time it arrives.
+            .offset(y: Self.contentOffset(fullSize: size))
             .opacity(max(0, (progress - 0.5) * 2))
             .allowsHitTesting(progress > 0.9)
     }
 
-    private func artworkView(size: CGSize, topInset: CGFloat, artworkSide: CGFloat) -> some View {
-        let side = Self.collapsedArtwork
-            + (artworkSide - Self.collapsedArtwork) * progress
+    private func artworkView(size: CGSize, artworkHeight: CGFloat) -> some View {
+        // Width and height interpolate separately now that the expanded artwork
+        // is not square. Collapsed it still is: both start at
+        // `collapsedArtwork`, so the pill's thumbnail is unchanged and only the
+        // destination differs.
+        let width = Self.collapsedArtwork
+            + (size.width - Self.collapsedArtwork) * progress
+        let height = Self.collapsedArtwork
+            + (artworkHeight - Self.collapsedArtwork) * progress
         let collapsedCentre = CGPoint(
             x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
             y: Self.collapsedHeight / 2
@@ -922,7 +950,7 @@ struct PlayerCard: View {
         // drawn over it, in white — see `preferredColorScheme` on the body.
         let expandedCentre = CGPoint(
             x: size.width / 2,
-            y: artworkSide / 2
+            y: artworkHeight / 2
         )
         let centre = CGPoint(
             x: collapsedCentre.x + (expandedCentre.x - collapsedCentre.x) * progress,
@@ -947,11 +975,11 @@ struct PlayerCard: View {
                     Image(systemName: "music.note")
                         .font(.system(size: Self.placeholderGlyphBase * 0.5))
                         .foregroundStyle(.secondary)
-                        .scaleEffect(side / Self.placeholderGlyphBase)
+                        .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
                 }
             }
         }
-        .frame(width: side, height: side)
+        .frame(width: width, height: height)
         // Dissolves the artwork's bottom edge into the background colour
         // beneath it as the card opens.
         //
@@ -994,7 +1022,7 @@ struct PlayerCard: View {
         // full-bleed, and a rounded corner floating against the screen's own
         // rounded corner reads as a mistake. The card's `clipShape` supplies
         // the top corners at that point.
-        .clipShape(RoundedRectangle(cornerRadius: side * 0.12 * (1 - progress)))
+        .clipShape(RoundedRectangle(cornerRadius: width * 0.12 * (1 - progress)))
         // Constant, for the same reason the card's own shadow is constant —
         // see the note at `.floatingBarShadow()` above. This was
         // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
@@ -1082,12 +1110,12 @@ struct PlayerCard: View {
             width: safeAreaSize.width + insets.leading + insets.trailing,
             height: safeAreaSize.height + insets.top + insets.bottom
         )
-        let artworkSide = Self.artworkSide(fullSize: fullSize, insets: insets)
+        let artworkHeight = Self.artworkHeight(fullSize: fullSize)
 
         let path = playback.currentTrack?.artworkRelativePath
         async let image = ArtworkStore.image(
             for: path,
-            maxPixel: artworkSide * UIScreen.main.scale
+            maxPixel: max(fullSize.width, artworkHeight) * UIScreen.main.scale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         // Concurrently with the other two, not after them: all three read the
