@@ -78,7 +78,44 @@ struct PlayerCard: View {
     /// across the screen would read as a seam. Its bottom is therefore masked
     /// away into the drifting field of its own colours beneath it, so nothing
     /// about the transition is a boundary the eye can find.
-    private static let artworkFadeFraction: Double = 0.30
+    ///
+    /// 0.42 rather than 0.30: at 0.30 the dissolve finished well clear of the
+    /// title, so the eye had a band of pure background to compare against and
+    /// the cover looked cut off above it rather than dissolved into it. Ending
+    /// near the title leaves nothing in between for the comparison.
+    private static let artworkFadeFraction: Double = 0.42
+
+    /// The dissolve's alpha ramp, eased rather than linear.
+    ///
+    /// **The shape matters more than the length.** A two-stop gradient is a
+    /// straight line in alpha, and a straight line has corners at both ends: the
+    /// rate of change jumps from nothing to constant where it starts, and back
+    /// to nothing where it finishes. Those two corners are exactly what the eye
+    /// picks up as edges — the same first-derivative discontinuity that put the
+    /// crease above the title, one layer further in. Lengthening a linear ramp
+    /// moves the corners apart; it does not remove them.
+    ///
+    /// These five stops sample smoothstep, `t² · (3 − 2t)`, whose slope is zero
+    /// at both ends. The dissolve now begins and finishes without announcing
+    /// either.
+    ///
+    /// Five and not more: `LinearGradient` interpolates linearly between stops,
+    /// so each pair is still a straight segment and what this really builds is a
+    /// polyline. Five points put the residual corners at slope changes small
+    /// enough to be invisible, and every extra stop past that costs a little and
+    /// buys nothing measurable.
+    private static func dissolveStops(progress: Double) -> [Gradient.Stop] {
+        let span = Self.artworkFadeFraction * progress
+        let start = 1 - span
+        return (0...4).map { step in
+            let t = Double(step) / 4
+            let eased = t * t * (3 - 2 * t)
+            return Gradient.Stop(
+                color: .white.opacity(1 - eased),
+                location: start + span * t
+            )
+        }
+    }
 
     /// Where the frosted layer in `background` stops being rendered at all.
     ///
@@ -943,18 +980,12 @@ struct PlayerCard: View {
         // crease. If it ever measures badly, the answer is to stop compositing
         // this per frame — not to go back to painting over it.
         //
-        // Both stops collapse to location 1 at progress 0, making the whole
+        // Every stop collapses to location 1 at progress 0, making the whole
         // mask opaque white — so the collapsed pill's thumbnail is untouched,
         // with no view inserted or removed mid-morph to pop.
         .mask(
             LinearGradient(
-                stops: [
-                    .init(
-                        color: .white,
-                        location: 1 - Self.artworkFadeFraction * progress
-                    ),
-                    .init(color: .white.opacity(0), location: 1)
-                ],
+                stops: Self.dissolveStops(progress: progress),
                 startPoint: .top,
                 endPoint: .bottom
             )
