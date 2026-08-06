@@ -428,31 +428,6 @@ struct PlayerCard: View {
         // without this a screen reader can still reach the "—" title, the
         // scrubber and the transport buttons of a card no one can see. See F4.
         .accessibilityHidden(playback.currentTrack == nil)
-        // The expanded player is a dark screen whatever the phone is set to.
-        //
-        // This is the only thing in SwiftUI that turns the status bar's clock
-        // and battery white, and they need to be white because the artwork now
-        // runs underneath them. The alternative that shipped first — a
-        // translucent scrim biased toward the scheme's background colour —
-        // worked, but it washed the top of a dark cover to grey, which is the
-        // one part of the picture the design is built around.
-        //
-        // It also matches the reference the layout came from: Apple Music's Now
-        // Playing screen is dark-styled in both light and dark mode, because
-        // the backdrop is the artwork rather than the system background.
-        //
-        // **Threshold at 0.5, not at the point the card actually covers the
-        // status bar (~0.92 on a 874pt screen).** Later is where the status bar
-        // wants it, but the card's own colours flip with the same modifier, and
-        // at 0.92 the title and artist are at 83% opacity — the text would
-        // visibly change colour just before the card settled. At 0.5
-        // `expandedContent`'s opacity is exactly 0, so nothing of the card's is
-        // on screen to be seen changing. The cost is the reverse: for the back
-        // half of the animation the white clock sits over the still-visible
-        // library. In dark mode that is invisible; in light mode it is about
-        // two tenths of a second, against a text colour change landing on a
-        // settled screen. The brief one wins.
-        .preferredColorScheme(progress > 0.5 ? .dark : nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
@@ -848,7 +823,7 @@ struct PlayerCard: View {
             //
             // Needed now that the background is the cover rather than a colour
             // this view chose: a pale cover would otherwise put white text — the
-            // card forces dark styling, see `preferredColorScheme` — on a pale
+            // card forces dark styling, see `PlayerChromeScheme` — on a pale
             // field. The first build anchored this at `.center`, which measured
             // wrong: the title sits *above* the card's midpoint, so it got no
             // darkening at all and sat white on bright green.
@@ -947,7 +922,8 @@ struct PlayerCard: View {
         )
         // Flush with the card's top edge: the artwork's centre sits exactly
         // half its own height down, with no safe-area term. The status bar is
-        // drawn over it, in white — see `preferredColorScheme` on the body.
+        // drawn over it, in white — see `PlayerChromeScheme`, which forces the
+        // whole window dark while the card is open.
         let expandedCentre = CGPoint(
             x: size.width / 2,
             y: artworkHeight / 2

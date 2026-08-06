@@ -58,6 +58,10 @@ struct RootView: View {
     /// rather than less, which no one can see at the top of a list.
     @State private var bottomSafeAreaInset: CGFloat = 0
 
+    /// The user's appearance override, or `.system` for none. Edited in
+    /// `AccountView`; both read the one key on `AppTheme`.
+    @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
+
     /// Whether minimised styling should actually apply, as opposed to what
     /// `isMinimised` merely holds.
     ///
@@ -281,6 +285,10 @@ struct RootView: View {
                 // not, and the animation must key on what the card receives.
                 .animation(BottomBarStyle.morph, value: isMinimisedActive)
         }
+        // The user's appearance override and the expanded player's forced dark,
+        // resolved in one place because `preferredColorScheme` does not
+        // compose — see `PlayerChromeScheme`.
+        .playerChromeScheme(expansion, theme: theme)
         // Restoring the saved queue is an app-launch concern, so it belongs on
         // the root and not on any one tab. On Bài hát it would work only by
         // accident of that tab being selected first, and would silently stop
