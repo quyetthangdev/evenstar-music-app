@@ -123,6 +123,32 @@ enum ArtworkStore {
         "\(relativePath)@\(Int(maxPixel))" as NSString
     }
 
+    /// A blurred field of the artwork's own colours, for the expanded player's
+    /// background.
+    ///
+    /// **There is no blur pass here, and there must not be one.** This decodes
+    /// the cover at 24 pixels on its long edge and hands that back; drawn across
+    /// a whole phone screen with high-quality interpolation, a 24px image *is*
+    /// a blur — the scaler does the smoothing, once, on the GPU, as part of a
+    /// draw that was happening anyway. A real `.blur(radius:)` over the same
+    /// area would be recomputed on every frame of the expand drag, for a result
+    /// no one could tell apart.
+    ///
+    /// 24 rather than 10 (which `dominantColor` uses): at 10 the upscaled field
+    /// is so coarse that the card reads as four flat quadrants, and rather than
+    /// following the picture it looks like a bug. At 24 it keeps the cover's
+    /// broad shapes — a bright sky above a dark ground stays a bright band above
+    /// a dark one — which is the whole point of using the image instead of one
+    /// averaged colour.
+    @concurrent
+    static func backdrop(for relativePath: String?) async -> UIImage? {
+        await image(for: relativePath, maxPixel: backdropMaxPixel)
+    }
+
+    /// See `backdrop(for:)`. Small enough that the upscale blurs it, large
+    /// enough to keep the cover's layout.
+    private static let backdropMaxPixel: CGFloat = 24
+
     /// The average colour of the artwork, used to tint the expanded player's
     /// background. Derived from a 10px decode, so it costs almost nothing.
     @concurrent

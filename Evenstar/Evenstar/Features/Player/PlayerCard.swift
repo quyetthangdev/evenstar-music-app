@@ -75,10 +75,9 @@ struct PlayerCard: View {
     /// beneath it, at full expansion.
     ///
     /// The artwork is full-bleed, so it has to end *somewhere*; a hard edge
-    /// across the screen would read as a seam. Fading its bottom into the same
-    /// colour the background holds there removes the edge entirely — which is
-    /// what the reference design does, and why `ArtworkStore.dominantColor`
-    /// already exists.
+    /// across the screen would read as a seam. Its bottom is therefore masked
+    /// away into the blurred backdrop beneath it — same picture, out of focus —
+    /// so nothing about the transition is a boundary the eye can find.
     private static let artworkFadeFraction: Double = 0.30
 
     /// Where the frosted layer in `background` stops being rendered at all.
@@ -103,6 +102,9 @@ struct PlayerCard: View {
 
     @State private var artwork: UIImage?
     @State private var tint: Color?
+    /// The cover at 24px, drawn across the whole card as the expanded
+    /// background. See `ArtworkStore.backdrop(for:)`.
+    @State private var backdrop: UIImage?
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
@@ -535,9 +537,7 @@ struct PlayerCard: View {
         )
 
         return ZStack(alignment: .topLeading) {
-            background(
-                tintHold: Self.tintHold(artworkSide: artworkSide, fullHeight: fullHeight)
-            )
+            background
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
             artworkView(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
@@ -725,7 +725,7 @@ struct PlayerCard: View {
 
     // MARK: - Pieces
 
-    private func background(tintHold: Double) -> some View {
+    private var background: some View {
         ZStack {
             // Opaque base: the two layers above cross-fade via opacity, which
             // composites rather than sums, so without this the card is
@@ -754,19 +754,77 @@ struct PlayerCard: View {
                     .fill(.thinMaterial)
                     .opacity(1 - progress)
             }
-            // Three stops, not two. The tint is held FLAT from the top down to
-            // `backgroundTintHold` before it starts blending away, and that
-            // hold is what lets the artwork's bottom fade land on a colour
-            // identical to the one beside it — see the overlay in
-            // `artworkView`. With the old two-stop gradient the colour at the
-            // artwork's bottom edge was already part-way to the neutral
-            // background, so anything painted there in flat `tintColour` would
-            // have left a visible band.
+            // The cover's own colours, blurred, filling the whole card.
+            //
+            // This replaced a flat `tintColour` held down the card and blended
+            // away below the artwork, and it is what finally removed the crease
+            // above the title. That crease was never a colour mismatch — both
+            // sides of the artwork's bottom edge were the same colour. It was a
+            // mismatch in *slope*: above the edge the colour was constant, and
+            // below it the gradient started moving immediately. The eye reads a
+            // discontinuity in the first derivative as a line (a Mach band),
+            // and no amount of matching the colours themselves removes it.
+            //
+            // A field that varies continuously through the seam has no slope to
+            // break. It is also simply what the reference design does: the
+            // background under the controls is the cover, out of focus, not one
+            // averaged colour.
+            //
+            // `.interpolation(.high)` is load-bearing — see
+            // `ArtworkStore.backdrop(for:)`. The source is 24px, and the whole
+            // blur is the scaler smoothing it up to full screen; at the default
+            // interpolation the same image draws as visible squares.
+            if let backdrop {
+                Color.clear
+                    .overlay {
+                        Image(uiImage: backdrop)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFill()
+                    }
+                    .clipped()
+                    .opacity(progress)
+            } else {
+                // No cover to take colours from. The averaged tint is all there
+                // is, and with nothing to be continuous *with* the old flat
+                // gradient is exactly right here.
+                LinearGradient(
+                    colors: [tintColour, Color(.systemGroupedBackground)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .opacity(progress)
+            }
+            // Darkens everything below the artwork so the controls stay
+            // readable.
+            //
+            // Needed now that the backdrop is the cover rather than a colour
+            // this view chose: a pale cover would otherwise put white text — the
+            // card forces dark styling, see `preferredColorScheme` — on a pale
+            // field. The first build anchored this at `.center`, which measured
+            // wrong: the title sits *above* the card's midpoint, so it got no
+            // darkening at all and sat white on bright green.
+            //
+            // Starts at 0.42 — just above where the artwork ends on a phone in
+            // portrait — so the ramp is already underway by the time the title
+            // arrives. Beginning it inside the artwork rather than at its edge
+            // is deliberate: a ramp that starts exactly where the artwork stops
+            // puts a slope change at the same line the mask is dissolving, and
+            // that is how the crease got there in the first place. Up here the
+            // alpha is still near zero, so the change of slope has nothing to
+            // show.
+            // Three stops, because two were not enough where it mattered. A
+            // straight ramp from 0.42 to 0.5 black at the bottom is still under
+            // 8% black at 0.50, which is where the title sits — measured off a
+            // screenshot, the title looked no different with the ramp than
+            // without it. The middle stop front-loads the darkening so the
+            // controls get most of it, and the tail keeps going for the volume
+            // and repeat rows below.
             LinearGradient(
                 stops: [
-                    .init(color: tintColour, location: 0),
-                    .init(color: tintColour, location: tintHold),
-                    .init(color: Color(.systemGroupedBackground), location: 1)
+                    .init(color: .clear, location: 0.38),
+                    .init(color: .black.opacity(0.35), location: 0.56),
+                    .init(color: .black.opacity(0.6), location: 1)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -778,27 +836,10 @@ struct PlayerCard: View {
     /// The artwork's average colour, or the plain background when there is no
     /// artwork to take one from.
     ///
-    /// Read by both the background gradient and the artwork's bottom fade. One
-    /// property rather than `tint ?? Color(.systemGroupedBackground)` written
-    /// twice: the two must be the same colour or the seam they are hiding
-    /// becomes visible, and a fallback restated in two places is a fallback
-    /// that will eventually differ in one.
+    /// Only reached when there is no cover at all; with one, the background is
+    /// the blurred cover itself and no averaged colour is involved.
     private var tintColour: Color {
         tint ?? Color(.systemGroupedBackground)
-    }
-
-    /// How far down the card the background holds `tintColour` flat, as a
-    /// fraction of its height.
-    ///
-    /// Must be at or below where the artwork ends, or the fade has nothing
-    /// matching to land on. Derived from the geometry rather than hardcoded, so
-    /// it cannot drift when `contentBudget` or the artwork sizing changes.
-    /// Clamped at the top end because a card shorter than its own artwork
-    /// (landscape, where `artworkSide` can exceed the height) would otherwise
-    /// ask for a stop beyond 1.
-    private static func tintHold(artworkSide: CGFloat, fullHeight: CGFloat) -> Double {
-        guard fullHeight > 0 else { return 0.55 }
-        return min(0.95, max(0, Double(artworkSide / fullHeight)))
     }
 
     /// Hints that the expanded card can be dragged away, the way the
@@ -897,28 +938,33 @@ struct PlayerCard: View {
         // the seam: `background` holds `tintColour` flat down to
         // `backgroundTintHold`, which is below where the artwork ends.
         //
-        // Both stops collapse to location 1 at progress 0, which makes the
-        // whole gradient the first stop's transparent tint — so the collapsed
-        // pill's thumbnail is untouched, with no view inserted or removed
-        // mid-morph to pop.
+        // A mask, so the artwork genuinely becomes transparent at its bottom
+        // and the blurred backdrop shows through.
         //
-        // The transparent end is `tintColour.opacity(0)`, NOT `.clear`, and the
-        // difference is visible. `.clear` is *black* at zero alpha, so a
-        // gradient running from it to an opaque colour interpolates through
-        // partly-transparent black: the fade darkens and greys before it
-        // arrives at the tint, then meets the background's flat tint at the
-        // artwork's edge. The result was a dirty band with a crease along its
-        // bottom — the fold visible above the title in the first build of this
-        // layout. Fading a colour to its own zero-alpha keeps the hue constant
-        // and varies only alpha, which is what "fade out" is supposed to mean.
-        .overlay(
+        // This was an overlay painting flat `tintColour`, chosen because an
+        // overlay costs nothing while a mask forces an offscreen pass. That
+        // reasoning held only while the thing underneath was a single colour a
+        // vertical gradient could reproduce. The backdrop now varies
+        // horizontally as well, and no vertical gradient can match it — an
+        // overlay would paint a uniform band across a field that is not
+        // uniform, and put back a visible edge on the other side of the seam.
+        //
+        // The cost is real and accepted: one offscreen pass over the artwork
+        // per frame during the drag. It buys the only thing that removes the
+        // crease. If it ever measures badly, the answer is to stop compositing
+        // this per frame — not to go back to painting over it.
+        //
+        // Both stops collapse to location 1 at progress 0, making the whole
+        // mask opaque white — so the collapsed pill's thumbnail is untouched,
+        // with no view inserted or removed mid-morph to pop.
+        .mask(
             LinearGradient(
                 stops: [
                     .init(
-                        color: tintColour.opacity(0),
+                        color: .white,
                         location: 1 - Self.artworkFadeFraction * progress
                     ),
-                    .init(color: tintColour, location: 1)
+                    .init(color: .white.opacity(0), location: 1)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -1024,10 +1070,15 @@ struct PlayerCard: View {
             maxPixel: artworkSide * UIScreen.main.scale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
-        let (loadedImage, loadedColour) = await (image, colour)
+        // Concurrently with the other two, not after them: all three read the
+        // same cached decode chain, and the backdrop is the cheapest of the
+        // three by a wide margin — 24px against the full artwork side.
+        async let blurred = ArtworkStore.backdrop(for: path)
+        let (loadedImage, loadedColour, loadedBackdrop) = await (image, colour, blurred)
 
         guard playback.currentTrack?.artworkRelativePath == path else { return }
         artwork = loadedImage
         tint = loadedColour
+        backdrop = loadedBackdrop
     }
 }
