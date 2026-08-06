@@ -62,10 +62,24 @@ struct PlayerCard: View {
     private static let collapsedArtworkInset: CGFloat = 18
     /// Between the collapsed artwork's trailing edge and the title.
     private static let collapsedArtworkGap: CGFloat = 10
-    private static let expandedArtwork: CGFloat = 280
+    /// Reference size for the placeholder glyph's `.scaleEffect`, and nothing
+    /// else. Any fixed number works — see the note at the placeholder in
+    /// `artworkView` for why the glyph is drawn at a constant `.font(size:)`
+    /// and scaled rather than sized directly. It is emphatically **not** the
+    /// expanded artwork's size any more; that is `artworkSide(fullSize:insets:)`
+    /// and it varies by device.
+    private static let placeholderGlyphBase: CGFloat = 280
     private static let expandedCornerRadius: CGFloat = 38
-    /// Gap between the top safe area and the expanded artwork.
-    private static let expandedArtworkTopGap: CGFloat = 72
+
+    /// How much of the artwork's own height dissolves into the background
+    /// beneath it, at full expansion.
+    ///
+    /// The artwork is full-bleed, so it has to end *somewhere*; a hard edge
+    /// across the screen would read as a seam. Fading its bottom into the same
+    /// colour the background holds there removes the edge entirely — which is
+    /// what the reference design does, and why `ArtworkStore.dominantColor`
+    /// already exists.
+    private static let artworkFadeFraction: Double = 0.30
 
     /// Where the frosted layer in `background` stops being rendered at all.
     ///
@@ -177,15 +191,15 @@ struct PlayerCard: View {
     // second, and the "snappier" one was the slower. The distinction was not
     // real, so there is now one spring.
 
-    /// The expanded artwork's actual side, derived from the space available
-    /// rather than trusting the `expandedArtwork` constant blindly.
+    /// The height reserved below the artwork for everything
+    /// `NowPlayingContent` stacks there. The artwork gets what is left.
     ///
-    /// The constant alone put the title/scrubber/transport row below the
-    /// card's own bottom edge in landscape on an iPhone 12 — `expandedContent`
-    /// offset the content by a fixed `expandedArtworkTopGap + expandedArtwork
-    /// + 40`, which exceeded the card's full landscape height, so everything
-    /// below the artwork was clipped away and the expanded player had no
-    /// controls at all. See F2.
+    /// This is what makes the artwork's size derived from the space available
+    /// rather than fixed. A fixed size alone put the title/scrubber/transport
+    /// row below the card's own bottom edge in landscape on an iPhone 12 —
+    /// `expandedContent` offset the content by a constant that exceeded the
+    /// card's full landscape height, so everything below the artwork was
+    /// clipped away and the expanded player had no controls at all. See F2.
     ///
     /// `440` is a rough allowance for everything `NowPlayingContent` stacks
     /// below the artwork — a starting point, like the other constants here, not
@@ -231,11 +245,13 @@ struct PlayerCard: View {
     /// been corrected for twice.
     ///
     /// Why the value is what the content actually gets: when the height term
-    /// below binds, `artworkSide == fullSize.height - insets.top -
-    /// expandedArtworkTopGap - 440`, and `expandedContent` offsets by
-    /// `insets.top + expandedArtworkTopGap + artworkSide + 40`. Those cancel,
-    /// so the region left below the artwork is exactly `440 - 40 = 400pt`,
-    /// whatever the device. Against a ~380pt stack that leaves ~20pt. Do not
+    /// of `artworkSide` binds, `artworkSide == fullSize.height - 440`, and
+    /// `expandedContent` offsets by `artworkSide + 40`. Those cancel, so the
+    /// region left below the artwork is exactly `440 - 40 = 400pt`, whatever
+    /// the device. When the *width* term binds instead — every phone in
+    /// portrait, now that the artwork is full-bleed — the region is larger than
+    /// that, never smaller, because the width term is the smaller of the two.
+    /// Against a ~380pt stack that leaves ~20pt at worst. Do not
     /// read that as headroom: `NowPlayingContent` has no `.dynamicTypeSize`
     /// cap, so one step up in accessibility text grows the two `.title2` lines
     /// and the `.subheadline` beneath them by more than 20pt and clips the
@@ -267,21 +283,37 @@ struct PlayerCard: View {
     /// it — a stack that tall does not fit a screen that short. Landscape on
     /// every taller iPhone fits at 440.
     ///
-    /// This value is deliberately allowed to go negative for tall constants
-    /// against a short `fullSize.height` (e.g. landscape on a compact
-    /// device); see the note on the negative case at the call sites in
-    /// `expandedContent` and `loadArtwork` — SwiftUI clamps a negative frame
-    /// side to zero, but `expandedContent`'s offset consumes this *signed*
-    /// value directly, and that is the only reason landscape still reserves
-    /// its full content region instead of being pushed down and clipped.
-    /// Clamping this to zero at the source (e.g. wrapping the `min(...)` in
-    /// `max(0, …)`) would leave the artwork looking unchanged while silently
-    /// breaking landscape — do not do that.
+    /// `artworkSide` is deliberately allowed to go negative when this budget
+    /// exceeds `fullSize.height` (e.g. landscape on a compact device); see the
+    /// note on the negative case at the call sites in `expandedContent` and
+    /// `loadArtwork` — SwiftUI clamps a negative frame side to zero, but
+    /// `expandedContent`'s offset consumes that *signed* value directly, and
+    /// that is the only reason landscape still reserves its full content region
+    /// instead of being pushed down and clipped. Clamping it to zero at the
+    /// source (e.g. wrapping `artworkSide`'s `min(...)` in `max(0, …)`) would
+    /// leave the artwork looking unchanged while silently breaking landscape —
+    /// do not do that.
+    private static let contentBudget: CGFloat = 440
+
+    /// Two terms now, where there were three plus a cap.
+    ///
+    /// The artwork is full-bleed: it spans the card's whole width and starts at
+    /// the physical top edge, under the status bar. So the width term is the
+    /// width itself rather than `width - 48`, there is no top gap to subtract,
+    /// and the 280pt cap is gone — it was the binding term on every phone in
+    /// portrait and was what kept the artwork small on a large screen.
+    ///
+    /// What this buys, measured: iPhone 17 goes 280 -> 402 (+44%), a 4.7"
+    /// device goes ~135 -> ~207 (+53%). The small screen gains more, because a
+    /// fixed 48pt of side margin and 72pt of top gap are a larger share of it.
+    ///
+    /// `contentBudget` is unchanged and still does the same job — see its own
+    /// doc for why it is a floor rather than a margin, and for the landscape
+    /// case where this whole expression goes negative on purpose.
     private static func artworkSide(fullSize: CGSize, insets: EdgeInsets) -> CGFloat {
         min(
-            Self.expandedArtwork,
-            fullSize.height - insets.top - Self.expandedArtworkTopGap - 440,
-            fullSize.width - 48
+            fullSize.width,
+            fullSize.height - Self.contentBudget
         )
     }
 
@@ -453,10 +485,14 @@ struct PlayerCard: View {
         )
 
         return ZStack(alignment: .topLeading) {
-            background
+            background(
+                tintHold: Self.tintHold(artworkSide: artworkSide, fullHeight: fullHeight)
+            )
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
             artworkView(size: cardSize, topInset: insets.top, artworkSide: artworkSide)
+            // After the artwork, because it exists to sit on top of it.
+            topScrim(topInset: insets.top)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
@@ -641,7 +677,7 @@ struct PlayerCard: View {
 
     // MARK: - Pieces
 
-    private var background: some View {
+    private func background(tintHold: Double) -> some View {
         ZStack {
             // Opaque base: the two layers above cross-fade via opacity, which
             // composites rather than sums, so without this the card is
@@ -670,13 +706,90 @@ struct PlayerCard: View {
                     .fill(.thinMaterial)
                     .opacity(1 - progress)
             }
+            // Three stops, not two. The tint is held FLAT from the top down to
+            // `backgroundTintHold` before it starts blending away, and that
+            // hold is what lets the artwork's bottom fade land on a colour
+            // identical to the one beside it — see the overlay in
+            // `artworkView`. With the old two-stop gradient the colour at the
+            // artwork's bottom edge was already part-way to the neutral
+            // background, so anything painted there in flat `tintColour` would
+            // have left a visible band.
             LinearGradient(
-                colors: [tint ?? Color(.systemGroupedBackground), Color(.systemGroupedBackground)],
+                stops: [
+                    .init(color: tintColour, location: 0),
+                    .init(color: tintColour, location: tintHold),
+                    .init(color: Color(.systemGroupedBackground), location: 1)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .opacity(progress)
         }
+    }
+
+    /// The artwork's average colour, or the plain background when there is no
+    /// artwork to take one from.
+    ///
+    /// Read by both the background gradient and the artwork's bottom fade. One
+    /// property rather than `tint ?? Color(.systemGroupedBackground)` written
+    /// twice: the two must be the same colour or the seam they are hiding
+    /// becomes visible, and a fallback restated in two places is a fallback
+    /// that will eventually differ in one.
+    private var tintColour: Color {
+        tint ?? Color(.systemGroupedBackground)
+    }
+
+    /// How far down the card the background holds `tintColour` flat, as a
+    /// fraction of its height.
+    ///
+    /// Must be at or below where the artwork ends, or the fade has nothing
+    /// matching to land on. Derived from the geometry rather than hardcoded, so
+    /// it cannot drift when `contentBudget` or the artwork sizing changes.
+    /// Clamped at the top end because a card shorter than its own artwork
+    /// (landscape, where `artworkSide` can exceed the height) would otherwise
+    /// ask for a stop beyond 1.
+    private static func tintHold(artworkSide: CGFloat, fullHeight: CGFloat) -> Double {
+        guard fullHeight > 0 else { return 0.55 }
+        return min(0.95, max(0, Double(artworkSide / fullHeight)))
+    }
+
+    /// Keeps the status bar legible now that the artwork runs underneath it.
+    ///
+    /// The clock and the battery are drawn by the system in the current colour
+    /// scheme's foreground colour, and nothing in SwiftUI lets this view
+    /// override that for a plain overlay — `preferredColorScheme` would work
+    /// only by forcing the scheme for the whole card, changing every other
+    /// colour in it. So instead of fighting the text, this biases what is
+    /// behind it back toward the scheme's own background: white-ish in light
+    /// mode, near-black in dark. Whatever the artwork is, the strip under the
+    /// status bar is pulled toward the colour the system already assumed when
+    /// it chose the text colour.
+    ///
+    /// `systemBackground`, not a literal black: a fixed dark scrim is right in
+    /// dark mode and actively wrong in light, where it would put dark text on a
+    /// darkened image — worse than no scrim at all.
+    ///
+    /// Fades in with `progress`, so the collapsed pill — which is nowhere near
+    /// the status bar — is untouched.
+    private func topScrim(topInset: CGFloat) -> some View {
+        LinearGradient(
+            colors: [Color(.systemBackground).opacity(0.38), .clear],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        // Well past the inset, not level with it. A gradient that ends near
+        // where the status bar does leaves a discernible horizontal edge along
+        // its baseline — visible in the first screenshot of this layout at
+        // `topInset + 28` and 0.55 opacity, reading as a hazy band laid over
+        // the top of the artwork rather than as shading. Weaker, spread over
+        // more than twice the distance, is the same protection with no edge to
+        // see: what matters for legibility is the value directly behind the
+        // glyphs, and that is set by the first stop, not by how far the tail
+        // runs.
+        .frame(height: topInset + 72)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .opacity(progress)
+        .allowsHitTesting(false)
     }
 
     /// Hints that the expanded card can be dragged away, the way the
@@ -713,7 +826,10 @@ struct PlayerCard: View {
         NowPlayingContent(playback: playback)
             .padding(.horizontal, 24)
             .frame(width: size.width)
-            .offset(y: topInset + Self.expandedArtworkTopGap + artworkSide + 40)
+            // No `topInset` term any more: the artwork starts at the physical
+            // top edge, under the status bar, so the content below it is
+            // measured from the artwork's own bottom and nothing else.
+            .offset(y: artworkSide + 40)
             .opacity(max(0, (progress - 0.5) * 2))
             .allowsHitTesting(progress > 0.9)
     }
@@ -725,9 +841,12 @@ struct PlayerCard: View {
             x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
             y: Self.collapsedHeight / 2
         )
+        // Flush with the card's top edge: the artwork's centre sits exactly
+        // half its own height down, with no safe-area term. The status bar is
+        // drawn over it — see `topScrim`, which is what keeps it legible.
         let expandedCentre = CGPoint(
             x: size.width / 2,
-            y: topInset + Self.expandedArtworkTopGap + artworkSide / 2
+            y: artworkSide / 2
         )
         let centre = CGPoint(
             x: collapsedCentre.x + (expandedCentre.x - collapsedCentre.x) * progress,
@@ -745,19 +864,49 @@ struct PlayerCard: View {
                     // `.font(size:)` isn't animatable, so during the expand
                     // spring the glyph would otherwise jump to its final size
                     // immediately while the surrounding frame is still
-                    // interpolating 40 -> 280. Render it at a fixed base size
-                    // and use `.scaleEffect`, which does animate, to track
-                    // `side` continuously. Ratio matches ArtworkThumbnail's
+                    // interpolating. Render it at a fixed base size and use
+                    // `.scaleEffect`, which does animate, to track `side`
+                    // continuously. Ratio matches ArtworkThumbnail's
                     // placeholder (size * 0.5). See F6.
                     Image(systemName: "music.note")
-                        .font(.system(size: Self.expandedArtwork * 0.5))
+                        .font(.system(size: Self.placeholderGlyphBase * 0.5))
                         .foregroundStyle(.secondary)
-                        .scaleEffect(side / Self.expandedArtwork)
+                        .scaleEffect(side / Self.placeholderGlyphBase)
                 }
             }
         }
         .frame(width: side, height: side)
-        .clipShape(RoundedRectangle(cornerRadius: side * 0.12))
+        // Dissolves the artwork's bottom edge into the background colour
+        // beneath it as the card opens.
+        //
+        // An overlay, deliberately, and not a `.mask`. A mask forces an
+        // offscreen pass over this view every frame, and this is the one view
+        // in the card that moves *and* resizes on every frame of a drag — the
+        // same reason its shadow had to stop being interpolated. Painting the
+        // background's own colour on top costs nothing and is
+        // indistinguishable, because the colour is the same on both sides of
+        // the seam: `background` holds `tintColour` flat down to
+        // `backgroundTintHold`, which is below where the artwork ends.
+        //
+        // Both stops collapse to location 1 at progress 0, which makes the
+        // whole gradient the first stop's `.clear` — so the collapsed pill's
+        // thumbnail is untouched, with no view inserted or removed mid-morph
+        // to pop.
+        .overlay(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 1 - Self.artworkFadeFraction * progress),
+                    .init(color: tintColour, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        // Interpolates to a square corner as it opens: the expanded artwork is
+        // full-bleed, and a rounded corner floating against the screen's own
+        // rounded corner reads as a mistake. The card's `clipShape` supplies
+        // the top corners at that point.
+        .clipShape(RoundedRectangle(cornerRadius: side * 0.12 * (1 - progress)))
         // Constant, for the same reason the card's own shadow is constant —
         // see the note at `.floatingBarShadow()` above. This was
         // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
