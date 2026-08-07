@@ -190,14 +190,30 @@ struct FloatingTabBar: View {
     /// because the whole point is that every slot claims the *same* geometry.
     private static let selectionGeometryID = "tab-selection-wash"
 
-    /// Identifies the active tab's glyph as it travels between its slot in the
-    /// pill and the minimised circle.
+    /// Identifies a tab's glyph as it travels between its slot in the pill and
+    /// the minimised circle.
     ///
-    /// Exactly one view may claim this at a time, which is why both sites are
-    /// behind an `if` on `isMinimised` rather than being present-but-hidden.
-    /// Two live claimants make SwiftUI position one from the other's frame,
-    /// and the glyph lands somewhere neither of them is.
-    private static let activeGlyphID = "active-tab-glyph"
+    /// Exactly one view may claim a given id at a time, which is why both sites
+    /// are behind an `if` on `isMinimised` rather than being present-but-hidden.
+    /// Two live claimants make SwiftUI position one from the other's frame, and
+    /// the glyph lands somewhere neither of them is.
+    ///
+    /// **Keyed per tab, not one shared id.** As a single constant it also
+    /// matched across a plain tab change: the outgoing tab's glyph dropped the
+    /// id and the incoming tab's picked it up, so SwiftUI read that as one view
+    /// moving and flew the destination icon in from the previous tab's slot.
+    /// The effect was never written for that — it exists only for the trip into
+    /// the minimised circle — and a tab bar whose icons move is the specific
+    /// thing that makes it unusable without looking: Apple moves the indicator
+    /// and nothing else.
+    ///
+    /// Per tab, two different tabs simply hold two different ids and there is
+    /// nothing to match. The minimise trip is unaffected, because
+    /// `restoreButton` asks for the *selected* tab's id — still exactly one
+    /// source and one destination.
+    private static func activeGlyphID(for tab: LibraryTab) -> String {
+        "active-tab-glyph-\(tab.rawValue)"
+    }
 
     /// How far the field's growth trails the tab pill's collapse, and the
     /// reverse on the way back. Short enough that the bar still feels like one
@@ -487,7 +503,7 @@ struct FloatingTabBar: View {
                     if isMinimised {
                         glyph(for: selection)
                             .matchedGeometryEffect(
-                                id: Self.activeGlyphID,
+                                id: Self.activeGlyphID(for: selection),
                                 in: glyphNamespace
                             )
                     }
@@ -596,7 +612,7 @@ struct FloatingTabBar: View {
                         } else if selection == tab {
                             glyph(for: tab)
                                 .matchedGeometryEffect(
-                                    id: Self.activeGlyphID,
+                                    id: Self.activeGlyphID(for: tab),
                                     in: glyphNamespace
                                 )
                         } else {
