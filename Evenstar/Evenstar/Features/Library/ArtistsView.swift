@@ -5,6 +5,7 @@ struct ArtistsView: View {
     // No `PlaybackService` here any more: the only thing this screen read it
     // for was choosing between the two bottom clearances, and `clearsBottomBar`
     // now owns that decision along with the arithmetic behind it.
+    @Environment(LibraryService.self) private var library
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
     /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
@@ -29,6 +30,12 @@ struct ArtistsView: View {
             content
                 .onChange(of: tracks, initial: true) { _, updated in
                     artists = LibraryGrouping.artists(from: updated)
+                }
+                // See `AlbumsView` and `LibraryService.metadataRevision`: a
+                // rename changes no element of `tracks`, so the trigger above
+                // cannot see it.
+                .onChange(of: library.metadataRevision) { _, _ in
+                    artists = LibraryGrouping.artists(from: tracks)
                 }
                 .navigationTitle("Nghệ sĩ")
                 // Hoisted above the empty/non-empty branch in `content` so it

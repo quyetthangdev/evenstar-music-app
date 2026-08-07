@@ -5,6 +5,7 @@ import Observation
 enum LibraryError: LocalizedError {
     case persistenceFailed(underlying: Error)
     case artworkWriteFailed(underlying: Error)
+    case emptyTitle
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ enum LibraryError: LocalizedError {
             return "Không lưu được thay đổi: \(error.localizedDescription)"
         case .artworkWriteFailed(let error):
             return "Không lưu được ảnh bìa: \(error.localizedDescription)"
+        case .emptyTitle:
+            return "Tên bài hát không được để trống."
         }
     }
 }
@@ -97,6 +100,56 @@ final class LibraryService {
             try? fileManager.removeItem(at: oldURL)
         }
         return relative
+    }
+
+    /// Bumped every time a track's tags change in place.
+    ///
+    /// **This exists because SwiftData gives no other signal for it.** A
+    /// `@Query` publishes inserts, deletes and reorders; editing a property of a
+    /// row already in the array changes nothing the array can report, because
+    /// the array holds the same objects in the same order. `AlbumsView` and
+    /// `ArtistsView` cache their grouping and rebuild it on `onChange(of:
+    /// tracks)`, which compares by persistent identity — so without this a
+    /// rename would leave both screens showing the old album and the old artist
+    /// until the app was relaunched.
+    ///
+    /// That gap was written down before it could be hit: the doc on
+    /// `AlbumsView.albums` says "whoever adds metadata editing must revisit
+    /// this". This is that revisit.
+    private(set) var metadataRevision: Int = 0
+
+    /// Replaces a track's tags.
+    ///
+    /// Blank artist and album fall back to the same placeholders `ImportService`
+    /// writes for an untagged file, rather than being stored empty. Two ways to
+    /// say "unknown" would split every grouping in two — one bucket named
+    /// "Unknown Artist" and one named "", sitting next to each other in the
+    /// Nghệ sĩ tab.
+    ///
+    /// A blank title throws instead. There is no sensible placeholder for it:
+    /// the row would be a blank line in every list, and unlike the artist it is
+    /// the thing the user picks the track by.
+    func updateMetadata(
+        title: String,
+        artistName: String,
+        albumTitle: String,
+        for track: Track
+    ) throws {
+        let newTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newArtist = artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newAlbum = albumTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newTitle.isEmpty else { throw LibraryError.emptyTitle }
+
+        track.title = newTitle
+        track.artistName = newArtist.isEmpty ? MetadataPlaceholder.artist : newArtist
+        track.albumTitle = newAlbum.isEmpty ? MetadataPlaceholder.album : newAlbum
+
+        do { try context.save() }
+        catch { throw LibraryError.persistenceFailed(underlying: error) }
+        // After the save, never before: a revision announcing a change that did
+        // not reach disk would have every screen regroup onto values that are
+        // about to be rolled back.
+        metadataRevision += 1
     }
 
     func fetchAllTracks(sortedByTitle: Bool = true) throws -> [Track] {

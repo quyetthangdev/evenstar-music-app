@@ -31,6 +31,11 @@ struct SongsView: View {
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var artworkErrorMessage: String?
 
+    /// The track whose tags the editor sheet is showing, or nil when it is
+    /// closed. The identity drives the presentation, so there is no separate
+    /// `isPresented` flag to fall out of step with it.
+    @State private var editingTrack: Track?
+
     /// Which source the list is showing. Local by default — the Drive chip is
     /// an opt-in, and a user with no linked folder should never land on an
     /// empty screen they did not ask for.
@@ -90,6 +95,9 @@ struct SongsView: View {
             )
             // Drag indicator lives inside ImportProgressSheet — it depends on importer.isImporting.
             .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $editingTrack) { track in
+            TrackMetadataEditor(track: track)
         }
         // `matching: .images` keeps videos and Live Photos out of a picker whose
         // result has to end up as a still JPEG.
@@ -196,6 +204,11 @@ struct SongsView: View {
                             showArtworkPicker = true
                         } label: {
                             Label("Đổi ảnh bìa", systemImage: "photo")
+                        }
+                        Button {
+                            editingTrack = track
+                        } label: {
+                            Label("Sửa thông tin", systemImage: "pencil")
                         }
                     }
             }

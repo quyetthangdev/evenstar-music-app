@@ -5,6 +5,7 @@ struct AlbumsView: View {
     // No `PlaybackService` here any more: the only thing this screen read it
     // for was choosing between the two bottom clearances, and `clearsBottomBar`
     // now owns that decision along with the arithmetic behind it.
+    @Environment(LibraryService.self) private var library
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
 
     /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
@@ -25,14 +26,15 @@ struct AlbumsView: View {
     /// cost scales with library size, which is exactly the direction Drive
     /// streaming pushes it.
     ///
-    /// **Known limitation, currently unreachable.** `onChange(of: tracks)`
-    /// compares `Track` by identity (SwiftData models are `Hashable` by
-    /// persistent identity), so it fires on insert, delete and reorder but NOT
-    /// on a property edited in place — renaming a track's album would leave
-    /// this stale. Nothing in the app edits track metadata today: import
-    /// creates, delete removes, and Drive tracks are a separate model that
-    /// never appears here. **Whoever adds metadata editing must revisit this**,
-    /// or albums will not regroup after a rename.
+    /// **`onChange(of: tracks)` alone is not enough, and that is why there are
+    /// two triggers below.** It compares `Track` by identity (SwiftData models
+    /// are `Hashable` by persistent identity), so it fires on insert, delete and
+    /// reorder but NOT on a property edited in place — the array holds the same
+    /// objects in the same order after a rename.
+    ///
+    /// This doc used to end "whoever adds metadata editing must revisit this".
+    /// `TrackMetadataEditor` is that editing, and the revisit is
+    /// `LibraryService.metadataRevision`.
     @State private var albums: [AlbumGroup] = []
 
     private let columns = [
@@ -48,6 +50,14 @@ struct AlbumsView: View {
                 // state flashes on every launch.
                 .onChange(of: tracks, initial: true) { _, updated in
                     albums = paddedForScrollTesting(LibraryGrouping.albums(from: updated))
+                }
+                // A second trigger, because `tracks` cannot report the first
+                // one. Editing a track's album changes no element of that
+                // array — same objects, same order — so `onChange` above never
+                // fires and this screen would keep showing the album the track
+                // used to be in. See `LibraryService.metadataRevision`.
+                .onChange(of: library.metadataRevision) { _, _ in
+                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: tracks))
                 }
                 .navigationTitle("Album")
                 // Hoisted above the empty/non-empty branch in `content` so it
