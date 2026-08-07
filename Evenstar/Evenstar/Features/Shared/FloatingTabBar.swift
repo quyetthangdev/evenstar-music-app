@@ -738,7 +738,11 @@ struct FloatingTabBar: View {
         // to flip with it. Without one, VoiceOver reads the symbol's own
         // description — "magnifying glass", or "xmark" — instead of what the
         // button does.
-        .accessibilityLabel(isSearching ? "Đóng tìm kiếm" : LibraryTab.search.label)
+        .accessibilityLabel(
+            isSearching
+            ? String(localized: "Đóng tìm kiếm", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+            : LibraryTab.search.label
+        )
         .accessibilityAddTraits(selection == .search ? [.isButton, .isSelected] : .isButton)
     }
 }

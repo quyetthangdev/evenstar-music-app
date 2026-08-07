@@ -1,6 +1,34 @@
 {
   "sourceLanguage": "vi",
   "strings": {
+    "%lld bài hát": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld song"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld songs"
+                }
+              }
+            }
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bài hát"
+          }
+        }
+      }
+    },
     "%lld bài lỗi": {
       "localizations": {
         "en": {
@@ -338,6 +366,22 @@
         }
       }
     },
+    "Dung lượng": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dung lượng"
+          }
+        }
+      }
+    },
     "Dán link thư mục Drive": {
       "localizations": {
         "en": {
@@ -642,6 +686,38 @@
         }
       }
     },
+    "Không tải được ảnh đã chọn.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load the selected image."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không tải được ảnh đã chọn."
+          }
+        }
+      }
+    },
+    "Không tải được ảnh đã chọn: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load the selected image: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không tải được ảnh đã chọn: %@"
+          }
+        }
+      }
+    },
     "Không đặt được ảnh bìa": {
       "localizations": {
         "en": {
@@ -686,6 +762,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Không đọc được thông tin bài hát."
+          }
+        }
+      }
+    },
+    "Không đọc được ảnh đã chọn.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t read the selected image."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không đọc được ảnh đã chọn."
+          }
+        }
+      }
+    },
+    "Liên kết": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liên kết"
           }
         }
       }
@@ -895,6 +1003,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        }
+      }
+    },
+    "Phiên bản": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên bản"
           }
         }
       }
@@ -1299,6 +1423,34 @@
         }
       }
     },
+    "Đang lưu %lld bài…": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Saving %lld song…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Saving %lld songs…"
+                }
+              }
+            }
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang lưu %lld bài…"
+          }
+        }
+      }
+    },
     "Đang nhập %lld/%lld": {
       "localizations": {
         "en": {
@@ -1311,6 +1463,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Đang nhập %lld/%lld"
+          }
+        }
+      }
+    },
+    "Đang quét thư mục…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanning folder…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang quét thư mục…"
+          }
+        }
+      }
+    },
+    "Đang quét…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanning…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang quét…"
+          }
+        }
+      }
+    },
+    "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That isn’t a Drive folder link. Open the folder in Drive, tap Share, then copy the link."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết."
           }
         }
       }
@@ -1375,6 +1575,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút."
+          }
+        }
+      }
+    },
+    "Đóng tìm kiếm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close search"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đóng tìm kiếm"
           }
         }
       }

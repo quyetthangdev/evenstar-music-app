@@ -77,7 +77,14 @@ struct AccountView: View {
         }
     }
 
-    private func row(_ title: String, value: String) -> some View {
+    /// `LocalizedStringKey`, not `String`.
+    ///
+    /// As `String` this compiled, read correctly in Vietnamese, and silently
+    /// refused to translate: only a string *literal* becomes a translation key,
+    /// and a literal passed to a `String` parameter has already collapsed to
+    /// plain text by the time `Text` sees it. The screen proved it — "Account"
+    /// and "Library" translated, and every row between them stayed Vietnamese.
+    private func row(_ title: LocalizedStringKey, value: String) -> some View {
         HStack {
             Text(title)
             Spacer()

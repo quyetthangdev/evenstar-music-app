@@ -139,8 +139,26 @@ struct DriveSongsList: View {
     /// `DriveLibraryService.scan`). Reporting "đã quét 40" above a list of 38
     /// would be a number the user can see is wrong and cannot explain. The row
     /// count is the one figure that is true by construction.
+    ///
+    /// Both branches go through `String(localized:)` rather than being bare
+    /// Swift literals. A `String`-typed property is the shape that quietly opts
+    /// out of translation — nothing here is a `Text` literal, so nothing would
+    /// ever have been looked up.
+    ///
+    /// The count is a plural key, not interpolation into a fixed sentence:
+    /// Vietnamese has one form, English has two, and "1 songs" is the specific
+    /// wrongness that a `\(count) bài hát` would have shipped.
     private var summary: String {
-        driveLibrary.scanningFolderID != nil ? "Đang quét…" : "\(tracks.count) bài hát"
+        if driveLibrary.scanningFolderID != nil {
+            return String(
+                localized: "Đang quét…",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
+        }
+        return String(
+            localized: "\(tracks.count) bài hát",
+            bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+        )
     }
 
     /// The one red line, from whichever source has something to say.

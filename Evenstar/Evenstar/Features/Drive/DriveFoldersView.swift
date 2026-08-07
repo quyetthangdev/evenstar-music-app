@@ -126,7 +126,16 @@ struct DriveFoldersView: View {
                     Task { await add() }
                 } label: {
                     HStack {
-                        Text(isWorking ? workingStatus : "Liên kết")
+                        // Two `Text`s rather than one with a ternary. A
+                        // ternary whose other branch is a `String` types the
+                        // whole expression as `String`, which picks `Text`'s
+                        // non-localizing initialiser and drops "Liên kết" out
+                        // of the catalog without any visible sign.
+                        if isWorking {
+                            Text(workingStatus)
+                        } else {
+                            Text("Liên kết")
+                        }
                         if isWorking {
                             Spacer()
                             ProgressView()
@@ -166,7 +175,14 @@ struct DriveFoldersView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(folder.displayName)
-                            Text(folder.lastScannedAt == nil ? "Chưa quét" : "Đã quét")
+                            // `LocalizedStringKey` spelled out: with two bare
+                            // literals the ternary's type comes from context,
+                            // and `Text` offers an initialiser for `String`
+                            // too. Naming the type is what guarantees the
+                            // catalog is consulted.
+                            Text(folder.lastScannedAt == nil
+                                 ? LocalizedStringKey("Chưa quét")
+                                 : LocalizedStringKey("Đã quét"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -228,7 +244,16 @@ struct DriveFoldersView: View {
     /// progress" — nothing had ever read it.
     private var workingStatus: String {
         let seen = driveLibrary.scannedFileCount
-        return seen > 0 ? "Đang lưu \(seen) bài…" : "Đang quét thư mục…"
+        guard seen > 0 else {
+            return String(
+                localized: "Đang quét thư mục…",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
+        }
+        return String(
+            localized: "Đang lưu \(seen) bài…",
+            bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+        )
     }
 
     /// The plan writes this as `try? driveLibrary.unlink(folder)`. Reported
@@ -278,7 +303,10 @@ struct DriveFoldersView: View {
     private func add() async {
         errorMessage = nil
         guard let folderID = DriveLinkParser.folderID(from: link) else {
-            errorMessage = "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết."
+            errorMessage = String(
+                localized: "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết.",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
             return
         }
         isWorking = true

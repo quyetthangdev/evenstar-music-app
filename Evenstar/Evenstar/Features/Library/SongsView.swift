@@ -234,15 +234,24 @@ struct SongsView: View {
         let raw: Data?
         do { raw = try await item.loadTransferable(type: Data.self) }
         catch {
-            artworkErrorMessage = "Không tải được ảnh đã chọn: \(error.localizedDescription)"
+            artworkErrorMessage = String(
+                localized: "Không tải được ảnh đã chọn: \(error.localizedDescription)",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
             return
         }
         guard let raw else {
-            artworkErrorMessage = "Không tải được ảnh đã chọn."
+            artworkErrorMessage = String(
+                localized: "Không tải được ảnh đã chọn.",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
             return
         }
         guard let jpeg = await ArtworkStore.jpegForStorage(from: raw) else {
-            artworkErrorMessage = "Không đọc được ảnh đã chọn."
+            artworkErrorMessage = String(
+                localized: "Không đọc được ảnh đã chọn.",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
             return
         }
         do { try library.setArtwork(jpeg, for: track) }
