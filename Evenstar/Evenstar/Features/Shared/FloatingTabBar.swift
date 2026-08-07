@@ -643,6 +643,23 @@ struct FloatingTabBar: View {
                                 )
                         }
                     }
+                    // The whole slot takes the tap, not just the ink.
+                    //
+                    // `.frame(maxWidth:.infinity, maxHeight:.infinity)` above
+                    // makes each tab *occupy* its quarter of the pill, but a
+                    // frame is layout — it draws nothing, so it hit-tests
+                    // nothing. Under `.buttonStyle(.plain)` the tappable area
+                    // was therefore the glyph and the label themselves, and the
+                    // wash behind them only exists for the selected tab. On a
+                    // 402pt screen that is a 74×55pt slot with roughly 32×32pt
+                    // of it live: the outer ring of every tab did nothing, which
+                    // is why tapping one sometimes appeared to be ignored.
+                    //
+                    // The HIG's rule, on Buttons: "a button needs a hit region
+                    // of at least 44x44 pt". A `Rectangle` here is exactly the
+                    // slot the frame already claims, so no tab reaches into its
+                    // neighbour — it only stops the gaps from being dead.
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // `.isButton` is restated alongside `.isSelected` only so
