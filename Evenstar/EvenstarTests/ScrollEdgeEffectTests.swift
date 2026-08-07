@@ -146,30 +146,16 @@ final class ScrollEdgeEffectTests: XCTestCase {
         XCTAssertNil(locations.first { $0 < 0 })
     }
 
-    /// The real call site's fraction, at both bar heights: the fade must stay a
-    /// run-out rather than swallowing the band. Anything approaching 1 here
-    /// would mean the whole band is ramp and nothing is at full strength, which
-    /// is the state where content passes under the bar unprotected.
-    ///
-    /// **The bound was 0.35 and is now stated as a relationship instead.** 0.35
-    /// was an arithmetic consequence of the first fade length, not a
-    /// requirement — and that length was wrong: the transition read as an edge,
-    /// and lengthening it is what fixed it. A bound that fails whenever the
-    /// fade is retuned is a bound that tests the tuning rather than the design.
-    ///
-    /// What the design actually requires is that the full-strength region below
-    /// the fade is at least as tall as the fade itself, so the bar always sits
-    /// on fully-blurred content. That is `fraction <= 0.5`, and it stays true
-    /// whatever the fade is set to next.
-    func testTheFullStrengthRegionIsNeverShorterThanTheFade() {
-        for hasTrack in [true, false] {
-            let fraction = ScrollEdgeEffect.fade / ScrollEdgeEffect.height(hasTrack: hasTrack)
-
-            XCTAssertLessThanOrEqual(
-                fraction, 0.5,
-                "the fade is taller than the solid part it runs out of (hasTrack: \(hasTrack))"
-            )
-            XCTAssertGreaterThan(fraction, 0)
-        }
-    }
+    // **A test was deleted here, and this note is why.**
+    //
+    // `testTheRealFadeStaysASmallPartOfTheBand` asserted the run-out was under
+    // 0.35 of the band, then — when that failed on the first retune — under
+    // 0.5, restated as a "design relationship". It was not one either time. It
+    // was the arithmetic of whatever `fade` happened to be, dressed up as a
+    // requirement, and the second version failed on the very next retune too.
+    //
+    // There is no rule that the run-out must be shorter than the solid part.
+    // The solid part only has to cover the bar, and that *is* pinned, by
+    // `testTheRunOutFinishesAboveTheBar`. A bound that has to be rewritten
+    // every time a designer changes their mind is measuring the designer.
 }

@@ -44,18 +44,24 @@ enum ScrollEdgeEffect {
     /// short and the top of the effect is a visible horizontal line across the
     /// screen; too long and half the list is permanently hazy.
     ///
-    /// **56, up from 28.** At 28 the blur reached full strength on the bar's
-    /// own top edge and fell to nothing 28pt later — measured by differencing
-    /// two screenshots, the whole visible transition happened between 84 and
-    /// 110pt above the screen bottom. That is a quarter of the band doing all
-    /// the work, and it read as an edge rather than as a fade. Doubling it
-    /// spreads the same change over twice the distance, so at any given height
-    /// the effect is weaker and the eye has nothing to catch on.
+    /// **120, after 28 and then 56.** This is the number that has been wrong
+    /// most often, and the reason is that it interacts with `solidHeight`:
+    /// moving the ramp's *start* down to the bar's midline also moved its
+    /// strong half behind the bar, so at 56 there was almost nothing left by
+    /// the time the band cleared the bar's top edge. Measured on the edges of
+    /// list text, the band removed 2% of edge sharpness there — which is to
+    /// say it had stopped working exactly where the effect is for.
     ///
-    /// It stays a run-out rather than taking over: the region below it, at full
-    /// strength, is `solidHeight` — 57pt with no track — which is still taller
-    /// than this run-out.
-    static let fade: CGFloat = 56
+    /// Long, not strong, is what buys both. At 120 the ramp reaches the bar's
+    /// top edge already substantial (the blur takes 12% of edge sharpness out,
+    /// against 17% for a full-strength band) while the tint it carries arrives
+    /// so gradually — 75pt from first tinge to full, against 35pt before —
+    /// that there is no boundary to see.
+    ///
+    /// It is deliberately much taller than `solidHeight`. The solid part only
+    /// has to cover the bar; everything above it is run-out, and the run-out is
+    /// the part the eye judges.
+    static let fade: CGFloat = 120
 
     /// The strongest the material is ever allowed to be, as a fraction.
     ///
@@ -70,18 +76,22 @@ enum ScrollEdgeEffect {
     /// one thing the HIG rules out for this effect: "they don't block or darken
     /// like overlays".
     ///
-    /// Capping it trades blur strength for invisibility, and that is the right
-    /// way round here. Where content is busy the blur still does its job at
-    /// slightly reduced weight; where it is plain, the band stops announcing
-    /// itself. 0.55 puts the worst case near 2%, under what reads as a band
-    /// edge against white.
+    /// Capping it trades blur strength for invisibility. **0.55 traded away too
+    /// much** — with the midline anchor it left the band taking 2% of edge
+    /// sharpness above the bar, which is nothing, while still tinting. A knob
+    /// set where the effect does no work but still costs something is set
+    /// wrong.
+    ///
+    /// 0.75 with a 120pt run-out is the measured compromise: worst-case tint
+    /// −8/255 instead of −10, reached over twice the distance, and the blur
+    /// above the bar back to taking out 12% of edge sharpness instead of 2%.
     ///
     /// A tint-free progressive backdrop blur would be better than any value of
     /// this. SwiftUI has no such primitive: every material and every
     /// `UIBlurEffect` style carries a wash, and the alternative — rendering the
     /// list a second time through `.blur` and masking that — doubles the row
     /// rendering and the SwiftData observation for one visual effect.
-    static let peak: CGFloat = 0.55
+    static let peak: CGFloat = 0.75
 
     /// Where the run-out begins, measured from the **physical bottom of the
     /// screen** — the same origin `BottomBarMetrics` measures the bar from,
