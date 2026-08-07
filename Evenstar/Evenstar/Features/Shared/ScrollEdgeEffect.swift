@@ -26,10 +26,16 @@ import SwiftUI
 /// **What it must be, per the HIG:** *"Scroll edge effects further enhance
 /// legibility by blurring and reducing the opacity of background content"*, and
 /// *"They don't block or darken like overlays."* That rules out the obvious
-/// implementation — a dark gradient laid over the bottom of the screen. A
-/// material is what blurs and de-emphasises what is behind it without adding a
-/// colour of its own, so the band is a material, and the gradient is a **mask**
-/// on it rather than a fill.
+/// implementation — a dark gradient laid over the bottom of the screen. So the
+/// band is a material and the gradient is a **mask** on it rather than a fill.
+///
+/// **A material is not free of that objection either, which measurement showed
+/// and this comment used to deny.** It claimed a material "blurs and
+/// de-emphasises what is behind it without adding a colour of its own". It
+/// does add one: sampled against a plain region of the list, the band at full
+/// strength darkened it by 10/255 on every channel. Worse, that is *all* it
+/// did there — blurring a uniform area changes nothing, so on the plain
+/// stretches of a list the effect was pure darkening. Hence `peak`.
 enum ScrollEdgeEffect {
 
     /// How far above the bar the blur ramps in, in points.
@@ -46,26 +52,70 @@ enum ScrollEdgeEffect {
     /// spreads the same change over twice the distance, so at any given height
     /// the effect is weaker and the eye has nothing to catch on.
     ///
-    /// It stays a run-out rather than taking over: the full-strength region
-    /// below is 84pt, still taller than this.
+    /// It stays a run-out rather than taking over: the region below it, at full
+    /// strength, is `solidHeight` — 57pt with no track — which is still taller
+    /// than this run-out.
     static let fade: CGFloat = 56
 
-    /// Total height of the band, measured from the **physical bottom of the
-    /// screen** — the same origin `BottomBarMetrics` measures the bar from,
-    /// which is why the view below has to ignore the bottom safe area.
+    /// The strongest the material is ever allowed to be, as a fraction.
     ///
-    /// It covers whatever the user must be able to read past: the bar always,
-    /// and the collapsed player above it whenever a track is loaded. Deriving
-    /// it from the same constants as the list clearance is the point — a bar
-    /// that grows and a band that does not would leave the pill sitting on
-    /// sharp content again.
-    static func height(hasTrack: Bool) -> CGFloat {
-        let covered = hasTrack
+    /// **Not 1, and the reason is measurable.** Sampling a plain region of the
+    /// list with and without the band put the difference at exactly −10/255 on
+    /// each channel — a neutral 4% darkening, no hue shift.
+    ///
+    /// That number is entirely tint. `.ultraThinMaterial` is a blur *and* a
+    /// translucent wash, and over a uniform area the blur contributes nothing
+    /// at all: blurring white gives white. So across the large plain stretches
+    /// of a list the band was doing no work and only darkening — which is the
+    /// one thing the HIG rules out for this effect: "they don't block or darken
+    /// like overlays".
+    ///
+    /// Capping it trades blur strength for invisibility, and that is the right
+    /// way round here. Where content is busy the blur still does its job at
+    /// slightly reduced weight; where it is plain, the band stops announcing
+    /// itself. 0.55 puts the worst case near 2%, under what reads as a band
+    /// edge against white.
+    ///
+    /// A tint-free progressive backdrop blur would be better than any value of
+    /// this. SwiftUI has no such primitive: every material and every
+    /// `UIBlurEffect` style carries a wash, and the alternative — rendering the
+    /// list a second time through `.blur` and masking that — doubles the row
+    /// rendering and the SwiftData observation for one visual effect.
+    static let peak: CGFloat = 0.55
+
+    /// Where the run-out begins, measured from the **physical bottom of the
+    /// screen** — the same origin `BottomBarMetrics` measures the bar from,
+    /// which is why the view below has to correct for the safe area.
+    ///
+    /// **The midline of the topmost thing the bar draws, not its top edge.**
+    ///
+    /// Anchored at the top edge, the material was still at full strength on the
+    /// exact line where the bar ends, so the step from "blurred" to "not" was
+    /// the first thing visible above the bar and no amount of lengthening the
+    /// run-out moved it. Starting the ramp halfway up the bar puts most of it
+    /// *behind* the bar, which is opaque enough to hide it: by the time the
+    /// band emerges past the top edge it is already about halfway down, and
+    /// what is left is the gentlest part of the curve.
+    ///
+    /// With a track loaded the topmost element is the collapsed pill rather
+    /// than the bar, so the same rule points at the pill's midline.
+    static func solidHeight(hasTrack: Bool) -> CGFloat {
+        hasTrack
             ? BottomBarMetrics.tabBarTopOffset
                 + BottomBarMetrics.playerTabGap
-                + PlayerCard.collapsedHeight
-            : BottomBarMetrics.tabBarTopOffset
-        return covered + fade
+                + PlayerCard.collapsedHeight / 2
+            : BottomBarMetrics.screenBottomInset
+                + BottomBarMetrics.tabBarHeight / 2
+    }
+
+    /// Total height of the band: everything at full strength, plus the run-out
+    /// above it.
+    ///
+    /// Deriving it from the same constants as the list clearance is the point —
+    /// a bar that grows and a band that does not would leave the pill sitting
+    /// on sharp content again.
+    static func height(hasTrack: Bool) -> CGFloat {
+        solidHeight(hasTrack: hasTrack) + fade
     }
 
     /// The mask's stops, from the top of the band downward: transparent at the
@@ -96,13 +146,18 @@ enum ScrollEdgeEffect {
         var stops = (0...samples).map { index -> Gradient.Stop in
             let t = CGFloat(index) / CGFloat(samples)
             let smooth = t * t * t * (t * (t * 6 - 15) + 10)
-            return Gradient.Stop(color: .black.opacity(smooth), location: t * span)
+            return Gradient.Stop(color: .black.opacity(smooth * peak), location: t * span)
         }
-        // The remainder of the band is solid. Without this the mask would stop
-        // at `span` and everything below it would be undefined by the stop
-        // list; SwiftUI extends the last stop, but stating it keeps the mask
-        // readable and makes `span == 1` behave the same as any other value.
-        stops.append(Gradient.Stop(color: .black, location: 1))
+        // The remainder of the band holds whatever the ramp reached. Without
+        // this the mask would stop at `span` and everything below it would be
+        // undefined by the stop list; SwiftUI extends the last stop, but
+        // stating it keeps the mask readable and makes `span == 1` behave the
+        // same as any other value.
+        //
+        // `peak`, not `.black` — this stop is the one that covers the strip
+        // beside and below the bar, which is exactly where a full-strength
+        // wash was visible as a grey patch against the list.
+        stops.append(Gradient.Stop(color: .black.opacity(peak), location: 1))
         return stops
     }
 }
