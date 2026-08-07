@@ -17,11 +17,13 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// See `LibraryTab.label` for why this is `String(localized:)` and not a
+    /// bare literal.
     var label: String {
         switch self {
-        case .system: "Theo hệ thống"
-        case .light: "Sáng"
-        case .dark: "Tối"
+        case .system: String(localized: "Theo hệ thống")
+        case .light: String(localized: "Sáng")
+        case .dark: String(localized: "Tối")
         }
     }
 

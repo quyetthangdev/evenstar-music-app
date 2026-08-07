@@ -43,26 +43,29 @@ enum DriveError: Error, Equatable, LocalizedError {
     case server(Int)
     case malformedResponse
 
+    /// Localised at the point of use, like every other `errorDescription` in
+    /// the app — a plain `String` never reaches the catalogue. See
+    /// `ImportError`.
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            "Chưa cấu hình API key cho Google Drive."
+            String(localized: "Chưa cấu hình API key cho Google Drive.")
         case .notShared:
-            "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”."
+            String(localized: "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”.")
         case .notFound:
-            "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá."
+            String(localized: "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá.")
         case .offline:
-            "Không có kết nối mạng."
+            String(localized: "Không có kết nối mạng.")
         case .connectionFailed:
-            "Không thể kết nối tới Google Drive. Vui lòng thử lại sau."
+            String(localized: "Không thể kết nối tới Google Drive. Vui lòng thử lại sau.")
         case .fileUnavailable:
-            "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
+            String(localized: "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.")
         case .quotaExceeded:
-            "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút."
+            String(localized: "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút.")
         case .server(let status):
-            "Google Drive trả về lỗi \(status)."
+            String(localized: "Google Drive trả về lỗi \(status).")
         case .malformedResponse:
-            "Không đọc được dữ liệu Google Drive trả về."
+            String(localized: "Không đọc được dữ liệu Google Drive trả về.")
         }
     }
 

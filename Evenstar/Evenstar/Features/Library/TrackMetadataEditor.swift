@@ -51,9 +51,9 @@ struct TrackMetadataEditor: View {
                 Section {
                     TextField("Tên bài hát", text: $title)
                         .textInputAutocapitalization(.words)
-                    TextField("Nghệ sĩ", text: $artist)
+                    TextField("Tên nghệ sĩ", text: $artist)
                         .textInputAutocapitalization(.words)
-                    TextField("Album", text: $album)
+                    TextField("Tên album", text: $album)
                         .textInputAutocapitalization(.words)
                 } footer: {
                     // Says what blank means, so leaving a field empty is a

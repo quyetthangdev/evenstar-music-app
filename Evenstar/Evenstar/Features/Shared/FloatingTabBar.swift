@@ -14,13 +14,24 @@ enum LibraryTab: String, Identifiable {
     /// warned against. Adding a destination means adding it here.
     static let pillTabs: [LibraryTab] = [.songs, .albums, .artists, .account]
 
+    /// **`String(localized:)`, not a bare literal.** A `String` handed to
+    /// `Text` is displayed verbatim — only a string *literal* becomes a
+    /// `LocalizedStringKey` and goes through the catalogue. So an enum that
+    /// returns plain literals renders untranslated no matter how complete the
+    /// catalogue is, and it does not even appear in it to be noticed as
+    /// missing: the tab bar and the source chips stayed Vietnamese in an
+    /// English build, with everything else around them translated.
+    ///
+    /// Localising here rather than at the call site keeps it a `String`, which
+    /// one caller needs — the accessibility label interpolates it into a
+    /// sentence, and `LocalizedStringKey` cannot be interpolated into one.
     var label: String {
         switch self {
-        case .songs:   "Bài hát"
-        case .albums:  "Album"
-        case .artists: "Nghệ sĩ"
-        case .account: "Tài khoản"
-        case .search:  "Tìm kiếm"
+        case .songs:   String(localized: "Bài hát")
+        case .albums:  String(localized: "Album")
+        case .artists: String(localized: "Nghệ sĩ")
+        case .account: String(localized: "Tài khoản")
+        case .search:  String(localized: "Tìm kiếm")
         }
     }
 
@@ -759,10 +770,14 @@ private struct FloatingTabBarPreview: View {
             // `isSearching`, nothing inside `FloatingTabBar` owns this
             // transition's timing on the caller's behalf.
             VStack {
-                Button(isMinimised ? "Restore" : "Minimise") {
+                // `verbatim`, so this preview-only scaffold does not put two
+                // untranslatable English strings into the String Catalog.
+                Button {
                     withAnimation(BottomBarStyle.morph) {
                         isMinimised.toggle()
                     }
+                } label: {
+                    Text(verbatim: isMinimised ? "Restore" : "Minimise")
                 }
                 .buttonStyle(.prominentAction)
                 Spacer()

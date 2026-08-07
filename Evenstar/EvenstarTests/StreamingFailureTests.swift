@@ -370,7 +370,7 @@ final class StreamingFailureTests: XCTestCase {
         )
         XCTAssertEqual(DriveError.classify(wrapped), .offline)
 
-        XCTAssertEqual(DriveError.offline.errorDescription, "Không có kết nối mạng.")
+        XCTAssertEqual(DriveError.offline.errorDescription, String(localized: "Không có kết nối mạng."))
     }
 
     // MARK: - A duration that arrives late must still reach the lock screen
@@ -450,7 +450,7 @@ final class StreamingFailureTests: XCTestCase {
         XCTAssertEqual(DriveError.classify(URLError(.timedOut)), .connectionFailed)
         XCTAssertEqual(
             DriveError.fileUnavailable.errorDescription,
-            "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
+            String(localized: "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.")
         )
     }
 

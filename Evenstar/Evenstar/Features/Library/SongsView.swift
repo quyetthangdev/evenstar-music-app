@@ -43,10 +43,12 @@ struct SongsView: View {
 
     enum LibrarySource: String, CaseIterable {
         case local, drive
+        /// See `LibraryTab.label` for why this is `String(localized:)` and
+        /// not a bare literal.
         var label: String {
             switch self {
-            case .local: "Trên máy"
-            case .drive: "Drive"
+            case .local: String(localized: "Trên máy")
+            case .drive: String(localized: "Drive")
             }
         }
     }

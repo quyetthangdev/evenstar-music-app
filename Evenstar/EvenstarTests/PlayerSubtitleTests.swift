@@ -82,7 +82,7 @@ final class PlayerSubtitleTests: XCTestCase {
 
         let line = PlayerSubtitle.line(track: track, error: DriveError.offline)
 
-        XCTAssertEqual(line, .failure("Không có kết nối mạng."))
+        XCTAssertEqual(line, .failure(String(localized: "Không có kết nối mạng.")))
         XCTAssertTrue(line.isFailure)
     }
 
@@ -96,7 +96,7 @@ final class PlayerSubtitleTests: XCTestCase {
 
         XCTAssertEqual(
             line.text,
-            "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
+            String(localized: "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.")
         )
     }
 
@@ -105,7 +105,7 @@ final class PlayerSubtitleTests: XCTestCase {
     func testAFailureOutranksHavingNoTrack() {
         XCTAssertEqual(
             PlayerSubtitle.line(track: nil, error: DriveError.missingAPIKey),
-            .failure("Chưa cấu hình API key cho Google Drive.")
+            .failure(String(localized: "Chưa cấu hình API key cho Google Drive."))
         )
     }
 
@@ -130,7 +130,7 @@ final class PlayerSubtitleTests: XCTestCase {
 
         XCTAssertEqual(
             PlayerSubtitle.collapsedLine(track: track, error: DriveError.offline),
-            .failure("Không có kết nối mạng.")
+            .failure(String(localized: "Không có kết nối mạng."))
         )
     }
 }
