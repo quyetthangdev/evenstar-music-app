@@ -79,11 +79,25 @@ struct PlayerCard: View {
     /// away into the drifting field of its own colours beneath it, so nothing
     /// about the transition is a boundary the eye can find.
     ///
-    /// 0.42 rather than 0.30: at 0.30 the dissolve finished well clear of the
-    /// title, so the eye had a band of pure background to compare against and
-    /// the cover looked cut off above it rather than dissolved into it. Ending
-    /// near the title leaves nothing in between for the comparison.
-    private static let artworkFadeFraction: Double = 0.42
+    /// Its history, because the number has moved twice and each move was for a
+    /// different reason:
+    ///
+    /// **0.30 → 0.42** fixed *where* the dissolve ended. At 0.30 it finished
+    /// well clear of the title, so the eye had a band of pure background to
+    /// compare against and the cover read as cut off above it rather than
+    /// dissolved into it. Ending near the title leaves nothing in between for
+    /// the comparison.
+    ///
+    /// **0.42 → 0.55** widens the blend itself. The end was in the right place
+    /// but the band was still narrow enough to read as a region — a stretch of
+    /// screen where the picture was visibly *becoming* the background. Over
+    /// more than half the artwork's height there is no stretch to point at.
+    ///
+    /// The cost is real and is the reason this is not simply maximised: every
+    /// point of fade is a point of cover that is no longer crisp. At 0.55 the
+    /// sharp region is 45% of the artwork's height — on an iPhone 12, 224pt of
+    /// the 498 it occupies.
+    private static let artworkFadeFraction: Double = 0.55
 
     /// The dissolve's alpha ramp, eased rather than linear.
     ///
@@ -99,16 +113,19 @@ struct PlayerCard: View {
     /// at both ends. The dissolve now begins and finishes without announcing
     /// either.
     ///
-    /// Five and not more: `LinearGradient` interpolates linearly between stops,
-    /// so each pair is still a straight segment and what this really builds is a
-    /// polyline. Five points put the residual corners at slope changes small
-    /// enough to be invisible, and every extra stop past that costs a little and
-    /// buys nothing measurable.
+    /// `LinearGradient` interpolates linearly between stops, so each pair is
+    /// still a straight segment and what this really builds is a polyline.
+    /// Seven points, raised from five when `artworkFadeFraction` went to 0.55:
+    /// what has to stay small is the slope change at each joint, and stretching
+    /// the same five points over a third more screen makes each segment longer
+    /// and every joint sharper. The count follows the span rather than being a
+    /// number that was once right.
     private static func dissolveStops(progress: Double) -> [Gradient.Stop] {
         let span = Self.artworkFadeFraction * progress
         let start = 1 - span
-        return (0...4).map { step in
-            let t = Double(step) / 4
+        let steps = 6
+        return (0...steps).map { step in
+            let t = Double(step) / Double(steps)
             let eased = t * t * (3 - 2 * t)
             return Gradient.Stop(
                 color: .white.opacity(1 - eased),
