@@ -68,19 +68,62 @@ final class DriveLibraryService {
     /// the failure `unlink` below is written to avoid: the user retypes a
     /// name, taps Liên kết, the fields clear as if it worked, and the row
     /// still shows the stale name with no signal the edit never landed.
-    func link(folderID: String, displayName: String) throws -> DriveFolder {
+    /// - Parameter displayName: `nil` or blank means the user did not name it.
+    ///   For a folder already linked that keeps whatever name it has — blanking
+    ///   the field must not wipe a name the user chose earlier, which is what a
+    ///   non-optional parameter forced. For a new one it takes
+    ///   `defaultDisplayName(existing:)`.
+    ///
+    ///   The decision lives here rather than in the view because only this
+    ///   method knows whether the folder already exists, and the answer differs
+    ///   entirely between the two cases.
+    func link(folderID: String, displayName: String?) throws -> DriveFolder {
+        let chosen = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let existing = try library.context.fetch(
             FetchDescriptor<DriveFolder>(predicate: #Predicate { $0.folderID == folderID })
         ).first
         if let existing {
-            existing.displayName = displayName
+            if let chosen, !chosen.isEmpty { existing.displayName = chosen }
             try library.save()
             return existing
         }
-        let folder = DriveFolder(folderID: folderID, displayName: displayName)
+        let name: String
+        if let chosen, !chosen.isEmpty {
+            name = chosen
+        } else {
+            let taken = try library.context.fetch(FetchDescriptor<DriveFolder>())
+                .map(\.displayName)
+            name = Self.defaultDisplayName(existing: taken)
+        }
+        let folder = DriveFolder(folderID: folderID, displayName: name)
         library.context.insert(folder)
         try library.save()
         return folder
+    }
+
+    /// What to call a folder the user did not name.
+    ///
+    /// Exists so the display name can stop being a required field. Making a
+    /// user invent a label before they are allowed to do the thing they came to
+    /// do is the kind of required input the interface guidelines ask to be
+    /// removed, and there is nothing here that needs their answer — the name is
+    /// only a label in a list.
+    ///
+    /// Numbered from the second, so the common case of a single folder reads
+    /// "Thư mục Drive" rather than "Thư mục Drive 1". Gaps are ignored on
+    /// purpose: after linking three and unlinking the second, the next is 4, not
+    /// 2. Reusing a freed number would give a new folder the name a different
+    /// folder had five minutes ago, which is worse than a gap nobody can see.
+    ///
+    /// `nonisolated` because it is a pure function of its argument. The class is
+    /// `@MainActor` for the SwiftData context it holds, and nothing about
+    /// choosing a string needs that.
+    nonisolated static func defaultDisplayName(existing: [String]) -> String {
+        let base = "Thư mục Drive"
+        guard existing.contains(base) else { return base }
+        var index = 2
+        while existing.contains("\(base) \(index)") { index += 1 }
+        return "\(base) \(index)"
     }
 
     /// Reconciles the folder's rows with what Drive currently holds, and

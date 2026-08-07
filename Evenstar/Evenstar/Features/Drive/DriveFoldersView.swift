@@ -69,15 +69,52 @@ struct DriveFoldersView: View {
             // trains the warning to be ignored, which is a worse outcome than
             // stating it once, in the right place, and leaving it there.
             Section {
+                // `.URL` on both counts: the keyboard gains the `/` and `.`
+                // keys and a `.com` key, and the content type lets the system
+                // offer a URL sitting on the clipboard. Neither was set, and a
+                // field whose placeholder says "paste a link" arriving with a
+                // plain alphabet keyboard is the kind of mismatch the interface
+                // guidelines are explicit about.
                 TextField("Dán link thư mục Drive", text: $link)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                TextField("Tên hiển thị", text: $name)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .submitLabel(.next)
+                // Optional, and the placeholder says so. Nothing here needs the
+                // user's answer — the name is a label in a list — so requiring
+                // one made them invent something before they were allowed to do
+                // what they came to do. Blank is resolved by
+                // `DriveLibraryService.link`, which is the only place that knows
+                // whether this folder is new or already named.
+                TextField("Tên hiển thị (không bắt buộc)", text: $name)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
                 if let errorMessage {
                     Text(errorMessage).font(.footnote).foregroundStyle(.red)
                 }
-                Button("Liên kết") { Task { await add() } }
-                    .disabled(link.isEmpty || name.isEmpty || isWorking)
+                // The row keeps its identity while working — same button, label
+                // swapped, spinner on the trailing edge — rather than being
+                // replaced by a status row. A row that appears and disappears
+                // moves the footer under it, and the footer is the privacy
+                // warning.
+                //
+                // Before this, `isWorking` only *disabled* the button: the user
+                // tapped Liên kết, the row went grey, and nothing else happened
+                // for as long as the network took. Feedback for anything that is
+                // not instantaneous is not optional.
+                Button {
+                    Task { await add() }
+                } label: {
+                    HStack {
+                        Text(isWorking ? workingStatus : "Liên kết")
+                        if isWorking {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(link.isEmpty || isWorking)
             } header: {
                 Text("Thêm thư mục")
             } footer: {
@@ -113,6 +150,19 @@ struct DriveFoldersView: View {
                 }
             }
         }
+    }
+
+    /// What the button says while the network is out.
+    ///
+    /// Two phases, because the wait has two and they take very different
+    /// lengths of time. Listing a folder is one or more round trips and is
+    /// almost all of the wall clock; reconciling the rows afterwards is local
+    /// and quick. `DriveLibraryService` already published `scannedFileCount`
+    /// for exactly this, with a doc comment saying "so the list can show
+    /// progress" — nothing had ever read it.
+    private var workingStatus: String {
+        let seen = driveLibrary.scannedFileCount
+        return seen > 0 ? "Đang lưu \(seen) bài…" : "Đang quét thư mục…"
     }
 
     /// The plan writes this as `try? driveLibrary.unlink(folder)`. Reported
@@ -168,6 +218,9 @@ struct DriveFoldersView: View {
         isWorking = true
         defer { isWorking = false }
         do {
+            // `name` passed straight through, blank included: `link` resolves
+            // it, because only it knows whether this folder is new (take a
+            // default) or already linked (keep the name it has).
             let folder = try driveLibrary.link(folderID: folderID, displayName: name)
             link = ""
             name = ""
