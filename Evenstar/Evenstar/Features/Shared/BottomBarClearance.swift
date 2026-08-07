@@ -62,6 +62,20 @@ private struct BottomBarClearanceModifier: ViewModifier {
                         )
                 )
         }
+        // Folded in here rather than given its own modifier, and for the same
+        // reason this one exists: it applies to exactly the screens that
+        // already apply this, and one obligation per screen is one thing to
+        // forget instead of two. Đợt A shipped a Critical defect from precisely
+        // that kind of omission.
+        //
+        // After `safeAreaInset`, so the band aligns to the bottom of the whole
+        // screen rather than to the top of the clear spacer.
+        .overlay(alignment: .bottom) {
+            ScrollEdgeEffectBand(
+                hasTrack: playback.currentTrack != nil,
+                bottomSafeAreaInset: bottomSafeAreaInset
+            )
+        }
     }
 }
 
