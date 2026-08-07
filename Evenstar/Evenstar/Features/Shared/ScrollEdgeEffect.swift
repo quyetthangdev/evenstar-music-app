@@ -37,7 +37,18 @@ enum ScrollEdgeEffect {
     /// The band below this is at full strength; this is only the run-out. Too
     /// short and the top of the effect is a visible horizontal line across the
     /// screen; too long and half the list is permanently hazy.
-    static let fade: CGFloat = 28
+    ///
+    /// **56, up from 28.** At 28 the blur reached full strength on the bar's
+    /// own top edge and fell to nothing 28pt later — measured by differencing
+    /// two screenshots, the whole visible transition happened between 84 and
+    /// 110pt above the screen bottom. That is a quarter of the band doing all
+    /// the work, and it read as an edge rather than as a fade. Doubling it
+    /// spreads the same change over twice the distance, so at any given height
+    /// the effect is weaker and the eye has nothing to catch on.
+    ///
+    /// It stays a run-out rather than taking over: the full-strength region
+    /// below is 84pt, still taller than this.
+    static let fade: CGFloat = 56
 
     /// Total height of the band, measured from the **physical bottom of the
     /// screen** — the same origin `BottomBarMetrics` measures the bar from,
@@ -60,21 +71,31 @@ enum ScrollEdgeEffect {
     /// The mask's stops, from the top of the band downward: transparent at the
     /// very top, opaque from the end of the fade to the bottom.
     ///
-    /// **Smoothstep, not a straight ramp.** A linear gradient reaches full
-    /// opacity with its slope still changing abruptly, and a discontinuity in
-    /// the *first derivative* of a gradient reads as a line even when the two
-    /// sides match exactly — the same Mach band that had to be designed out of
-    /// the expanded player's artwork fade. Sampling `3t² − 2t³` flattens the
-    /// slope at both ends, so the band has no edge to see.
+    /// **Smootherstep, not a straight ramp and not smoothstep.** A linear
+    /// gradient reaches full opacity with its slope unchanged, and a
+    /// discontinuity in the *first derivative* of a gradient reads as a line
+    /// even when the two sides match exactly — the same Mach band that had to
+    /// be designed out of the expanded player's artwork fade.
+    ///
+    /// Smoothstep (`3t² − 2t³`) flattens the first derivative at both ends and
+    /// was the first version here. It still read as slightly abrupt, because it
+    /// leaves the *second* derivative jumping at each end — the rate of change
+    /// changes suddenly even though the value does not. `6t⁵ − 15t⁴ + 10t³`
+    /// zeroes both, so the ramp leaves nothing and arrives at nothing with no
+    /// corner in between.
     ///
     /// - Parameter fadeFraction: how much of the band's height the run-out
     ///   occupies. Clamped to 0...1: a band shorter than the fade would
     ///   otherwise produce locations past the end of the gradient.
-    static func maskStops(fadeFraction: CGFloat, samples: Int = 8) -> [Gradient.Stop] {
+    /// - Parameter samples: how many stops approximate the curve. SwiftUI
+    ///   interpolates *linearly* between stops, so too few turns the curve back
+    ///   into the straight segments it exists to avoid. 12 over a 56pt run-out
+    ///   is a stop every few points, well under what the eye resolves.
+    static func maskStops(fadeFraction: CGFloat, samples: Int = 12) -> [Gradient.Stop] {
         let span = min(max(fadeFraction, 0), 1)
         var stops = (0...samples).map { index -> Gradient.Stop in
             let t = CGFloat(index) / CGFloat(samples)
-            let smooth = t * t * (3 - 2 * t)
+            let smooth = t * t * t * (t * (t * 6 - 15) + 10)
             return Gradient.Stop(color: .black.opacity(smooth), location: t * span)
         }
         // The remainder of the band is solid. Without this the mask would stop

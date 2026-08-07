@@ -82,16 +82,20 @@ final class ScrollEdgeEffectTests: XCTestCase {
         XCTAssertEqual(stops[stops.count - 2].color, Color.black.opacity(1))
     }
 
-    /// **Smoothstep, not linear.** A straight ramp reaches full opacity with
-    /// its slope unchanged, and that discontinuity reads as a horizontal line
-    /// across the screen. Halfway along the fade the two curves agree, so the
-    /// quarter point is where they separate: linear would be 0.25.
+    /// **Smootherstep, not linear and not smoothstep.** A straight ramp reaches
+    /// full opacity with its slope unchanged, and that discontinuity reads as a
+    /// horizontal line. Smoothstep fixes the slope but leaves the *second*
+    /// derivative jumping, which still read as abrupt on screen.
+    ///
+    /// The quarter point separates all three: linear 0.25, smoothstep 0.15625,
+    /// smootherstep 0.103515625. Asserting the exact value is what makes a
+    /// silent revert to either of the others fail here.
     func testTheRampEasesRatherThanRisingStraight() {
         let stops = ScrollEdgeEffect.maskStops(fadeFraction: 1, samples: 4)
 
-        // t = 0.25 -> 3t² - 2t³ = 0.15625, well below the linear 0.25.
-        XCTAssertEqual(stops[1].color, Color.black.opacity(0.15625))
-        // t = 0.5 is the one point where smoothstep and linear agree.
+        // t = 0.25 -> 6t⁵ - 15t⁴ + 10t³ = 0.103515625.
+        XCTAssertEqual(stops[1].color, Color.black.opacity(0.103515625))
+        // t = 0.5 is the one point where all three curves agree.
         XCTAssertEqual(stops[2].color, Color.black.opacity(0.5))
     }
 
@@ -112,12 +116,27 @@ final class ScrollEdgeEffectTests: XCTestCase {
 
     /// The real call site's fraction, at both bar heights: the fade must stay a
     /// run-out rather than swallowing the band. Anything approaching 1 here
-    /// would mean the whole band is ramp and nothing is at full strength.
-    func testTheRealFadeStaysASmallPartOfTheBand() {
+    /// would mean the whole band is ramp and nothing is at full strength, which
+    /// is the state where content passes under the bar unprotected.
+    ///
+    /// **The bound was 0.35 and is now stated as a relationship instead.** 0.35
+    /// was an arithmetic consequence of the first fade length, not a
+    /// requirement — and that length was wrong: the transition read as an edge,
+    /// and lengthening it is what fixed it. A bound that fails whenever the
+    /// fade is retuned is a bound that tests the tuning rather than the design.
+    ///
+    /// What the design actually requires is that the full-strength region below
+    /// the fade is at least as tall as the fade itself, so the bar always sits
+    /// on fully-blurred content. That is `fraction <= 0.5`, and it stays true
+    /// whatever the fade is set to next.
+    func testTheFullStrengthRegionIsNeverShorterThanTheFade() {
         for hasTrack in [true, false] {
             let fraction = ScrollEdgeEffect.fade / ScrollEdgeEffect.height(hasTrack: hasTrack)
 
-            XCTAssertLessThan(fraction, 0.35, "fade dominates the band (hasTrack: \(hasTrack))")
+            XCTAssertLessThanOrEqual(
+                fraction, 0.5,
+                "the fade is taller than the solid part it runs out of (hasTrack: \(hasTrack))"
+            )
             XCTAssertGreaterThan(fraction, 0)
         }
     }
