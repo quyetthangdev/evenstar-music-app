@@ -208,11 +208,23 @@ struct FloatingTabBar: View {
 
     /// What the tabs shrink to as the pill closes, and grow from as it opens.
     ///
-    /// Far enough from 1 that the shrink actually reads — an earlier pass sat
-    /// at 0.92 and, paired with a fade, was invisible. Not so far that the
-    /// glyphs fly away: the capsule is closing over them, and they should look
-    /// like they are being tucked in, not thrown.
-    private static let tabRevealScale = 0.75
+    /// **Only the distance travelled. The timing, the fade, the stagger and the
+    /// clip are all unchanged** — moving this changes how far the glyphs go, not
+    /// how they get there.
+    ///
+    /// It has been three values, and the middle one is the reason this doc is
+    /// long. At **0.92** the shrink was invisible: it was paired with the fade
+    /// across two curves with two delays, and a glyph fading out while barely
+    /// changing size just reads as fading. **0.75** made it read, and that was
+    /// the right call at the time.
+    ///
+    /// **0.86** now, because the fix that made 0.92 fail was fixed separately:
+    /// the shrink and the fade were put on one animation, so the size change is
+    /// carried by the same curve the eye is already following instead of
+    /// competing with a second one. On one curve a quarter of travel is more
+    /// than the motion needs — it reads as the glyphs being pulled away rather
+    /// than tucked in.
+    private static let tabRevealScale = 0.86
 
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
