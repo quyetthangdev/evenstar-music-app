@@ -10,11 +10,11 @@ enum LibraryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .persistenceFailed(let error):
-            return String(localized: "Không lưu được thay đổi: \(error.localizedDescription)")
+            return String(localized: "Không lưu được thay đổi: \(error.localizedDescription)", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .artworkWriteFailed(let error):
-            return String(localized: "Không lưu được ảnh bìa: \(error.localizedDescription)")
+            return String(localized: "Không lưu được ảnh bìa: \(error.localizedDescription)", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .emptyTitle:
-            return String(localized: "Tên bài hát không được để trống.")
+            return String(localized: "Tên bài hát không được để trống.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
 }

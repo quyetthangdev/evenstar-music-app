@@ -47,8 +47,8 @@ struct SongsView: View {
         /// not a bare literal.
         var label: String {
             switch self {
-            case .local: String(localized: "Trên máy")
-            case .drive: String(localized: "Drive")
+            case .local: String(localized: "Trên máy", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+            case .drive: String(localized: "Drive", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
             }
         }
     }

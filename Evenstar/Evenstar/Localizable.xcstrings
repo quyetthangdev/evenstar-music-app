@@ -706,6 +706,22 @@
         }
       }
     },
+    "Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screens the system provides — the photo picker, the file importer, the volume control — stay in your device’s language."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy."
+          }
+        }
+      }
+    },
     "Máy đã hết dung lượng.": {
       "localizations": {
         "en": {
@@ -787,6 +803,7 @@
       }
     },
     "Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng.": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {

@@ -59,8 +59,13 @@ struct RootView: View {
     @State private var bottomSafeAreaInset: CGFloat = 0
 
     /// The user's appearance override, or `.system` for none. Edited in
-    /// `AccountView`; both read the one key on `AppTheme`.
+    /// `SettingsView`; both read the one key on `AppTheme`.
     @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
+
+    /// The user's language override. Read here only so this body re-runs when
+    /// it changes — the value itself comes from `AppLanguage.resolvedLocale`,
+    /// which everything outside a view uses too.
+    @AppStorage(AppLanguage.storageKey) private var language: AppLanguage = .system
 
     /// Whether minimised styling should actually apply, as opposed to what
     /// `isMinimised` merely holds.
@@ -289,6 +294,18 @@ struct RootView: View {
         // resolved in one place because `preferredColorScheme` does not
         // compose — see `PlayerChromeScheme`.
         .playerChromeScheme(expansion, theme: theme)
+        // Covers every `Text` in the app, live and without a relaunch: a
+        // `LocalizedStringKey` resolves against the environment's locale.
+        //
+        // It does NOT cover `String(localized:)`, which reads the process's
+        // languages — those call sites pass `AppLanguage.resolvedLocale`
+        // explicitly. Nor does it cover system-supplied UI: the photo picker,
+        // the file importer and the volume slider are the system's, and they
+        // stay in the phone's language whatever this says.
+        .environment(\.locale, AppLanguage.resolvedLocale)
+        // Reading `language` is what makes the line above re-evaluate; without
+        // it the environment would keep the locale resolved at first launch.
+        .id(language)
         // Restoring the saved queue is an app-launch concern, so it belongs on
         // the root and not on any one tab. On Bài hát it would work only by
         // accident of that tab being selected first, and would silently stop

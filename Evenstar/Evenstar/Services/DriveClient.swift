@@ -49,23 +49,23 @@ enum DriveError: Error, Equatable, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            String(localized: "Chưa cấu hình API key cho Google Drive.")
+            String(localized: "Chưa cấu hình API key cho Google Drive.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .notShared:
-            String(localized: "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”.")
+            String(localized: "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .notFound:
-            String(localized: "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá.")
+            String(localized: "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .offline:
-            String(localized: "Không có kết nối mạng.")
+            String(localized: "Không có kết nối mạng.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .connectionFailed:
-            String(localized: "Không thể kết nối tới Google Drive. Vui lòng thử lại sau.")
+            String(localized: "Không thể kết nối tới Google Drive. Vui lòng thử lại sau.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .fileUnavailable:
-            String(localized: "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.")
+            String(localized: "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .quotaExceeded:
-            String(localized: "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút.")
+            String(localized: "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .server(let status):
-            String(localized: "Google Drive trả về lỗi \(status).")
+            String(localized: "Google Drive trả về lỗi \(status).", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .malformedResponse:
-            String(localized: "Không đọc được dữ liệu Google Drive trả về.")
+            String(localized: "Không đọc được dữ liệu Google Drive trả về.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
 

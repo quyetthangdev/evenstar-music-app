@@ -14,7 +14,7 @@ import SwiftUI
 /// day something actually notifies, and not before.
 struct SettingsView: View {
     @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
-    @Environment(\.openURL) private var openURL
+    @AppStorage(AppLanguage.storageKey) private var language: AppLanguage = .system
 
     var body: some View {
         List {
@@ -45,58 +45,32 @@ struct SettingsView: View {
             }
 
             Section {
-                Button {
-                    // The one URL iOS accepts for "open my own settings page".
-                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                    openURL(url)
-                } label: {
-                    HStack {
-                        Text("Ngôn ngữ")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Text(Self.currentLanguageName)
-                            .foregroundStyle(.secondary)
-                        // The system's own mark for "this leaves the app", the
-                        // way Settings shows it. Not a chevron: a chevron
-                        // promises a screen inside this app, and this is not
-                        // one.
-                        Image(systemName: "arrow.up.forward.app")
-                            .foregroundStyle(.secondary)
-                            .font(.footnote)
+                // A real picker now, not a button that hands the job to iOS.
+                //
+                // The first version of this row opened Settings, on the belief
+                // that an in-app switcher needs a relaunch. That is true of
+                // `AppleLanguages`, and false of SwiftUI: a `LocalizedStringKey`
+                // resolves against the environment's locale, so setting
+                // `\.locale` at the root retranslates every `Text` on the spot.
+                // Checked on screen before this was written — a phone in
+                // Vietnamese, the environment forced to English, and the
+                // navigation title came out "Songs".
+                Picker("Ngôn ngữ", selection: $language) {
+                    ForEach(AppLanguage.allCases) { option in
+                        Text(option.label).tag(option)
                     }
                 }
-                // `.plain`, or the whole row is painted in the accent colour.
-                //
-                // `.primary` and `.secondary` are *hierarchical* styles: they
-                // resolve against whatever foreground style is in force, and
-                // inside a default `Button` label that is the tint. So the label
-                // came out accent-coloured and the value came out accent at 60%,
-                // reading as a link rather than as a settings row — the same
-                // trap the repeat button's tint hit from the other direction.
-                //
-                // Settings' own rows that open elsewhere look like ordinary
-                // rows. Being tappable is said by the mark on the right, not by
-                // colouring the words.
-                .buttonStyle(.plain)
+                .pickerStyle(.navigationLink)
             } footer: {
-                Text("Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng.")
+                // Said plainly rather than left to be discovered. The bits that
+                // stay in the phone's language are the system's own screens —
+                // the photo picker, the file importer, the volume control — and
+                // no app can translate those for itself.
+                Text("Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy.")
             }
         }
         .navigationTitle("Cài đặt")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    /// The language the app is currently running in, named in that language.
-    ///
-    /// Read from the bundle rather than from `Locale.current`: what matters is
-    /// which localisation the app actually resolved to, which is not always the
-    /// phone's first choice — a phone set to a language the app does not have
-    /// falls back, and the row must say what is on screen rather than what was
-    /// asked for.
-    private static var currentLanguageName: String {
-        let code = Bundle.main.preferredLocalizations.first ?? "en"
-        let locale = Locale(identifier: code)
-        return locale.localizedString(forIdentifier: code)?.capitalized(with: locale) ?? code
     }
 }
 

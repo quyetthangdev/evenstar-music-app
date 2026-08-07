@@ -27,11 +27,11 @@ enum LibraryTab: String, Identifiable {
     /// sentence, and `LocalizedStringKey` cannot be interpolated into one.
     var label: String {
         switch self {
-        case .songs:   String(localized: "Bài hát")
-        case .albums:  String(localized: "Album")
-        case .artists: String(localized: "Nghệ sĩ")
-        case .account: String(localized: "Tài khoản")
-        case .search:  String(localized: "Tìm kiếm")
+        case .songs:   String(localized: "Bài hát", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .albums:  String(localized: "Album", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .artists: String(localized: "Nghệ sĩ", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .account: String(localized: "Tài khoản", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .search:  String(localized: "Tìm kiếm", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
 

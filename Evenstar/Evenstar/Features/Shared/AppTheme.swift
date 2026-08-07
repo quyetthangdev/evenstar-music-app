@@ -21,9 +21,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// bare literal.
     var label: String {
         switch self {
-        case .system: String(localized: "Theo hệ thống")
-        case .light: String(localized: "Sáng")
-        case .dark: String(localized: "Tối")
+        case .system: String(localized: "Theo hệ thống", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .light: String(localized: "Sáng", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .dark: String(localized: "Tối", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
 

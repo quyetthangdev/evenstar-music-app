@@ -11,13 +11,13 @@ enum ImportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedFormat(let ext): return String(localized: "Định dạng không hỗ trợ: .\(ext)")
-        case .metadataExtractionFailed: return String(localized: "Không đọc được thông tin bài hát.")
-        case .copyFailed(let error): return String(localized: "Chép file thất bại: \(error.localizedDescription)")
-        case .persistFailed(let error): return String(localized: "Không lưu được vào thư viện: \(error.localizedDescription)")
-        case .diskFull: return String(localized: "Máy đã hết dung lượng.")
+        case .unsupportedFormat(let ext): return String(localized: "Định dạng không hỗ trợ: .\(ext)", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .metadataExtractionFailed: return String(localized: "Không đọc được thông tin bài hát.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .copyFailed(let error): return String(localized: "Chép file thất bại: \(error.localizedDescription)", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .persistFailed(let error): return String(localized: "Không lưu được vào thư viện: \(error.localizedDescription)", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+        case .diskFull: return String(localized: "Máy đã hết dung lượng.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .fileNotAccessible(let url):
-            return String(localized: "Không mở được \(url.lastPathComponent). File có thể đã bị di chuyển hoặc xoá.")
+            return String(localized: "Không mở được \(url.lastPathComponent). File có thể đã bị di chuyển hoặc xoá.", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
 }
