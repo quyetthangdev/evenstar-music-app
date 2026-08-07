@@ -41,15 +41,27 @@ import json, sys
 path, wanted = sys.argv[1], sys.argv[2]
 devices = json.load(open(path))["result"]["devices"]
 
-# "connected" only. A phone that has been plugged in before but is not now still
-# appears in this list, and installing to it hangs rather than failing.
+# `tunnelState == "connected"` exactly, not "anything but unavailable".
+#
+# This script once installed a build onto the wrong phone. The filter accepted
+# any device whose tunnel was not literally "unavailable", and a second phone
+# that had been paired earlier was sitting at "disconnected" — which passed, and
+# happened to sort first. "connected" is the only state that means the device is
+# reachable right now; everything else is a device this machine merely knows.
 usable = [
     d for d in devices
-    if d.get("connectionProperties", {}).get("tunnelState") != "unavailable"
+    if d.get("connectionProperties", {}).get("tunnelState") == "connected"
     and (not wanted or d["deviceProperties"]["name"] == wanted)
 ]
 if not usable:
     print("", "", "")
+    sys.exit(0)
+
+# **Refuse rather than choose.** Picking the first of several is what put a
+# build on someone else's phone, and no ordering rule fixes that — the script
+# cannot know which one was meant. With two connected, the user names one.
+if len(usable) > 1:
+    print("AMBIGUOUS", "", " / ".join(d["deviceProperties"]["name"] for d in usable))
     sys.exit(0)
 
 d = usable[0]
@@ -62,13 +74,19 @@ PY
 )
 EOF
 
+if [ "${CORE_ID:-}" = "AMBIGUOUS" ]; then
+  echo "✗ More than one device is connected: $DEVICE_NAME" >&2
+  echo "  Name the one you want:  ./device.sh \"iPhone của Thắng\"" >&2
+  exit 1
+fi
+
 if [ -z "${CORE_ID:-}" ]; then
   if [ -n "$NAME_FILTER" ]; then
     echo "✗ No connected device named \"$NAME_FILTER\"." >&2
   else
     echo "✗ No connected iPhone." >&2
   fi
-  echo "  Connected devices:" >&2
+  echo "  Devices this Mac knows about:" >&2
   xcrun devicectl list devices 2>/dev/null | sed 's/^/    /' >&2
   exit 1
 fi
