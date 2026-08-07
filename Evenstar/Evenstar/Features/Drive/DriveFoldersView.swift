@@ -33,6 +33,25 @@ struct DriveFoldersView: View {
     @State private var name = ""
     @State private var errorMessage: String?
     @State private var isWorking = false
+    /// Seeded from whether anything is linked yet — see the section itself.
+    @State private var isHelpExpanded = false
+
+    /// The three steps that happen outside this app.
+    ///
+    /// Static and plain rather than a formatted string, so each step is its own
+    /// line at any Dynamic Type size. Named in the order they are performed, and
+    /// naming the buttons as Drive labels them rather than describing them, so
+    /// the user is matching words rather than interpreting.
+    private static var linkSteps: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("1. Mở ứng dụng Google Drive, giữ vào thư mục nhạc.")
+            Text("2. Chọn **Chia sẻ** → **Quản lý quyền truy cập**, đổi thành **Bất kỳ ai có đường liên kết**.")
+            Text("3. Bấm **Sao chép đường liên kết**, rồi quay lại đây và dán vào ô trên.")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
+    }
 
     // No `NavigationStack` here — matching `AlbumDetailView` and
     // `ArtistDetailView`, the app's other two push destinations, which also
@@ -121,16 +140,58 @@ struct DriveFoldersView: View {
                 Text("Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó.")
             }
 
+            // Its own section, below the form rather than inside it.
+            //
+            // Inside, expanding it would push the "Liên kết" button and — worse
+            // — the privacy footer down the screen, which is the one thing on
+            // this screen that must not move out of sight. Below, opening it
+            // moves only the list of linked folders.
+            //
+            // Open by default the first time, closed afterwards: the guidelines
+            // put helping someone avoid an error ahead of reporting it, and this
+            // flow *requires* leaving the app to fetch something. A collapsed
+            // disclosure that nobody opens does not help a first-time user; a
+            // permanently expanded one is clutter for everybody else.
+            Section {
+                DisclosureGroup("Cách lấy link", isExpanded: $isHelpExpanded) {
+                    Self.linkSteps
+                }
+            }
+
             Section("Đã liên kết") {
                 if folders.isEmpty {
                     Text("Chưa có thư mục nào").foregroundStyle(.secondary)
                 }
                 ForEach(folders) { folder in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(folder.displayName)
-                        Text(folder.lastScannedAt == nil ? "Chưa quét" : "Đã quét")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(folder.displayName)
+                            Text(folder.lastScannedAt == nil ? "Chưa quét" : "Đã quét")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if driveLibrary.scanningFolderID == folder.folderID {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                    // Leading for the constructive action, trailing for the
+                    // destructive one — the arrangement Mail uses, and the one a
+                    // thumb already knows.
+                    //
+                    // A row that shows a state usually has to offer the action
+                    // that changes it. "Chưa quét" is the state a user lands on
+                    // when the key is wrong, the folder is private or the network
+                    // dropped; before this, the only documented way out was to
+                    // re-paste the same link into the form above, which is a
+                    // recovery nobody would guess at.
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            Task { await rescan(folder) }
+                        } label: {
+                            Label("Quét lại", systemImage: "arrow.clockwise")
+                        }
+                        .tint(.accentColor)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
@@ -142,6 +203,11 @@ struct DriveFoldersView: View {
                 }
             }
         }
+        // Runs once per presentation. `@State` cannot be initialised from a
+        // `@Query`, and this only has to be right at the moment the screen
+        // opens: linking the first folder mid-session leaves the help open,
+        // which is correct — that user has just used it.
+        .task { isHelpExpanded = folders.isEmpty }
         .navigationTitle("Thư mục Drive")
         .toolbar {
             if showsDoneButton {
@@ -224,6 +290,34 @@ struct DriveFoldersView: View {
             let folder = try driveLibrary.link(folderID: folderID, displayName: name)
             link = ""
             name = ""
+            try await driveLibrary.scan(folder)
+            // Both halves succeeded, so the task this screen was opened to do is
+            // finished — and a modal whose task is finished closes itself.
+            //
+            // **Only when it is a modal.** `showsDoneButton` already carries
+            // exactly that distinction: true means the sheet from the Drive
+            // list, where staying leaves the user on a form with its primary
+            // action disabled and nothing saying what happened; false means the
+            // pushed screen under Tài khoản → Nguồn nhạc, which is a management
+            // screen the user navigated *to* and popping it out from under them
+            // would be wrong.
+            //
+            // After the `scan`, never before: a scan that throws is exactly the
+            // case where the user has to stay and read the error.
+            if showsDoneButton { dismiss() }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Rescans one already-linked folder, from its own row.
+    ///
+    /// Shares `errorMessage` with `add` rather than carrying its own: only one
+    /// of the two can be running, and a second error slot would be a second
+    /// place for a stale message to sit.
+    private func rescan(_ folder: DriveFolder) async {
+        errorMessage = nil
+        do {
             try await driveLibrary.scan(folder)
         } catch {
             errorMessage = error.localizedDescription
