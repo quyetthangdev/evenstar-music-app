@@ -274,6 +274,7 @@
       }
     },
     "Chế độ": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -285,6 +286,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chế độ"
+          }
+        }
+      }
+    },
+    "Cài đặt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cài đặt"
           }
         }
       }
@@ -381,6 +398,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gỡ"
+          }
+        }
+      }
+    },
+    "Hiển thị": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiển thị"
           }
         }
       }
@@ -733,6 +766,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nguồn nhạc"
+          }
+        }
+      }
+    },
+    "Ngôn ngữ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngôn ngữ"
+          }
+        }
+      }
+    },
+    "Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The language is changed in iOS Settings. If you don’t see it there, add a second language under General → Language & Region."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng."
           }
         }
       }

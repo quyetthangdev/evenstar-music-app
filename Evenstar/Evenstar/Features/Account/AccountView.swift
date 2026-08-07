@@ -23,12 +23,6 @@ struct AccountView: View {
     /// no files.
     @State private var bytesOnDisk: Int64?
 
-    /// The same key `RootView` reads to apply it — see `AppTheme.storageKey`.
-    /// `@AppStorage` writes straight through to `UserDefaults`, so the change
-    /// lands before this line returns and every other reader of the key updates
-    /// in the same pass. No save button, and nothing to forget to save.
-    @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
-
     var body: some View {
         NavigationStack {
             List {
@@ -39,22 +33,16 @@ struct AccountView: View {
                     row("Dung lượng", value: storageText)
                 }
 
-                Section("Giao diện") {
-                    // Segmented rather than a menu: three short options that the
-                    // user is choosing *by looking at the result*, so the
-                    // choices should be visible and one tap away rather than
-                    // behind a menu that covers the screen being judged.
-                    Picker("Chế độ", selection: $theme) {
-                        ForEach(AppTheme.allCases) { option in
-                            Text(option.label).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    // The label is what makes it a settings row rather than a
-                    // control floating in a list; hiding it is deliberate, since
-                    // the section header already says what this is and the row
-                    // is otherwise too narrow for three Vietnamese labels.
-                    .labelsHidden()
+                // One row rather than the appearance control inline.
+                //
+                // This screen was three unrelated things in one list: what the
+                // library adds up to, where its music comes from, and how the
+                // app behaves. Settings are the part that grows, so they get
+                // their own screen and everything added later lands there
+                // instead of as another section wedged between the storage
+                // figure and the version number.
+                Section {
+                    NavigationLink("Cài đặt") { SettingsView() }
                 }
 
                 Section("Nguồn nhạc") {
