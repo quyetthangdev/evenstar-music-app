@@ -30,6 +30,15 @@ struct NowPlayingContent: View {
     /// control now that it has no ring to set it apart.
     private static let playGlyphSize: CGFloat = 42
 
+    /// `.title3` rather than `.title2`, a step down.
+    ///
+    /// Named once because two places need the same value and they must agree:
+    /// the title itself, and the hidden sibling that reserves its height. A
+    /// mismatch there would reserve the wrong number of points and the whole
+    /// stack below would sit a few points off — with nothing on screen saying
+    /// why.
+    private static let titleFont = Font.title3.bold()
+
     /// Larger than the `.subheadline` this started at: `repeat.1` carries a
     /// digit as well as the loop, and at the smaller size the digit was a
     /// smudge.
@@ -64,17 +73,32 @@ struct NowPlayingContent: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // `reservesSpace` is the whole answer to a long title. Without it
-            // the block is one line tall for most tracks and two for the rest,
-            // so everything below — the scrubber, the transport row, the volume
-            // slider — shifts by a line depending on which track is playing, and
-            // `PlayerCard.artworkSide`'s fixed allowance has to be sized for a
-            // case it cannot see. With it the block is always two lines, so the
-            // layout is identical for every track and a title longer than that
-            // truncates instead of pushing the controls down.
-            Text(playback.currentTrack?.title ?? "—")
-                .font(.title2.bold())
-                .lineLimit(2, reservesSpace: true)
+            // Two lines of height, always — but the title sits at the BOTTOM of
+            // them rather than the top.
+            //
+            // The reserved height is not negotiable: without it the block is one
+            // line for most tracks and two for the rest, so the scrubber, the
+            // transport row and the volume slider all shift by a line depending
+            // on which track is playing. That is what `reservesSpace` was for.
+            //
+            // What `reservesSpace` gets wrong is *where* it puts the spare line.
+            // It leaves it below the text, so a one-line title — most titles —
+            // floated a full line clear of the artist beneath it, and the two
+            // read as unrelated rather than as a pair. Holding the height with a
+            // hidden sibling and aligning to `.bottomLeading` puts the spare
+            // line above instead: a short title sits directly on the artist, a
+            // long one grows upward into the space, and nothing below moves in
+            // either case.
+            ZStack(alignment: .bottomLeading) {
+                Text(verbatim: " ")
+                    .font(Self.titleFont)
+                    .lineLimit(2, reservesSpace: true)
+                    .hidden()
+                    .accessibilityHidden(true)
+                Text(playback.currentTrack?.title ?? "—")
+                    .font(Self.titleFont)
+                    .lineLimit(2)
+            }
             // One line, whether it is carrying metadata or a failure — see
             // `PlayerSubtitle` for why a failure replaces the metadata instead
             // of being added below it, and `PlayerCard.artworkSide` for what

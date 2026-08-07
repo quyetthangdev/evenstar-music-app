@@ -96,6 +96,15 @@ struct TransportButtonStyle: ButtonStyle {
     /// own `Body` associated type and makes the conformance fail to resolve.
     private struct Interaction: View {
         @Environment(\.isEnabled) private var isEnabled
+        /// Counts touch-*downs*, where `trigger` counts completed taps.
+        ///
+        /// A `Button`'s action runs on touch-**up**, so everything keyed on
+        /// `trigger` — the kick, the halo, the haptic — used to arrive only when
+        /// the finger left. On a quick tap that is nearly the same instant; on a
+        /// press held even briefly it is not, and the button read as answering
+        /// late. The squeeze was the only thing that ever met the finger, and a
+        /// 0.92 scale on a glyph is not much of an answer.
+        @State private var presses = 0
         let configuration: Configuration
         let trigger: Int
         let direction: CGFloat
@@ -131,13 +140,27 @@ struct TransportButtonStyle: ButtonStyle {
                 // the throw would drag it off the point that was actually
                 // pressed. Out here it stays a circle, centred where the finger
                 // was.
-                .tapHalo(trigger: trigger)
-                // Fires on the same counter, so the tap lands in the hand at
-                // the same moment it lands in the eye. `.sensoryFeedback`
+                //
+                // Keyed on touch-down, not on the completed tap: the halo is the
+                // acknowledgement, and an acknowledgement that waits for the
+                // finger to leave is not one.
+                .tapHalo(trigger: presses)
+                // Same counter as the halo, so the tap lands in the hand at the
+                // same moment it lands in the eye — which is now the moment of
+                // contact rather than the moment of release. `.sensoryFeedback`
                 // rather than a `UIImpactFeedbackGenerator`: SwiftUI owns the
                 // generator's lifetime, and it respects the system's haptics
                 // settings.
-                .sensoryFeedback(.impact(weight: .light), trigger: trigger)
+                //
+                // A press dragged off the button still gets both, and that is
+                // right: the phone was touched, the command was not sent, and
+                // the two are separate facts. The kick — the throw that goes
+                // with the command — stays on `trigger` and correctly does not
+                // fire.
+                .sensoryFeedback(.impact(weight: .light), trigger: presses)
+                .onChange(of: configuration.isPressed) { _, pressed in
+                    if pressed { presses += 1 }
+                }
         }
     }
 }
