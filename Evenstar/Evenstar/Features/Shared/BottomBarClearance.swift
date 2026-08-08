@@ -61,6 +61,17 @@ private struct BottomBarClearanceModifier: ViewModifier {
                             bottomSafeAreaInset: bottomSafeAreaInset
                         )
                 )
+                // The third piece of chrome that moves on this one event, and
+                // the third that was moving on its own clock. A track starting
+                // grows this by the pill plus its gap; the pill fades in over
+                // `settle` and the blur band now does too, while this stepped
+                // the whole list on a single frame.
+                //
+                // On the spacer, not on `content`: this is the only thing that
+                // should animate. Putting it on the modified view would hand the
+                // same curve to every row in the list for a change that is not
+                // about them.
+                .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         }
     }
 }
