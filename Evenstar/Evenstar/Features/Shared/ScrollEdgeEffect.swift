@@ -178,15 +178,6 @@ enum ScrollEdgeEffect {
 struct ScrollEdgeEffectBand: View {
     let hasTrack: Bool
 
-    /// How far the host's bottom edge sits above the physical bottom of the
-    /// screen — 34 on a phone with a home indicator, 0 without.
-    ///
-    /// Needed because `height(hasTrack:)` is measured from the screen while
-    /// this band is bottom-aligned inside a list whose own bottom stops at the
-    /// safe area. Without correcting for it the whole band rides that much too
-    /// high and the strip under the bar stays sharp.
-    let bottomSafeAreaInset: CGFloat
-
     var body: some View {
         let height = ScrollEdgeEffect.height(hasTrack: hasTrack)
         Rectangle()
@@ -202,20 +193,19 @@ struct ScrollEdgeEffectBand: View {
             )
             .frame(height: height)
             .allowsHitTesting(false)
-            // Negative padding, not `.ignoresSafeArea(edges: .bottom)`.
+            // No safe-area correction here any more, and the reason is worth
+            // keeping: there used to be `.padding(.bottom, -bottomSafeAreaInset)`
+            // because the band was an overlay inside a list whose own bottom
+            // stopped at the safe area, so it rode 34pt too high. (An earlier
+            // `.ignoresSafeArea(edges: .bottom)` did nothing at all there —
+            // ignoring a safe area governs how a view insets its *content*, not
+            // whether it may draw outside the frame its parent gave it. Two
+            // differenced screenshots put the gap at exactly the bottom 30pt.)
             //
-            // That was the first attempt and it did nothing measurable: this is
-            // a leaf inside the list's own overlay, and ignoring a safe area
-            // governs how a view insets its *content*, not whether it may draw
-            // outside the frame its parent gave it. Differencing two
-            // screenshots — one with the band, one without — put the change at
-            // exactly zero for the bottom 30pt and non-zero above it, which is
-            // the safe area to the point.
-            //
-            // Negative padding shortens the layout box while letting the view
-            // overhang it, so the band's bottom lands on the physical screen
-            // edge and its top stays `height` above that — which is where
-            // `BottomBarMetrics` measures the bar from in the first place.
-            .padding(.bottom, -bottomSafeAreaInset)
+            // The band now hangs off the root stack, which ignores the safe area
+            // itself, so its container's bottom edge already **is** the bottom of
+            // the screen — which is the origin `BottomBarMetrics` measures from.
+            // Correcting for an inset that is no longer there would push the
+            // band off the bottom by exactly that much.
     }
 }

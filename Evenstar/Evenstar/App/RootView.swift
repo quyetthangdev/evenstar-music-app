@@ -135,6 +135,28 @@ struct RootView: View {
             // parameter would have to be threaded to by hand.
             .environment(\.bottomSafeAreaInset, bottomSafeAreaInset)
 
+            // The blurred band that separates scrolling content from the bar.
+            //
+            // **Here, not inside the screens.** It began as part of
+            // `clearsBottomBar()`, applied per screen — which put it inside the
+            // subtree `recedesBehindPlayer` scales. Everything else along the
+            // bottom is chrome and holds still while the player opens: the tab
+            // bar does, the collapsed pill does. A band that shrank with the
+            // content was the odd one out, and swiping the player closed made it
+            // arrive late instead of tracking the animation.
+            //
+            // Applied once at the root also retires the obligation it used to
+            // carry. Folded into `clearsBottomBar()` the reasoning was "one
+            // thing per screen to remember rather than two"; here there is
+            // nothing for a new screen to remember at all.
+            //
+            // Below `FloatingTabBar` and `PlayerCard` in this stack, above the
+            // `TabView`: the content it blurs is what it must sit on top of, and
+            // the chrome it protects is what must sit on top of it.
+            ScrollEdgeEffectBand(hasTrack: playback.currentTrack != nil)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .ignoresSafeArea()
+
             FloatingTabBar(
                 selection: $tab,
                 isSearching: $isSearching,
