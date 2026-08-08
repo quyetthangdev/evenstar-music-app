@@ -162,9 +162,6 @@ struct PlayerCard: View {
     /// worst. See `displayedArtwork`.
     @State private var artworkOwner: ArtworkIdentity?
     @State private var tint: Color?
-    /// Nine colours from the cover, laid out 3×3, driving the expanded
-    /// background. See `ArtworkStore.meshPalette(for:)` and `AmbientMesh`.
-    @State private var meshColours: [Color]?
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
@@ -515,24 +512,6 @@ struct PlayerCard: View {
         guard hasArtwork else { return nil }
         return loadedForThisTrack ?? cachedForThisPath
     }
-
-    /// Whether the expanded background is the drifting colour field or the flat
-    /// gradient — the second place that must not be decided by a `.task`.
-    ///
-    /// Trivial on its own, and named anyway: it and `source(hasArtwork:loaded:)`
-    /// are the same rule, and the bug they fix was shipped twice because the
-    /// rule was written nowhere and re-derived in each place.
-    static func usesMesh(hasArtwork: Bool) -> Bool { hasArtwork }
-
-    /// Stands in for a palette that has not been read yet.
-    ///
-    /// Nine identical neutrals, so the mesh renders flat and is
-    /// indistinguishable from the gradient it replaces — then cross-fades to the
-    /// cover's real colours when they arrive. A colour change, not a structural
-    /// one, which is the whole point.
-    private static let neutralPalette = [Color](
-        repeating: Color(.systemGroupedBackground), count: 9
-    )
 
     private var artworkIdentity: ArtworkIdentity {
         ArtworkIdentity(
@@ -926,58 +905,36 @@ struct PlayerCard: View {
                     .fill(.thinMaterial)
                     .opacity(1 - progress)
             }
-            // The cover's own colours as a slowly drifting mesh.
+            // The cover's dominant colour, held flat down the card.
             //
-            // This replaced a flat `tintColour` held down the card and blended
-            // away below the artwork, and that is what removed the crease above
-            // the title. The crease was never a colour mismatch — both sides of
-            // the artwork's bottom edge were the same colour. It was a mismatch
-            // in *slope*: above the edge the colour was constant, and below it
-            // the gradient started moving immediately. The eye reads a
-            // discontinuity in the first derivative as a line (a Mach band),
-            // and no amount of matching the colours themselves removes it. A
-            // field that varies continuously through the seam has no slope to
-            // break.
+            // **This was a `MeshGradient` drifting at 30fps, and measurement is
+            // what removed it.** Two Instruments recordings on the device, same
+            // script, only this differing:
             //
-            // Gated on `progress` rather than merely faded by it: `AmbientMesh`
-            // drives a `TimelineView`, which would otherwise keep redrawing the
-            // whole card thirty times a second behind a collapsed pill nobody
-            // is looking at.
-            // **Which of the two, decided from the model.** `meshColours` is
-            // `@State` written only by `loadArtwork`, from `.task(id:)` — so
-            // branching on it chose the background from what the *previous*
-            // track left behind, and swapped part-way through the expand:
+            //     hitch time / second of use   189 ms  ->  35 ms
+            //     longest single stall         900 ms  -> 183 ms
             //
-            // - cover → no cover: the card opened on the previous song's colour
-            //   field and then dropped to the flat gradient.
-            // - no cover → cover: it opened flat and the mesh appeared under it.
-            // - cover → cover: both sides non-nil, so nothing structural moved
-            //   and this was the case that always looked right.
+            // A fifth of the delay, and the near-second freeze gone entirely. It
+            // was the single most expensive thing the app drew: a full-screen
+            // mesh recomputed thirty times a second, composited under a masked
+            // cover and over a material.
             //
-            // That is the same defect `source(hasArtwork:loaded:)` documents for
-            // the artwork slot, in a second place, and it is the one that made
-            // the *animation* wrong rather than merely the picture: a mesh
-            // appearing or vanishing mid-flight is not something SwiftUI can
-            // interpolate through.
-            if Self.usesMesh(hasArtwork: hasArtwork) {
-                if progress > 0 {
-                    // A stale palette is fine and is what the working case
-                    // already did: it is a colour, and colours cross-fade. Only
-                    // `nil` was structural. The neutral stand-in covers the one
-                    // gap — a cover whose palette has not been read yet.
-                    AmbientMesh(colours: meshColours ?? Self.neutralPalette)
-                        .opacity(progress)
-                }
-            } else {
-                // No cover to take colours from, so there is nothing to be
-                // continuous *with* and the flat gradient is right here.
-                LinearGradient(
-                    colors: [tintColour, Color(.systemGroupedBackground)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .opacity(progress)
-            }
+            // A flat field is also what Apple Music actually does — its expanded
+            // player has a *static* blurred backdrop, not a moving one. The
+            // moving version was this app's own invention, and it cost five
+            // times the frame budget to have.
+            //
+            // The Mach band the mesh was brought in to fix — a crease above the
+            // title, from a slope discontinuity where the artwork's fade met a
+            // constant colour — is handled by `dissolveStops` on the artwork
+            // instead: seven smoothstepped stops, so there is no corner in the
+            // gradient for the eye to find.
+            LinearGradient(
+                colors: [tintColour, Color(.systemGroupedBackground)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .opacity(progress)
             // Darkens everything below the artwork so the controls stay
             // readable.
             //
@@ -1393,13 +1350,11 @@ struct PlayerCard: View {
         // Concurrently with the other two, not after them: all three read the
         // same cached decode chain, and the palette is the cheapest of the
         // three by a wide margin — a 48px decode and a nine-pixel draw.
-        async let palette = ArtworkStore.meshPalette(for: path)
-        let (loadedImage, loadedColour, loadedPalette) = await (image, colour, palette)
+        let (loadedImage, loadedColour) = await (image, colour)
 
         guard playback.currentTrack?.artworkRelativePath == path else { return }
         artworkOwner = artworkIdentity
         artwork = loadedImage
         tint = loadedColour
-        meshColours = loadedPalette
     }
 }

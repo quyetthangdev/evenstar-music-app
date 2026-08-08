@@ -167,27 +167,6 @@ enum ArtworkStore {
         "\(relativePath)@\(Int(maxPixel))" as NSString
     }
 
-    /// Nine colours laid out as a 3×3 grid over the cover, for the expanded
-    /// player's animated background.
-    ///
-    /// **A grid rather than a set of "dominant colours".** The usual palette
-    /// extractor clusters an image into its most common colours and throws away
-    /// where they were. That loses the thing worth keeping: a cover with a
-    /// bright sky over dark ground should still read as bright above dark. Nine
-    /// cells in reading order preserve the composition, and handed to a
-    /// `MeshGradient` in the same order they reconstruct it — softened into a
-    /// colour field rather than a picture.
-    ///
-    /// The averaging is free: the cover is drawn into a 3×3 bitmap context and
-    /// Core Graphics' own scaler averages each ninth on the way in. No pixel
-    /// loop, no clustering.
-    @concurrent
-    static func meshPalette(for relativePath: String?) async -> [Color]? {
-        guard let small = await image(for: relativePath, maxPixel: palettePreScale),
-              let cgImage = small.cgImage else { return nil }
-        return grid3x3(of: cgImage)?.map { Color(uiColor: $0) }
-    }
-
     /// The cover is downsampled to this before the 3×3 draw rather than being
     /// drawn from full size.
     ///
@@ -233,63 +212,6 @@ enum ArtworkStore {
         return UIImage(cgImage: thumbnail)
     }
 
-    /// Nine cell averages, top-left first, reading order.
-    ///
-    /// **The row order is load-bearing and is not obvious.** A `CGBitmapContext`
-    /// has its coordinate origin at the bottom left, which invites the
-    /// assumption that row 0 of the buffer is the bottom of the picture — the
-    /// first version of this reversed the rows on exactly that reasoning and
-    /// came out upside down. The buffer is laid out top row first;
-    /// `CGContext.draw` renders the image the right way up within it. Reading
-    /// straight out is correct.
-    ///
-    /// Getting this wrong is invisible: an upside-down colour field taken from
-    /// an abstract cover looks entirely plausible, and nothing but a test with
-    /// a known top and bottom would ever report it. `ArtworkPaletteTests` is
-    /// that test.
-    static func grid3x3(of cgImage: CGImage) -> [UIColor]? {
-        let side = 3
-        var pixels = [UInt8](repeating: 0, count: side * side * 4)
-        let drew = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let base = buffer.baseAddress,
-                  let context = CGContext(
-                      data: base,
-                      width: side,
-                      height: side,
-                      bitsPerComponent: 8,
-                      bytesPerRow: side * 4,
-                      space: CGColorSpaceCreateDeviceRGB(),
-                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                  ) else { return false }
-            context.interpolationQuality = .high
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
-            return true
-        }
-        guard drew else { return nil }
-
-        var colours: [UIColor] = []
-        colours.reserveCapacity(side * side)
-        for row in 0..<side {
-            for column in 0..<side {
-                let index = (row * side + column) * 4
-                let alpha = Double(pixels[index + 3]) / 255
-                guard alpha > 0.01 else {
-                    colours.append(.black)
-                    continue
-                }
-                // The buffer is premultiplied; undo it before using the
-                // channels, or a semi-transparent cover reads as muddy.
-                colours.append(
-                    enrich(
-                        red: Double(pixels[index]) / 255 / alpha,
-                        green: Double(pixels[index + 1]) / 255 / alpha,
-                        blue: Double(pixels[index + 2]) / 255 / alpha
-                    )
-                )
-            }
-        }
-        return colours
-    }
 
     /// Pushes a cell average back toward the colour a person would say the
     /// cover *is*.
