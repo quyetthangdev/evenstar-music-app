@@ -110,4 +110,41 @@ final class PlayerArtworkSourceTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Which cover, and whether there is one in time
+
+    private func cover(_ has: Bool, loaded: String?, cached: String?) -> String? {
+        PlayerCard.preferredCover(
+            hasArtwork: has, loadedForThisTrack: loaded, cachedForThisPath: cached
+        )
+    }
+
+    /// **The half the first fix missed.** Opening a cover track straight after a
+    /// coverless one, the frame grew correctly but the picture appeared
+    /// part-way instead of growing with it — because `artwork` was nil at that
+    /// moment and the decode lands well into a 520ms spring. The row the user
+    /// just tapped has already decoded the same picture at its own size, so
+    /// there is something to draw from the first frame.
+    func testACoverDecodedAtAnotherSizeIsUsedWhenTheFullOneIsNotReady() {
+        XCTAssertEqual(cover(true, loaded: nil, cached: "row-thumbnail"), "row-thumbnail")
+    }
+
+    /// The full-size decode wins once it belongs to this track.
+    func testTheFullDecodeWinsOnceItIsForThisTrack() {
+        XCTAssertEqual(cover(true, loaded: "full", cached: "row-thumbnail"), "full")
+    }
+
+    /// A *stale* full decode is passed in as nil by the caller, precisely so it
+    /// cannot outrank a correct smaller one. This pins that a correct small
+    /// cover beats nothing at all.
+    func testACorrectSmallCoverBeatsHavingNothing() {
+        XCTAssertEqual(cover(true, loaded: nil, cached: "row-thumbnail"), "row-thumbnail")
+        XCTAssertNil(cover(true, loaded: nil, cached: nil))
+    }
+
+    /// A coverless track draws no cover, whatever happens to be in the cache —
+    /// including a decode left by the track before it.
+    func testACoverlessTrackDrawsNothingEvenWithSomethingCached() {
+        XCTAssertNil(cover(false, loaded: "previous", cached: "previous"))
+    }
 }

@@ -30,6 +30,27 @@ enum ArtworkStore {
         return cache
     }()
 
+    /// The `maxPixel` each path was most recently decoded at.
+    ///
+    /// `images` is keyed by *path and size together*, which is correct — a 44pt
+    /// thumbnail and a full-bleed cover are different bitmaps — but it means a
+    /// caller that wants "whatever decode of this picture already exists" has no
+    /// way to ask. `NSCache` cannot be enumerated, so the sizes are recorded
+    /// beside it.
+    ///
+    /// This exists for `anyCachedImage(for:)`, which exists for the expanded
+    /// player: it decodes far larger than the list rows do, so it never shares
+    /// their cache entry and had nothing to draw on its first frame.
+    ///
+    /// Most recent rather than largest, deliberately: the most recent decode is
+    /// the one least likely to have been evicted, and a slightly small stand-in
+    /// for a few frames beats a correct one that is gone.
+    private static let decodedSizes: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 512
+        return cache
+    }()
+
     private static let colors: NSCache<NSString, UIColor> = {
         let cache = NSCache<NSString, UIColor>()
         cache.countLimit = 256
@@ -42,13 +63,36 @@ enum ArtworkStore {
     static func image(for relativePath: String?, maxPixel: CGFloat) async -> UIImage? {
         guard let relativePath else { return nil }
         let key = cacheKey(relativePath, maxPixel)
-        if let cached = images.object(forKey: key) { return cached }
+        if let cached = images.object(forKey: key) {
+            noteDecodedSize(relativePath, maxPixel)
+            return cached
+        }
 
         let url = FileLocation.absoluteURL(forRelative: relativePath)
         guard let image = downsample(url: url, maxPixel: maxPixel) else { return nil }
 
         images.setObject(image, forKey: key, cost: cost(of: image))
+        noteDecodedSize(relativePath, maxPixel)
         return image
+    }
+
+    private static func noteDecodedSize(_ relativePath: String, _ maxPixel: CGFloat) {
+        decodedSizes.setObject(NSNumber(value: Double(maxPixel)), forKey: relativePath as NSString)
+    }
+
+    /// Any decode of this picture that is already in memory, at whatever size it
+    /// happens to be. Never decodes, never suspends.
+    ///
+    /// For drawing *something correct* on a first frame when the caller's own
+    /// size has not been decoded yet. The expanded player wants a 1200px cover
+    /// and the list row that was just tapped has a 100px one; scaled up for the
+    /// tens of milliseconds until the real decode lands, that is the same
+    /// picture and nobody sees the difference. Nothing, on the other hand, is
+    /// very visible — it is the cover failing to grow with the card.
+    static func anyCachedImage(for relativePath: String?) -> UIImage? {
+        guard let relativePath else { return nil }
+        guard let size = decodedSizes.object(forKey: relativePath as NSString) else { return nil }
+        return images.object(forKey: cacheKey(relativePath, CGFloat(size.doubleValue)))
     }
 
     /// The cached image, or nil — never decodes, never suspends.

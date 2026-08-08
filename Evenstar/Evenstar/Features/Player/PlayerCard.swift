@@ -155,6 +155,12 @@ struct PlayerCard: View {
     @State private var isDragging = false
 
     @State private var artwork: UIImage?
+    /// Which track `artwork` was loaded for.
+    ///
+    /// Without it there is no way to tell a *current* cover from the one the
+    /// previous track left behind, and every read of `artwork` has to assume the
+    /// worst. See `displayedArtwork`.
+    @State private var artworkOwner: ArtworkIdentity?
     @State private var tint: Color?
     /// Nine colours from the cover, laid out 3×3, driving the expanded
     /// background. See `ArtworkStore.meshPalette(for:)` and `AmbientMesh`.
@@ -464,6 +470,50 @@ struct PlayerCard: View {
     /// Synchronous, from the model. Never from `artwork`.
     private var hasArtwork: Bool {
         playback.currentTrack?.artworkRelativePath != nil
+    }
+
+    /// The cover to draw **on this frame**, resolved without waiting for
+    /// anything.
+    ///
+    /// The remaining half of the reported bug, after the structure was settled:
+    /// opening a cover track straight after a coverless one, the card's frame
+    /// grew correctly but the picture "appeared underneath" part-way instead of
+    /// growing with it. Nothing was wrong with the animation — there were simply
+    /// no pixels to animate. `artwork` is `nil` at that moment (the coverless
+    /// track cleared it) and the decode lands tens of milliseconds into a 520ms
+    /// spring, so the cover fades in over a frame that has already half opened.
+    ///
+    /// The list row the user just tapped has *already* decoded this picture, at
+    /// its own small size. `ArtworkStore` keys its cache by path **and** size,
+    /// so the player could never reach that entry; `anyCachedImage(for:)` is the
+    /// way in. Scaled up for the few frames until the full decode arrives it is
+    /// the same picture, and the swap between them is invisible — where the
+    /// absence was not.
+    ///
+    /// Order matters. The full-strength image wins only when it belongs to
+    /// *this* track; otherwise a correct small cover beats a stale large one.
+    private var displayedArtwork: UIImage? {
+        Self.preferredCover(
+            hasArtwork: hasArtwork,
+            loadedForThisTrack: artworkOwner == artworkIdentity ? artwork : nil,
+            cachedForThisPath: ArtworkStore.anyCachedImage(
+                for: playback.currentTrack?.artworkRelativePath
+            )
+        )
+    }
+
+    /// The ordering above, on its own so it can be tested.
+    ///
+    /// Generic because the rule has nothing to do with images: it is "prefer the
+    /// one that is certainly right and certainly current, then anything correct,
+    /// then nothing — and never anything at all if the track has no cover."
+    static func preferredCover<T>(
+        hasArtwork: Bool,
+        loadedForThisTrack: T?,
+        cachedForThisPath: T?
+    ) -> T? {
+        guard hasArtwork else { return nil }
+        return loadedForThisTrack ?? cachedForThisPath
     }
 
     /// Whether the expanded background is the drifting colour field or the flat
@@ -1045,7 +1095,8 @@ struct PlayerCard: View {
 
         // Decided from the model, not from the loaded image — see `source(_:_:)`
         // for why, and for the bug that rule fixes.
-        let source = Self.source(hasArtwork: hasArtwork, loaded: artwork != nil)
+        let shown = displayedArtwork
+        let source = Self.source(hasArtwork: hasArtwork, loaded: shown != nil)
 
         return ZStack {
             // Drawn in every one of the three states, so moving between them
@@ -1054,8 +1105,8 @@ struct PlayerCard: View {
             // changes, which is a content change rather than a structural one.
             Rectangle().fill(Color(.tertiarySystemFill))
 
-            if source == .image, let artwork {
-                Image(uiImage: artwork)
+            if source == .image, let shown {
+                Image(uiImage: shown)
                     .resizable()
                     .scaledToFill()
             }
@@ -1319,6 +1370,7 @@ struct PlayerCard: View {
         let (loadedImage, loadedColour, loadedPalette) = await (image, colour, palette)
 
         guard playback.currentTrack?.artworkRelativePath == path else { return }
+        artworkOwner = artworkIdentity
         artwork = loadedImage
         tint = loadedColour
         meshColours = loadedPalette
