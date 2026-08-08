@@ -52,3 +52,17 @@ extension DriveTrack: Playable {
         DriveClient.mediaURL(fileID: fileID)
     }
 }
+
+extension JamendoTrack: Playable {
+    /// The catalogue's own stream URL. `StreamingAudioPlayer` already plays an
+    /// `https` URL, which is why this source needed no change to the audio path
+    /// at all — the same dividend `DriveTrack` collected.
+    ///
+    /// `URL(string:)` is force-unwrapped **only** because `audioURLString` is
+    /// written from a `URL` that already parsed in `JamendoClient.track(from:)`,
+    /// and nothing else writes it. If that ever stops being true, this must
+    /// become a failable path — not a `try!`.
+    func playbackURL() -> URL {
+        URL(string: audioURLString)!
+    }
+}
