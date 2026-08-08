@@ -16,11 +16,16 @@ final class StubURLProtocol: URLProtocol {
     /// DNS, TLS — that has nothing to do with any queued HTTP response.
     /// Consumed once, then cleared, so it never leaks into the next request.
     nonisolated(unsafe) static var nextError: Error?
+    /// The URL of the most recent request, so a test can assert what was asked
+    /// for and not only what came back. The licence filter is only meaningful
+    /// if it reaches the wire.
+    nonisolated(unsafe) static var lastRequestURL: URL?
 
     static func reset() {
         responses = []
         requestedURLs = []
         nextError = nil
+        lastRequestURL = nil
     }
 
     static func session() -> URLSession {
@@ -33,7 +38,10 @@ final class StubURLProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        if let url = request.url { Self.requestedURLs.append(url) }
+        if let url = request.url {
+            Self.requestedURLs.append(url)
+            Self.lastRequestURL = url
+        }
         if let error = Self.nextError {
             Self.nextError = nil
             client?.urlProtocol(self, didFailWithError: error)
