@@ -135,40 +135,6 @@ struct RootView: View {
             // parameter would have to be threaded to by hand.
             .environment(\.bottomSafeAreaInset, bottomSafeAreaInset)
 
-            // The blurred band that separates scrolling content from the bar.
-            //
-            // **Here, not inside the screens.** It began as part of
-            // `clearsBottomBar()`, applied per screen — which put it inside the
-            // subtree `recedesBehindPlayer` scales. Everything else along the
-            // bottom is chrome and holds still while the player opens: the tab
-            // bar does, the collapsed pill does. A band that shrank with the
-            // content was the odd one out, and swiping the player closed made it
-            // arrive late instead of tracking the animation.
-            //
-            // Applied once at the root also retires the obligation it used to
-            // carry. Folded into `clearsBottomBar()` the reasoning was "one
-            // thing per screen to remember rather than two"; here there is
-            // nothing for a new screen to remember at all.
-            //
-            // Below `FloatingTabBar` and `PlayerCard` in this stack, above the
-            // `TabView`: the content it blurs is what it must sit on top of, and
-            // the chrome it protects is what must sit on top of it.
-            ScrollEdgeEffectBand(hasTrack: playback.currentTrack != nil)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .ignoresSafeArea()
-            // The same curve and the same key as the pill it grows for, on
-            // purpose and character for character — see `PlayerCard`'s
-            // `.animation(BottomBarStyle.settle, value: playback.currentTrack ==
-            // nil)`. The band's height is 114pt with nothing playing and 238pt
-            // with a track, and it had no animation at all: the pill faded in
-            // over 0.42s while the blur behind it jumped its full 124pt on one
-            // frame. Two pieces of the same bottom chrome moving to different
-            // clocks is exactly what reads as wrong even when neither is.
-            //
-            // Keyed on `== nil` rather than `!= nil` so it is literally the same
-            // expression as the pill's, not a second one that happens to agree.
-            .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
-
             FloatingTabBar(
                 selection: $tab,
                 isSearching: $isSearching,
