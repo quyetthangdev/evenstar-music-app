@@ -40,9 +40,30 @@ final class ScrollEdgeEffectTests: XCTestCase {
         for hasTrack in [true, false] {
             XCTAssertEqual(
                 ScrollEdgeEffect.height(hasTrack: hasTrack),
-                ScrollEdgeEffect.solidHeight(hasTrack: hasTrack) + ScrollEdgeEffect.fade
+                ScrollEdgeEffect.solidHeight(hasTrack: hasTrack)
+                    + ScrollEdgeEffect.fade(hasTrack: hasTrack)
             )
         }
+    }
+
+    /// **The run-out scales with the chrome rather than being a fixed number.**
+    /// A constant was 50% of the band with a track loaded and 68% without, and
+    /// that second figure is what read as a haze over the bottom of the screen
+    /// when nothing was playing. Proportional keeps the same shape in both.
+    func testTheRunOutIsTheSameShareOfTheBandWhetherOrNotATrackIsLoaded() {
+        let shares = [true, false].map {
+            ScrollEdgeEffect.fade(hasTrack: $0) / ScrollEdgeEffect.height(hasTrack: $0)
+        }
+
+        XCTAssertEqual(shares[0], shares[1], accuracy: 0.0001)
+        XCTAssertEqual(shares[0], 0.5, accuracy: 0.0001)
+    }
+
+    /// The case that was reported as too tall. Stated as a bound rather than the
+    /// exact figure so retuning `screenBottomInset` or the bar height moves it
+    /// honestly, but a return to a fixed 120pt run-out (177pt total) fails.
+    func testTheBandIsNotTallWithNothingPlaying() {
+        XCTAssertLessThan(ScrollEdgeEffect.height(hasTrack: false), 130)
     }
 
     /// The run-out has to finish clear of the bar, or the top of the band would

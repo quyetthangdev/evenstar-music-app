@@ -38,30 +38,27 @@ import SwiftUI
 /// stretches of a list the effect was pure darkening. Hence `peak`.
 enum ScrollEdgeEffect {
 
-    /// How far above the bar the blur ramps in, in points.
+    /// How far above the chrome the blur ramps in.
     ///
-    /// The band below this is at full strength; this is only the run-out. Too
-    /// short and the top of the effect is a visible horizontal line across the
-    /// screen; too long and half the list is permanently hazy.
+    /// **Proportional to what it runs out from, not a constant.** It was 28,
+    /// then 56, then a flat 120pt — and 120 was measurably right above the bar
+    /// while being wrong to look at with nothing playing. That is not a
+    /// contradiction: with a track loaded the chrome is a pill above a bar and
+    /// the run-out was half the band; with nothing playing the chrome is just
+    /// the bar, the same 120pt became **68%** of the band, and a band that is
+    /// two-thirds ramp reads as a haze over the bottom of the screen rather than
+    /// as an edge effect.
     ///
-    /// **120, after 28 and then 56.** This is the number that has been wrong
-    /// most often, and the reason is that it interacts with `solidHeight`:
-    /// moving the ramp's *start* down to the bar's midline also moved its
-    /// strong half behind the bar, so at 56 there was almost nothing left by
-    /// the time the band cleared the bar's top edge. Measured on the edges of
-    /// list text, the band removed 2% of edge sharpness there — which is to
-    /// say it had stopped working exactly where the effect is for.
+    /// Equal to `solidHeight` makes the band exactly twice the chrome's midline
+    /// in both cases, so it stays in proportion to the thing it is protecting
+    /// instead of being a number that happens to suit one of them:
     ///
-    /// Long, not strong, is what buys both. At 120 the ramp reaches the bar's
-    /// top edge already substantial (the blur takes 12% of edge sharpness out,
-    /// against 17% for a full-strength band) while the tint it carries arrives
-    /// so gradually — 75pt from first tinge to full, against 35pt before —
-    /// that there is no boundary to see.
+    ///     nothing playing   57 + 57  = 114pt   (was 177)
+    ///     a track loaded   119 + 119 = 238pt   (was 239 — unchanged)
     ///
-    /// It is deliberately much taller than `solidHeight`. The solid part only
-    /// has to cover the bar; everything above it is run-out, and the run-out is
-    /// the part the eye judges.
-    static let fade: CGFloat = 120
+    /// Which is what was asked for: the case that looked too tall shrinks by a
+    /// third, and the case that did not is left alone.
+    static func fade(hasTrack: Bool) -> CGFloat { solidHeight(hasTrack: hasTrack) }
 
     /// The strongest the material is ever allowed to be, as a fraction.
     ///
@@ -125,7 +122,7 @@ enum ScrollEdgeEffect {
     /// a bar that grows and a band that does not would leave the pill sitting
     /// on sharp content again.
     static func height(hasTrack: Bool) -> CGFloat {
-        solidHeight(hasTrack: hasTrack) + fade
+        solidHeight(hasTrack: hasTrack) + fade(hasTrack: hasTrack)
     }
 
     /// The mask's stops, from the top of the band downward: transparent at the
@@ -197,7 +194,7 @@ struct ScrollEdgeEffectBand: View {
             .mask(
                 LinearGradient(
                     stops: ScrollEdgeEffect.maskStops(
-                        fadeFraction: ScrollEdgeEffect.fade / height
+                        fadeFraction: ScrollEdgeEffect.fade(hasTrack: hasTrack) / height
                     ),
                     startPoint: .top,
                     endPoint: .bottom
