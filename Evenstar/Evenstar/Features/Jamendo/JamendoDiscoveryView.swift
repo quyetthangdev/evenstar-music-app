@@ -65,7 +65,16 @@ struct JamendoDiscoveryView: View {
             // Debounced: a request per keystroke would rate-limit the client id
             // in seconds. Cancellation of the previous `.task` is what makes a
             // plain sleep a debounce here.
+            //
+            // `try?` on the sleep swallows its own `CancellationError` rather
+            // than propagating it, so without the explicit check below,
+            // execution fell through to `load()` even when *this* task had
+            // already been superseded by a newer keystroke — issuing a
+            // request nobody would ever see the result of, racing whichever
+            // `.task` run replaced it. The guard is what makes cancellation
+            // actually stop work here, not just fail to report it.
             try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
             await load()
         }
     }
@@ -82,7 +91,26 @@ struct JamendoDiscoveryView: View {
             } else {
                 results = try await client.trending(commercialOnly: commercialOnly)
             }
-            savedIDs = Set(results.filter { (try? jamendo.isSaved(jamendoID: $0.id)) == true }.map(\.id))
+            // One round trip for the whole page rather than one per row —
+            // see the doc comment on `JamendoLibraryService.savedIDs(among:)`.
+            // `try?`, not `try`: a local persistence hiccup here must not
+            // read as a search failure and blank a result list that loaded
+            // fine — the search's own `catch` below is for the search.
+            savedIDs = (try? jamendo.savedIDs(among: results.map(\.id))) ?? []
+        } catch is CancellationError {
+            // The previous `.task(id:)` run was superseded by a new query
+            // before its request finished. Not a failure to report — matches
+            // `DriveSongsList.rescanAll`'s handling of the same case.
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            // `JamendoClient.get` rethrows cancellation raw, unwrapped from
+            // `JamendoError`, precisely so it never reaches a user. Touching
+            // neither `results` nor `errorMessage` here is what keeps that
+            // promise the one layer up: without this, typing "jaz" then
+            // "jazz" cancelled the first request mid-flight and the list
+            // flashed empty with a raw system cancellation string, on nearly
+            // every keystroke.
+            return
         } catch {
             results = []
             errorMessage = error.localizedDescription

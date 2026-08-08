@@ -178,4 +178,47 @@ final class JamendoLibraryServiceTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
+
+    // MARK: - savedIDs(among:)
+
+    /// The batched replacement for calling `isSaved(jamendoID:)` once per
+    /// row: some of the requested ids are saved, some are not, and the
+    /// result reports exactly the saved subset — nothing more, nothing less.
+    func testSavedIDsReportsExactlyTheSavedSubset() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.responses = [
+            .init(status: 200, body: jpeg),
+            .init(status: 200, body: jpeg)
+        ]
+        let first = try await service.save(catalogueTrack(id: "1"))
+        if let path = first.artworkRelativePath { written.append(path) }
+        let second = try await service.save(catalogueTrack(id: "2"))
+        if let path = second.artworkRelativePath { written.append(path) }
+
+        let result = try service.savedIDs(among: ["1", "2", "3"])
+
+        XCTAssertEqual(result, ["1", "2"])
+    }
+
+    /// None of the requested ids are saved — an empty set back, not an error.
+    func testSavedIDsIsEmptyWhenNoneAreSaved() throws {
+        let (service, _) = try makeService()
+
+        let result = try service.savedIDs(among: ["1", "2", "3"])
+
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    /// An empty input must not become "match every row" — the predicate is
+    /// short-circuited before it ever reaches SwiftData.
+    func testSavedIDsIsEmptyForEmptyInput() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.responses = [.init(status: 200, body: jpeg)]
+        let saved = try await service.save(catalogueTrack(id: "1"))
+        if let path = saved.artworkRelativePath { written.append(path) }
+
+        let result = try service.savedIDs(among: [])
+
+        XCTAssertTrue(result.isEmpty)
+    }
 }

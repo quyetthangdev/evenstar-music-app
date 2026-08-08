@@ -63,6 +63,24 @@ final class JamendoLibraryService {
         try existingRow(jamendoID: jamendoID) != nil
     }
 
+    /// Which of a page of catalogue ids are already saved — one fetch, not
+    /// one per id.
+    ///
+    /// `JamendoDiscoveryView` used to call `isSaved(jamendoID:)` once per
+    /// result to build its "already saved" set. Jamendo's page limit is 50,
+    /// so a single debounced search issued up to 50 separate `FetchDescriptor`
+    /// round-trips through this same `ModelContext`, synchronously on
+    /// `@MainActor`, on every keystroke that survived the debounce. This is
+    /// the same lookup, expressed as one round trip regardless of how many
+    /// ids are asked about.
+    func savedIDs(among jamendoIDs: [String]) throws -> Set<String> {
+        guard !jamendoIDs.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<JamendoTrack>(
+            predicate: #Predicate { jamendoIDs.contains($0.jamendoID) }
+        )
+        return Set(try library.context.fetch(descriptor).map(\.jamendoID))
+    }
+
     func savedCount() throws -> Int {
         try library.context.fetchCount(FetchDescriptor<JamendoTrack>())
     }
