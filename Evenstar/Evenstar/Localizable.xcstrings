@@ -542,6 +542,22 @@
         }
       }
     },
+    "Khám phá" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discover"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khám phá"
+          }
+        }
+      }
+    },
     "Không có bài hát nào trong thư mục đã liên kết. Kéo xuống để quét lại, hoặc mở ⋯ để thêm thư mục khác." : {
       "localizations" : {
         "en" : {
@@ -906,6 +922,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lưu"
+          }
+        }
+      }
+    },
+    "Lưu vào thư viện" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save to library"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lưu vào thư viện"
           }
         }
       }
@@ -1439,6 +1471,22 @@
         }
       }
     },
+    "Tìm trên Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm trên Jamendo"
+          }
+        }
+      }
+    },
     "Tối" : {
       "localizations" : {
         "en" : {
@@ -1623,6 +1671,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Đã liên kết"
+          }
+        }
+      }
+    },
+    "Đã lưu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã lưu"
           }
         }
       }

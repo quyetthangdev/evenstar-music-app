@@ -13,6 +13,7 @@ struct EvenstarApp: App {
     @State private var importService: ImportService
     @State private var playback: PlaybackService
     @State private var driveLibrary: DriveLibraryService
+    @State private var jamendoLibrary: JamendoLibraryService
     private let remoteCommands: RemoteCommandsBridge
 
     init() {
@@ -45,10 +46,12 @@ struct EvenstarApp: App {
         // `DriveLibraryService`, and both are owned for the app's lifetime by
         // the `@State` properties above.
         driveLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
+        let jamendoLib = JamendoLibraryService(library: libService)
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
         _driveLibrary = State(initialValue: driveLib)
+        _jamendoLibrary = State(initialValue: jamendoLib)
         remoteCommands = RemoteCommandsBridge(playback: play)
         remoteCommands.install()
     }
@@ -60,6 +63,7 @@ struct EvenstarApp: App {
                 .environment(importService)
                 .environment(playback)
                 .environment(driveLibrary)
+                .environment(jamendoLibrary)
         }
         .modelContainer(modelContainer)
     }
