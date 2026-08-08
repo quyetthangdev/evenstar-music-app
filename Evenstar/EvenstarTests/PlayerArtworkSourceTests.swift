@@ -79,4 +79,35 @@ final class PlayerArtworkSourceTests: XCTestCase {
     func testPendingIsNotTheSameThingAsHavingNoCover() {
         XCTAssertNotEqual(PlayerCard.ArtworkSource.pending, .placeholder)
     }
+
+    // MARK: - The background, which is the same rule again
+
+    /// **The second place this bug shipped.** The expanded background chooses
+    /// between the cover's drifting colour mesh and a flat gradient, and it used
+    /// to choose by asking whether `meshColours` was loaded — `@State` written
+    /// from the same `.task`. So the card opened on the *previous* song's colour
+    /// field and swapped part-way through, or opened flat and had a mesh appear
+    /// under it. Cover → cover never changed branch, which is why that case
+    /// looked right and made the fault look intermittent.
+    ///
+    /// A mesh appearing or vanishing mid-flight is not something SwiftUI can
+    /// interpolate through, which is why this one broke the *motion* rather than
+    /// just the picture.
+    func testTheBackgroundUsesTheMeshExactlyWhenTheTrackHasACover() {
+        XCTAssertTrue(PlayerCard.usesMesh(hasArtwork: true))
+        XCTAssertFalse(PlayerCard.usesMesh(hasArtwork: false))
+    }
+
+    /// The two rules must agree. A track drawing a cover in the artwork slot and
+    /// a flat gradient behind it — or the reverse — is the seam this whole file
+    /// exists to prevent.
+    func testTheArtworkSlotAndTheBackgroundAgreeAboutWhetherThereIsACover() {
+        for hasArtwork in [true, false] {
+            let slotShowsCover = source(hasArtwork: hasArtwork, loaded: true) == .image
+            XCTAssertEqual(
+                slotShowsCover, PlayerCard.usesMesh(hasArtwork: hasArtwork),
+                "the artwork slot and the background disagree (hasArtwork: \(hasArtwork))"
+            )
+        }
+    }
 }

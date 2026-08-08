@@ -466,6 +466,24 @@ struct PlayerCard: View {
         playback.currentTrack?.artworkRelativePath != nil
     }
 
+    /// Whether the expanded background is the drifting colour field or the flat
+    /// gradient — the second place that must not be decided by a `.task`.
+    ///
+    /// Trivial on its own, and named anyway: it and `source(hasArtwork:loaded:)`
+    /// are the same rule, and the bug they fix was shipped twice because the
+    /// rule was written nowhere and re-derived in each place.
+    static func usesMesh(hasArtwork: Bool) -> Bool { hasArtwork }
+
+    /// Stands in for a palette that has not been read yet.
+    ///
+    /// Nine identical neutrals, so the mesh renders flat and is
+    /// indistinguishable from the gradient it replaces — then cross-fades to the
+    /// cover's real colours when they arrive. A colour change, not a structural
+    /// one, which is the whole point.
+    private static let neutralPalette = [Color](
+        repeating: Color(.systemGroupedBackground), count: 9
+    )
+
     private var artworkIdentity: ArtworkIdentity {
         ArtworkIdentity(
             trackID: playback.currentTrack?.id,
@@ -875,10 +893,32 @@ struct PlayerCard: View {
             // drives a `TimelineView`, which would otherwise keep redrawing the
             // whole card thirty times a second behind a collapsed pill nobody
             // is looking at.
-            if let meshColours, progress > 0 {
-                AmbientMesh(colours: meshColours)
-                    .opacity(progress)
-            } else if meshColours == nil {
+            // **Which of the two, decided from the model.** `meshColours` is
+            // `@State` written only by `loadArtwork`, from `.task(id:)` — so
+            // branching on it chose the background from what the *previous*
+            // track left behind, and swapped part-way through the expand:
+            //
+            // - cover → no cover: the card opened on the previous song's colour
+            //   field and then dropped to the flat gradient.
+            // - no cover → cover: it opened flat and the mesh appeared under it.
+            // - cover → cover: both sides non-nil, so nothing structural moved
+            //   and this was the case that always looked right.
+            //
+            // That is the same defect `source(hasArtwork:loaded:)` documents for
+            // the artwork slot, in a second place, and it is the one that made
+            // the *animation* wrong rather than merely the picture: a mesh
+            // appearing or vanishing mid-flight is not something SwiftUI can
+            // interpolate through.
+            if Self.usesMesh(hasArtwork: hasArtwork) {
+                if progress > 0 {
+                    // A stale palette is fine and is what the working case
+                    // already did: it is a colour, and colours cross-fade. Only
+                    // `nil` was structural. The neutral stand-in covers the one
+                    // gap — a cover whose palette has not been read yet.
+                    AmbientMesh(colours: meshColours ?? Self.neutralPalette)
+                        .opacity(progress)
+                }
+            } else {
                 // No cover to take colours from, so there is nothing to be
                 // continuous *with* and the flat gradient is right here.
                 LinearGradient(
