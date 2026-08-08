@@ -183,6 +183,25 @@ final class PlaybackService {
         persistImmediately()
     }
 
+    /// Ends playback and clears the queue, at the user's request.
+    ///
+    /// A thin wrapper on `stopPlayback()`, which until now only ever ran for
+    /// reasons the user did not ask for — the queue running out, or the playing
+    /// track being deleted. There was no way to *say* stop, so the collapsed
+    /// pill stayed on screen for the rest of the session no matter what.
+    ///
+    /// It really does discard the queue and the position rather than just
+    /// hiding the pill. That is what stopping means, and it is why the control
+    /// that calls this is behind a long press rather than a swipe: losing your
+    /// place should take a deliberate gesture, not a mistaken one.
+    ///
+    /// Apple Music has no equivalent — its mini player persists and pause is the
+    /// end state — and the HIG says nothing either way. This is a departure
+    /// made on purpose, not an oversight corrected.
+    func stop() {
+        stopPlayback()
+    }
+
     func togglePlayPause() {
         if isPlaying { pause() } else { resume() }
     }

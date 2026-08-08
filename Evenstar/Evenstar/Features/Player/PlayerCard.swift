@@ -1051,6 +1051,33 @@ struct PlayerCard: View {
             // rounded right cap.
             .padding(.trailing, 16)
             .frame(width: width, height: Self.collapsedHeight)
+            // The whole row takes the long press, not just the words.
+            //
+            // Same rule the tab bar's slots needed: a `.frame` is layout and
+            // draws nothing, so without this the menu would only open on the
+            // title and artist text and feel broken everywhere else on the pill.
+            .contentShape(Rectangle())
+            // Stopping lives here rather than on a visible control.
+            //
+            // There was no way to end playback at all: `stopPlayback()` only
+            // ever ran when the queue emptied itself, so the pill stayed for the
+            // rest of the session. Apple Music has no equivalent either — its
+            // mini player persists and pause is the end state — and the HIG says
+            // nothing about dismissing one, so this is a deliberate departure.
+            //
+            // A long press, not a swipe. It discards the queue and the position
+            // for real, and the pill is a 54pt strip the thumb passes over
+            // constantly; a horizontal swipe would lose someone's place by
+            // accident, and there is no undo to offer them. A context menu is
+            // also what the platform already uses for infrequent destructive
+            // actions on a row, so it needs no explaining.
+            .contextMenu {
+                Button(role: .destructive) {
+                    playback.stop()
+                } label: {
+                    Label("Dừng phát", systemImage: "stop.fill")
+                }
+            }
             .opacity(max(0, 1 - progress * 3))
             .allowsHitTesting(progress < 0.1)
     }

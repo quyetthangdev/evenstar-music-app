@@ -398,6 +398,22 @@
         }
       }
     },
+    "Dừng phát": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dừng phát"
+          }
+        }
+      }
+    },
     "Giao diện": {
       "localizations": {
         "en": {
