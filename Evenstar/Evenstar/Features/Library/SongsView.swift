@@ -8,6 +8,7 @@ struct SongsView: View {
     @Environment(ImportService.self) private var importer
     @Environment(PlaybackService.self) private var playback
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    @Query(sort: [SortDescriptor(\JamendoTrack.dateAdded, order: .reverse)]) private var jamendoTracks: [JamendoTrack]
 
     /// Owned by `RootView`, which drives both the tab bar and the player from
     /// it. Written here only by `minimisesBottomBar` on this screen's list.
@@ -42,13 +43,14 @@ struct SongsView: View {
     @State private var source: LibrarySource = .local
 
     enum LibrarySource: String, CaseIterable {
-        case local, drive
+        case local, drive, jamendo
         /// See `LibraryTab.label` for why this is `String(localized:)` and
         /// not a bare literal.
         var label: String {
             switch self {
             case .local: String(localized: "Trên máy", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
             case .drive: String(localized: "Drive", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+            case .jamendo: String(localized: "Jamendo", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
             }
         }
     }
@@ -59,10 +61,23 @@ struct SongsView: View {
                 .navigationTitle("Bài hát")
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Image(systemName: "plus.circle")
+                        // Jamendo has nothing to import — its own screen is
+                        // reached by search, not by picking files off the
+                        // device — so the `+` importer swaps for a link into
+                        // `JamendoDiscoveryView` only while that chip is
+                        // selected. The other two sources are unaffected.
+                        if source == .jamendo {
+                            NavigationLink {
+                                JamendoDiscoveryView()
+                            } label: {
+                                Image(systemName: "magnifyingglass")
+                            }
+                        } else {
+                            Button {
+                                showFileImporter = true
+                            } label: {
+                                Image(systemName: "plus.circle")
+                            }
                         }
                     }
                 }
@@ -171,6 +186,9 @@ struct SongsView: View {
             case .drive:
                 DriveSongsList(isMinimised: $isMinimised)
                     .clearsBottomBar()
+            case .jamendo:
+                jamendoContent
+                    .clearsBottomBar()
             }
         }
     }
@@ -219,6 +237,41 @@ struct SongsView: View {
             // above it, so what the modifier observes is unambiguous.
             .minimisesBottomBar($isMinimised)
         }
+    }
+
+    @ViewBuilder
+    private var jamendoContent: some View {
+        if jamendoTracks.isEmpty {
+            ContentUnavailableView {
+                Label("Chưa lưu bài nào từ Jamendo", systemImage: "music.note.list")
+            } description: {
+                Text("Jamendo là kho nhạc Creative Commons miễn phí.")
+            } actions: {
+                NavigationLink("Khám phá Jamendo") { JamendoDiscoveryView() }
+            }
+        } else {
+            List(jamendoTracks) { track in
+                SongRow(track: track, subtitle: subtitle(for: track))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        playback.play(track, in: jamendoTracks)
+                    }
+            }
+            .listStyle(.plain)
+            .minimisesBottomBar($isMinimised)
+        }
+    }
+
+    /// `artist · licence`, the same shape `JamendoResultRow` shows in the
+    /// discovery screen — CC-BY obliges visible credit, and a saved track
+    /// keeps it here rather than only on the way in. `nil`, not the bare
+    /// artist name, when there is no licence to show: `SongRow` already
+    /// falls back to `track.artistName` on a `nil` subtitle.
+    private func subtitle(for track: JamendoTrack) -> String? {
+        guard let licenceURLString = track.licenceURLString,
+              let licence = LicenceName.short(for: URL(string: licenceURLString))
+        else { return nil }
+        return "\(track.artistName) · \(licence)"
     }
 
     /// Loads the picked photo, shrinks it, and writes it onto the track.

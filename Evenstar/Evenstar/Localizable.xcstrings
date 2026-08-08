@@ -301,6 +301,22 @@
         }
       }
     },
+    "Chưa lưu bài nào từ Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No saved Jamendo tracks"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa lưu bài nào từ Jamendo"
+          }
+        }
+      }
+    },
     "Chưa quét" : {
       "localizations" : {
         "en" : {
@@ -526,6 +542,38 @@
         }
       }
     },
+    "Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo"
+          }
+        }
+      }
+    },
+    "Jamendo là kho nhạc Creative Commons miễn phí." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo is a free library of Creative Commons music."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo là kho nhạc Creative Commons miễn phí."
+          }
+        }
+      }
+    },
     "Jamendo đang giới hạn số lượt truy cập. Thử lại sau ít phút." : {
       "localizations" : {
         "en" : {
@@ -554,6 +602,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Khám phá"
+          }
+        }
+      }
+    },
+    "Khám phá Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explore Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khám phá Jamendo"
           }
         }
       }
