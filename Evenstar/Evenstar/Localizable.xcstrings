@@ -350,6 +350,22 @@
         }
       }
     },
+    "Chỉ nhạc dùng được cho mục đích thương mại" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only commercially usable music"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chỉ nhạc dùng được cho mục đích thương mại"
+          }
+        }
+      }
+    },
     "Cài đặt" : {
       "localizations" : {
         "en" : {
@@ -1547,6 +1563,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tìm trên Jamendo"
+          }
+        }
+      }
+    },
+    "Tắt tuỳ chọn này sẽ hiện thêm nhạc có giấy phép cấm dùng cho mục đích thương mại. Bạn tự chịu trách nhiệm dùng đúng giấy phép." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning this off shows music under licences that forbid commercial use. Using it within its licence is your responsibility."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tắt tuỳ chọn này sẽ hiện thêm nhạc có giấy phép cấm dùng cho mục đích thương mại. Bạn tự chịu trách nhiệm dùng đúng giấy phép."
           }
         }
       }

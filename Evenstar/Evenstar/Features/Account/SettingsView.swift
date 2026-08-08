@@ -15,6 +15,14 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
     @AppStorage(AppLanguage.storageKey) private var language: AppLanguage = .system
+    /// Same key `JamendoDiscoveryView` reads with its own `@AppStorage`, and
+    /// the same default — `JamendoLicencePolicy.defaultCommercialOnly`, not a
+    /// literal `true` restated here. Two names for the one preference would
+    /// desync the instant either side changed, and a mismatched default would
+    /// mean a fresh install disagreeing with itself about what it is set to
+    /// before the user has touched the toggle at all.
+    @AppStorage(JamendoLicencePolicy.storageKey) private var commercialOnly =
+        JamendoLicencePolicy.defaultCommercialOnly
 
     var body: some View {
         List {
@@ -67,6 +75,21 @@ struct SettingsView: View {
                 // the photo picker, the file importer, the volume control — and
                 // no app can translate those for itself.
                 Text("Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy.")
+            }
+
+            Section {
+                Toggle("Chỉ nhạc dùng được cho mục đích thương mại", isOn: $commercialOnly)
+            } header: {
+                Text("Jamendo")
+            } footer: {
+                // States the consequence rather than hiding it, the same
+                // reason the Drive link screen states its privacy warning at
+                // the moment of linking rather than after the fact: turning
+                // this off is a real legal decision (see
+                // `JamendoLicencePolicy`'s doc comment on why the default is
+                // the restrictive one), and it belongs on the control itself,
+                // not behind a tap into "more info".
+                Text("Tắt tuỳ chọn này sẽ hiện thêm nhạc có giấy phép cấm dùng cho mục đích thương mại. Bạn tự chịu trách nhiệm dùng đúng giấy phép.")
             }
         }
         .navigationTitle("Cài đặt")
