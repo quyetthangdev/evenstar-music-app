@@ -144,27 +144,77 @@ struct NowPlayingContent: View {
     /// only one of its three conformers needs, and it costs nothing when the
     /// cast fails: the whole row disappears, exactly as it should for a Drive
     /// or local track.
+    /// Half of the invisible margin added on each side to reach HIG's 44pt
+    /// minimum hit height from a `.caption2` line — see `jamendoCredit`.
+    /// 16 rather than a computed `(44 - lineHeight) / 2`: `.caption2`'s line
+    /// height already exceeds 12pt at every Dynamic Type size the app ships
+    /// (it only grows from there), so a fixed 16 clears 44 with room at the
+    /// default size and more room at every larger one — never less.
+    private static let creditHitPad: CGFloat = 16
+
     @ViewBuilder
     private var jamendoCredit: some View {
         if let jamendo = playback.currentTrack as? JamendoTrack,
            let share = jamendo.shareURLString.flatMap(URL.init(string:)) {
+            // HIG's 44×44pt minimum hit region, met by enlarging only the
+            // *hit-test* shape rather than the real, laid-out frame — the
+            // opposite of what `JamendoResultRow`'s save button and
+            // `JamendoDiscoveryView`'s `GenreChip` do, and deliberately so
+            // here.
+            //
+            // Those two grow their actual frame because nothing downstream
+            // depends on their size staying small. This one does:
+            // `jamendoCredit` is a third child of `titleBlock`'s `VStack`,
+            // and `titleBlock` is element #1 of the five-element stack
+            // `PlayerCard.contentBudget` reserves ~400pt for, with the doc
+            // on that constant measuring only ~20pt of slack against the
+            // existing five — already spoken for by one step of Dynamic
+            // Type, by that same comment. A real `.frame(minHeight: 44)`
+            // here added +48pt (44 plus the 4pt `VStack` gap) to that
+            // budget and clipped the repeat row and part of the volume
+            // slider off an iPhone SE screen — confirmed in the simulator,
+            // portrait and landscape, before this was rewritten. Two
+            // alternatives were rejected instead of raising the budget to
+            // match:
+            //   - Raising `contentBudget` itself, per its own documented
+            //     rule ("adding anything else means raising this by the new
+            //     element's height plus spacing"), fixes the clip but taxes
+            //     *every* track, not only a Jamendo one — the artwork's
+            //     dissolve point would move up by ~48pt permanently to
+            //     cover a line that most tracks never show.
+            //   - Overlaying the credit line instead of stacking it avoids
+            //     growing `titleBlock` at all, but the only unclaimed space
+            //     near it is the 24pt `VStack` gap shared with the
+            //     scrubber immediately below, and a 44pt overlay does not
+            //     fit inside a 24pt gap without its hit region reaching
+            //     into the scrubber's own — trading one overlap bug for
+            //     another, harder to see one.
+            //
+            // The padding-then-cancelled-padding pair below is what makes
+            // "enlarge the hit shape without enlarging the frame" possible:
+            // `.padding` grows the view AND `contentShape` captures that
+            // grown rectangle as the hit-test shape; the second `.padding`,
+            // negative, then shrinks what this whole subtree *reports* to
+            // `titleBlock`'s `VStack` back down to the bare text's own
+            // size — the parent lays out as if the enlargement never
+            // happened, while the already-fixed hit shape still extends
+            // `creditHitPad` beyond it on every side (SwiftUI does not clip
+            // a view to the frame its parent proposes, only to an explicit
+            // `.clipShape`/`.clipped()`, and this card applies neither
+            // here). The overflow this leaves is real but small — at most
+            // `creditHitPad` into the 4pt gap above (the subtitle line,
+            // which has no gesture of its own to conflict with) and into
+            // the 24pt gap below (well short of the scrubber's own hit
+            // area) — nothing like the 48pt a real frame cost.
             Link(destination: share) {
                 Text(Self.creditLine(for: jamendo))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            // HIG's 44×44pt minimum hit region, grown on the frame itself
-            // rather than faked with an oversized invisible `contentShape` —
-            // the same choice `JamendoResultRow`'s save button and
-            // `JamendoDiscoveryView`'s `GenreChip` made, and for the same
-            // reason given there: a region bigger than what is drawn is
-            // still fine, but a region drawn no bigger than what a tester can
-            // see is not. `.topLeading`, not centred, so the extra height
-            // this buys sits below the credit line — in the gap before the
-            // scrubber — rather than pushing the line itself away from the
-            // metadata line directly above it.
-            .frame(minHeight: 44, alignment: .topLeading)
+            .frame(minWidth: 44)
+            .padding(.vertical, Self.creditHitPad)
             .contentShape(Rectangle())
+            .padding(.vertical, -Self.creditHitPad)
         }
     }
 
