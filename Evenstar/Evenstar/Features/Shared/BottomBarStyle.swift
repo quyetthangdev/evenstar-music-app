@@ -45,6 +45,22 @@ enum BottomBarStyle {
     /// back — where a calmer curve reads as merely sliding.
     static let selection = Animation.spring(duration: 0.38, bounce: 0.34)
 
+    /// How a tab answers the finger, before anything has moved.
+    ///
+    /// The same 0.09s ease-out `TransportButtonStyle.squeeze` uses, and for the
+    /// reason written there: it is the part that has to be immediate. A tab
+    /// carried no press feedback at all — `.buttonStyle(.plain)` draws none —
+    /// so the first thing that happened after a tap happened on touch-*up*,
+    /// once the wash began to slide. Everything before that was the app
+    /// appearing not to have noticed.
+    static let press = Animation.easeOut(duration: 0.09)
+
+    /// What a pressed tab shrinks to. Shallower than the transport buttons'
+    /// 0.92: those are 44pt circles the thumb lands on squarely, while a tab is
+    /// a whole quarter of the bar, and the same ratio on something that wide
+    /// reads as the bar itself flinching.
+    static let pressedScale: CGFloat = 0.96
+
     /// Content inside a surface as that surface changes shape: icons and labels
     /// shrinking and fading as the pill closes over them.
     ///

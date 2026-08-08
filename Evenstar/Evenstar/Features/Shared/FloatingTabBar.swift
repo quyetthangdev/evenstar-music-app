@@ -575,6 +575,10 @@ struct FloatingTabBar: View {
     /// pill was still a circle, in space it had not grown into yet.
     private var tabsRow: some View {
         tabsRowContent
+            // The selection spring, scoped to the bar instead of wrapped around
+            // the assignment — see the tap handler above for what that wrapper
+            // was also animating.
+            .animation(BottomBarStyle.selection, value: selection)
             // The bar has a fixed height, so its content cannot be allowed to
             // grow without limit: `.caption2` scales with the user's text size,
             // and at the larger settings the icon-over-label stack outgrows the
@@ -595,7 +599,23 @@ struct FloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
-                    withAnimation(BottomBarStyle.selection) { selection = tab }
+                    // **No `withAnimation` here, and that is the fix.**
+                    //
+                    // `selection` drives the `TabView` as well as the wash, so
+                    // wrapping the assignment handed the tab's whole content —
+                    // five screens' worth — the wash's 0.38s spring with 0.34
+                    // bounce. The screen behind the bar bounced into place long
+                    // after the finger had gone, which is what read as the tap
+                    // not answering. A system tab bar switches its content on
+                    // the spot and moves only the indicator.
+                    //
+                    // The wash still slides: `.animation(_:value:)` on the row
+                    // below scopes that spring to the bar, which is the same
+                    // lesson this file already records for the search morph —
+                    // per-view `.animation` rather than one wrapper at the call
+                    // site, because a wrapper cannot give two subviews
+                    // different timing.
+                    selection = tab
                 } label: {
                     VStack(spacing: 2) {
                         // The active tab's glyph is the one that survives the
@@ -677,7 +697,7 @@ struct FloatingTabBar: View {
                     // neighbour — it only stops the gaps from being dead.
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TabPressStyle())
                 // `.isButton` is restated alongside `.isSelected` only so
                 // both branches of the ternary share one type — `Button`
                 // already carries `.isButton` on its own, and
@@ -861,4 +881,23 @@ private struct FloatingTabBarPreview: View {
 
 #Preview {
     FloatingTabBarPreview()
+}
+
+/// Press feedback for a tab, which `.buttonStyle(.plain)` gives none of.
+///
+/// The bar's own animations all begin on touch-up: the wash cannot start
+/// sliding until it knows where it is going. That left the whole touch-down
+/// half of a tap unanswered, and a control that does nothing while the finger
+/// is on it reads as slow no matter how quick everything after it is.
+///
+/// Deliberately only a scale. A tint change would fight
+/// `tint(isCurrent:)`, which is already animating on its own curve, and a
+/// highlight behind the glyph would collide with the selection wash arriving
+/// in the same place a moment later.
+private struct TabPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? BottomBarStyle.pressedScale : 1)
+            .animation(BottomBarStyle.press, value: configuration.isPressed)
+    }
 }
