@@ -591,26 +591,28 @@ struct FloatingTabBar: View {
             .dynamicTypeSize(...DynamicTypeSize.xLarge)
     }
 
+    /// Switches tabs, at most once per touch.
+    ///
+    /// Idempotent on purpose: the touch-down gesture reports continuously while
+    /// the finger is down, and the `Button` fires again on lift. Both call
+    /// this, and only the first one that finds a different tab does anything —
+    /// which is also what stops a second animation from restarting the spring
+    /// half way through the first.
+    private func select(_ tab: LibraryTab) {
+        guard selection != tab else { return }
+        withAnimation(BottomBarStyle.selection) { selection = tab }
+    }
+
     private var tabsRowContent: some View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
-                    // Wrapped again, deliberately.
-                    //
-                    // This briefly became a bare `selection = tab` with the
-                    // spring moved onto the row, on the theory that the wrapper
-                    // was what made a tap feel slow — `selection` drives the
-                    // `TabView` too, so the wrapper hands the tab's content the
-                    // wash's spring as well. It does, and that turned out to be
-                    // the bounce the bar is *supposed* to have: taking it away
-                    // made the switch read as flat, which was a worse trade than
-                    // the thing it was meant to fix.
-                    //
-                    // The latency it was blamed for is not here. A `Button`
-                    // runs its action on touch-**up**, so nothing can start
-                    // moving until the finger lifts, whatever curve follows.
-                    // What answers the touch-down half is `TabPressStyle`.
-                    withAnimation(BottomBarStyle.selection) { selection = tab }
+                    // Touch-up, and by now `select` has almost always already
+                    // run from the gesture below. It stays for the paths that
+                    // have no touch-down phase at all — VoiceOver activation,
+                    // Full Keyboard Access — and `select` is idempotent, so
+                    // arriving here second costs nothing.
+                    select(tab)
                 } label: {
                     VStack(spacing: 2) {
                         // The active tab's glyph is the one that survives the
@@ -693,6 +695,32 @@ struct FloatingTabBar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(TabPressStyle())
+                // **Selection happens on touch-down, not on touch-up.**
+                //
+                // A `Button` runs its action when the finger lifts, so nothing
+                // could begin moving until then — the wash, the glyph tint, the
+                // screen behind. Shortening the animation does not touch that
+                // gap because the gap is before the animation. Press feedback
+                // filled it visually and the delay was still reported, which is
+                // the evidence that made this worth its cost.
+                //
+                // **The cost, stated plainly: a mistaken tap can no longer be
+                // taken back.** Everywhere else on iOS, touching a control and
+                // sliding off before lifting cancels it; four tab slots along
+                // the bottom edge of a phone is exactly where that matters
+                // most. Apple's own tab bar selects on touch-up for this
+                // reason. This is a deliberate departure, made because the
+                // response was judged slow on a real device after the cheaper
+                // fix had already been tried.
+                //
+                // `minimumDistance: 0` is what makes a `DragGesture` report the
+                // touch itself rather than waiting for movement, and
+                // `.simultaneousGesture` leaves the `Button` intact underneath —
+                // so `isPressed`, the accessibility traits and the VoiceOver
+                // action all keep working.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0).onChanged { _ in select(tab) }
+                )
                 // `.isButton` is restated alongside `.isSelected` only so
                 // both branches of the ternary share one type — `Button`
                 // already carries `.isButton` on its own, and
