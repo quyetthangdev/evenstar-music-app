@@ -43,6 +43,12 @@ final class JamendoClientTests: XCTestCase {
         XCTAssertEqual(results[0].durationSeconds, 184)
         XCTAssertEqual(results[0].audioURL.absoluteString,
                        "https://prod-1.storage.jamendo.com/1886179.mp3")
+        XCTAssertEqual(results[0].coverURL?.absoluteString,
+                       "https://usercontent.jamendo.com/1886179.jpg")
+        XCTAssertEqual(results[0].licenceURL?.absoluteString,
+                       "http://creativecommons.org/licenses/by/3.0/")
+        XCTAssertEqual(results[0].shareURL?.absoluteString,
+                       "https://www.jamendo.com/track/1886179")
     }
 
     /// A track with no cover and no licence link must still decode. Dropping the
@@ -59,6 +65,10 @@ final class JamendoClientTests: XCTestCase {
         XCTAssertEqual(results.count, 1)
         XCTAssertNil(results[0].coverURL)
         XCTAssertNil(results[0].licenceURL)
+        // An empty `album_name` must become the same placeholder an untagged
+        // local file gets, so `PlayerSubtitle`'s collapse rule behaves
+        // identically across all three sources.
+        XCTAssertEqual(results[0].albumTitle, MetadataPlaceholder.album)
     }
 
     /// A row with no playable URL is not a track. It is dropped rather than
@@ -113,6 +123,25 @@ final class JamendoClientTests: XCTestCase {
             XCTFail("expected rateLimited")
         } catch {
             XCTAssertEqual(error as? JamendoError, .rateLimited)
+        }
+    }
+
+    /// A cancelled request — the ordinary case is the discovery screen's
+    /// `.task(id: query)` cancelling the in-flight search on every keystroke
+    /// — must not surface as `.connectionFailed`. That would show "Không thể
+    /// kết nối tới Jamendo. Vui lòng thử lại sau." while the user is simply
+    /// still typing.
+    func testACancelledRequestDoesNotSurfaceAsConnectionFailed() async {
+        StubURLProtocol.nextError = URLError(.cancelled)
+        do {
+            _ = try await client().search("x", commercialOnly: true)
+            XCTFail("expected the cancellation to propagate as an error")
+        } catch let error as JamendoError {
+            XCTFail("a cancelled request must not surface as a user-facing JamendoError, got \(error)")
+        } catch let urlError as URLError {
+            XCTAssertEqual(urlError.code, .cancelled)
+        } catch {
+            XCTFail("expected a URLError, got \(error)")
         }
     }
 

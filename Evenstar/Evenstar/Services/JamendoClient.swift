@@ -68,6 +68,14 @@ struct JamendoClient {
         let response: URLResponse
         do {
             (data, response) = try await session.data(from: components.url!)
+        } catch let error as URLError where error.code == .cancelled {
+            // A cancelled request — routinely, the caller's enclosing `Task`
+            // being cancelled because the user typed another character into
+            // search — is not a failure to report. Rethrown as itself, not
+            // wrapped as a `JamendoError`, so it never reaches
+            // `errorDescription` and is never shown to the user. Mirrors
+            // `DriveClient.fetch`.
+            throw error
         } catch let error as URLError where error.code == .notConnectedToInternet {
             throw JamendoError.offline
         } catch {
