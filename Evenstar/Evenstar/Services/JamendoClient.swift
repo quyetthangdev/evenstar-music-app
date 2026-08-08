@@ -48,7 +48,11 @@ struct JamendoClient {
 
     // MARK: - Private
 
-    private static let limit = "50"
+    // 200 rather than 50: the licence filter now runs client-side (see
+    // `JamendoLicencePolicy`) and drops roughly two thirds of a page (33 of 50
+    // sampled tracks carry an NC licence — task-9-brief.md). A 50-row request
+    // reads to the user as a search that returns almost nothing.
+    private static let limit = "200"
 
     private func get(
         _ items: [URLQueryItem],
@@ -61,8 +65,12 @@ struct JamendoClient {
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "format", value: "json"),
             URLQueryItem(name: "limit", value: Self.limit),
-            URLQueryItem(name: "audioformat", value: "mp32")
-        ] + items + JamendoLicencePolicy.queryItems(commercialOnly: commercialOnly)
+            URLQueryItem(name: "audioformat", value: "mp32"),
+            // Without this, `license_ccurl` is empty on every row (measured
+            // live, 30/30 — task-9-brief.md): the attribution line never
+            // renders and the licence filter below has nothing to filter.
+            URLQueryItem(name: "include", value: "licenses")
+        ] + items
 
         let data: Data
         let response: URLResponse
@@ -94,7 +102,13 @@ struct JamendoClient {
         guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
             throw JamendoError.decodingFailed
         }
-        return payload.results.compactMap(Self.track(from:))
+        // The licence filter runs here, against the decoded track, rather
+        // than as a query parameter: Jamendo's `ccnc` cannot exclude NC
+        // tracks server-side (measured live — task-9-brief.md), only select
+        // NC-only or nothing at all.
+        return payload.results
+            .compactMap(Self.track(from:))
+            .filter { JamendoLicencePolicy.permits(licenceURL: $0.licenceURL, commercialOnly: commercialOnly) }
     }
 
     private struct Payload: Decodable {
