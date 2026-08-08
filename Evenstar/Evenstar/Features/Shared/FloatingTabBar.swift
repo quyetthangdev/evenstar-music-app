@@ -575,10 +575,6 @@ struct FloatingTabBar: View {
     /// pill was still a circle, in space it had not grown into yet.
     private var tabsRow: some View {
         tabsRowContent
-            // The selection spring, scoped to the bar instead of wrapped around
-            // the assignment — see the tap handler above for what that wrapper
-            // was also animating.
-            .animation(BottomBarStyle.selection, value: selection)
             // The bar has a fixed height, so its content cannot be allowed to
             // grow without limit: `.caption2` scales with the user's text size,
             // and at the larger settings the icon-over-label stack outgrows the
@@ -599,23 +595,22 @@ struct FloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
                 Button {
-                    // **No `withAnimation` here, and that is the fix.**
+                    // Wrapped again, deliberately.
                     //
-                    // `selection` drives the `TabView` as well as the wash, so
-                    // wrapping the assignment handed the tab's whole content —
-                    // five screens' worth — the wash's 0.38s spring with 0.34
-                    // bounce. The screen behind the bar bounced into place long
-                    // after the finger had gone, which is what read as the tap
-                    // not answering. A system tab bar switches its content on
-                    // the spot and moves only the indicator.
+                    // This briefly became a bare `selection = tab` with the
+                    // spring moved onto the row, on the theory that the wrapper
+                    // was what made a tap feel slow — `selection` drives the
+                    // `TabView` too, so the wrapper hands the tab's content the
+                    // wash's spring as well. It does, and that turned out to be
+                    // the bounce the bar is *supposed* to have: taking it away
+                    // made the switch read as flat, which was a worse trade than
+                    // the thing it was meant to fix.
                     //
-                    // The wash still slides: `.animation(_:value:)` on the row
-                    // below scopes that spring to the bar, which is the same
-                    // lesson this file already records for the search morph —
-                    // per-view `.animation` rather than one wrapper at the call
-                    // site, because a wrapper cannot give two subviews
-                    // different timing.
-                    selection = tab
+                    // The latency it was blamed for is not here. A `Button`
+                    // runs its action on touch-**up**, so nothing can start
+                    // moving until the finger lifts, whatever curve follows.
+                    // What answers the touch-down half is `TabPressStyle`.
+                    withAnimation(BottomBarStyle.selection) { selection = tab }
                 } label: {
                     VStack(spacing: 2) {
                         // The active tab's glyph is the one that survives the
