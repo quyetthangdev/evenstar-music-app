@@ -7,7 +7,7 @@ enum InMemoryLibrary {
     static func make() throws -> LibraryService {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
-            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self,
+            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self, JamendoTrack.self,
             configurations: config
         )
         return LibraryService(context: ModelContext(container))
