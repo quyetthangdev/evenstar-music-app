@@ -413,6 +413,59 @@ struct PlayerCard: View {
         let artworkPath: String?
     }
 
+    /// What the artwork slot draws on a given frame.
+    ///
+    /// Split out of `artworkView` because the rule it encodes is the answer to a
+    /// reported bug and could not be tested where it was — inside a view body,
+    /// mid-animation.
+    enum ArtworkSource: Equatable {
+        /// A cover to draw. May briefly be the *previous* track's while the new
+        /// one decodes; that is deliberate, and it is what the working case
+        /// already did.
+        case image
+        /// This track has a cover, but no decoded copy is in hand yet. A plain
+        /// fill, with no glyph — see `source(hasArtwork:loaded:)`.
+        case pending
+        /// This track genuinely has no cover. The glyph belongs here and only
+        /// here.
+        case placeholder
+    }
+
+    /// **`hasArtwork` comes from the model, `loaded` comes from a `.task`.**
+    /// That difference is the whole bug.
+    ///
+    /// `artwork` is `@State` written only by `loadArtwork`, which runs from
+    /// `.task(id:)` — asynchronously, after the body has already rendered and
+    /// after the expand animation has already begun. Branching on it meant the
+    /// slot's *structure* changed mid-flight, and SwiftUI cannot interpolate
+    /// across a structural change:
+    ///
+    /// - cover → no cover: the card opened still showing the **previous**
+    ///   track's cover, then snapped to the grey placeholder part-way through.
+    /// - no cover → cover: it opened on the placeholder glyph and snapped to the
+    ///   image.
+    /// - cover → cover: no structural change, so this one always looked right —
+    ///   which is exactly the pattern that was reported, down to "open another
+    ///   track with a cover and it is correct again".
+    ///
+    /// `hasArtwork` is `artworkRelativePath != nil` on the current track: known
+    /// synchronously, on the first frame, with no I/O. Deciding the branch from
+    /// it means the structure is settled before the animation starts and only
+    /// the image content arrives late.
+    ///
+    /// `.pending` rather than `.placeholder` for "has a cover, still decoding"
+    /// is the other half. Falling back to the glyph there would reintroduce the
+    /// same snap for any cover not already in the cache.
+    static func source(hasArtwork: Bool, loaded: Bool) -> ArtworkSource {
+        guard hasArtwork else { return .placeholder }
+        return loaded ? .image : .pending
+    }
+
+    /// Synchronous, from the model. Never from `artwork`.
+    private var hasArtwork: Bool {
+        playback.currentTrack?.artworkRelativePath != nil
+    }
+
     private var artworkIdentity: ArtworkIdentity {
         ArtworkIdentity(
             trackID: playback.currentTrack?.id,
@@ -950,26 +1003,34 @@ struct PlayerCard: View {
             y: collapsedCentre.y + (expandedCentre.y - collapsedCentre.y) * progress
         )
 
-        return Group {
-            if let artwork {
+        // Decided from the model, not from the loaded image — see `source(_:_:)`
+        // for why, and for the bug that rule fixes.
+        let source = Self.source(hasArtwork: hasArtwork, loaded: artwork != nil)
+
+        return ZStack {
+            // Drawn in every one of the three states, so moving between them
+            // never tears down the layer underneath. The fill is what the cover
+            // covers and what the glyph sits on; only the layer above it
+            // changes, which is a content change rather than a structural one.
+            Rectangle().fill(Color(.tertiarySystemFill))
+
+            if source == .image, let artwork {
                 Image(uiImage: artwork)
                     .resizable()
                     .scaledToFill()
-            } else {
-                ZStack {
-                    Rectangle().fill(Color(.tertiarySystemFill))
-                    // `.font(size:)` isn't animatable, so during the expand
-                    // spring the glyph would otherwise jump to its final size
-                    // immediately while the surrounding frame is still
-                    // interpolating. Render it at a fixed base size and use
-                    // `.scaleEffect`, which does animate, to track `side`
-                    // continuously. Ratio matches ArtworkThumbnail's
-                    // placeholder (size * 0.5). See F6.
-                    Image(systemName: "music.note")
-                        .font(.system(size: Self.placeholderGlyphBase * 0.5))
-                        .foregroundStyle(.secondary)
-                        .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
-                }
+            }
+
+            if source == .placeholder {
+                // `.font(size:)` isn't animatable, so during the expand spring
+                // the glyph would otherwise jump to its final size immediately
+                // while the surrounding frame is still interpolating. Render it
+                // at a fixed base size and use `.scaleEffect`, which does
+                // animate, to track `side` continuously. Ratio matches
+                // ArtworkThumbnail's placeholder (size * 0.5). See F6.
+                Image(systemName: "music.note")
+                    .font(.system(size: Self.placeholderGlyphBase * 0.5))
+                    .foregroundStyle(.secondary)
+                    .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
             }
         }
         .frame(width: width, height: height)
