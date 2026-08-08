@@ -39,7 +39,22 @@ final class JamendoLibraryService {
         return row
     }
 
+    /// Removes the row and, best-effort, the cover `save` downloaded for it.
+    ///
+    /// Mirrors `LibraryService.delete(_:)`: filesystem cleanup is `try?`,
+    /// deliberately. The user's intent is to remove the track from the
+    /// library, which must always succeed even if the artwork file is
+    /// already missing or inaccessible — polished error reporting for an
+    /// orphaned file is not worth blocking a delete over. Without this the
+    /// JPEG `downloadCover` wrote to `Documents/Artwork/` has no path
+    /// pointing at it once the row is gone, and every save→unsave cycle
+    /// would leave one more unreachable file on the device permanently.
     func unsave(_ track: JamendoTrack) throws {
+        if let artworkPath = track.artworkRelativePath {
+            try? FileManager.default.removeItem(
+                at: FileLocation.absoluteURL(forRelative: artworkPath)
+            )
+        }
         library.context.delete(track)
         try library.save()
     }

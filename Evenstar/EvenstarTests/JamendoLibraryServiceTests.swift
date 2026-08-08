@@ -61,6 +61,13 @@ final class JamendoLibraryServiceTests: XCTestCase {
 
     /// **Dedupe is by Jamendo's id.** Saving the same track twice must leave one
     /// row, not two rows the user then has to delete individually.
+    ///
+    /// Row count alone does not prove the dedupe guard ran:
+    /// `JamendoTrack.jamendoID` carries `@Attribute(.unique)`, so SwiftData
+    /// itself would collapse two same-id inserts into one row at save time
+    /// even with the guard deleted. The `requestedURLs` assertion is what
+    /// actually pins the guard down — without it, the second `save` would
+    /// re-hit the network for a cover it already has.
     func testSavingTheSameTrackTwiceLeavesOneRow() async throws {
         let (service, _) = try makeService()
         StubURLProtocol.responses = [
@@ -74,6 +81,10 @@ final class JamendoLibraryServiceTests: XCTestCase {
         if let path = second.artworkRelativePath, path != first.artworkRelativePath { written.append(path) }
 
         XCTAssertEqual(try service.savedCount(), 1)
+        XCTAssertEqual(
+            StubURLProtocol.requestedURLs.count, 1,
+            "a second save on an already-saved track must not re-download the cover"
+        )
     }
 
     /// The cover is downloaded so a saved track is a first-class citizen —
@@ -111,6 +122,34 @@ final class JamendoLibraryServiceTests: XCTestCase {
         XCTAssertNil(saved.artworkRelativePath)
     }
 
+    /// A transport-level failure — no connection, DNS, TLS — reaches
+    /// `downloadCover` as a thrown error from `session.data(from:)`, a
+    /// different failure shape than a non-2xx response. Both must be
+    /// swallowed the same way: the music is what the user asked for.
+    func testATransportErrorDuringCoverDownloadStillSavesTheTrack() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.nextError = URLError(.notConnectedToInternet)
+
+        let saved = try await service.save(catalogueTrack())
+
+        XCTAssertEqual(saved.jamendoID, "1")
+        XCTAssertNil(saved.artworkRelativePath)
+    }
+
+    /// A 200 response whose body is not a decodable image — `coverURL`
+    /// pointing at something that isn't a JPEG/PNG. `ArtworkStore
+    /// .jpegForStorage` returns nil for this, and that nil must not
+    /// propagate into a failed save.
+    func testAnUndecodableCoverBodyStillSavesTheTrack() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.responses = [.init(status: 200, body: Data("not an image".utf8))]
+
+        let saved = try await service.save(catalogueTrack())
+
+        XCTAssertEqual(saved.jamendoID, "1")
+        XCTAssertNil(saved.artworkRelativePath)
+    }
+
     func testUnsavingRemovesTheRow() async throws {
         let (service, _) = try makeService()
         StubURLProtocol.responses = [.init(status: 200, body: jpeg)]
@@ -120,5 +159,23 @@ final class JamendoLibraryServiceTests: XCTestCase {
         try service.unsave(saved)
 
         XCTAssertFalse(try service.isSaved(jamendoID: "1"))
+    }
+
+    /// **The downloaded cover must not outlive the row it was saved for.**
+    /// Without cleanup in `unsave`, every save→unsave cycle leaves one more
+    /// JPEG in `Documents/Artwork/` that nothing can ever reach again, since
+    /// the only pointer to it was the now-deleted row's `artworkRelativePath`.
+    func testUnsavingRemovesTheCoverFile() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.responses = [.init(status: 200, body: jpeg)]
+        let saved = try await service.save(catalogueTrack())
+        let path = try XCTUnwrap(saved.artworkRelativePath)
+        written.append(path)
+        let url = FileLocation.absoluteURL(forRelative: path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "precondition: cover was written")
+
+        try service.unsave(saved)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 }
