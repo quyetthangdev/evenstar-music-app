@@ -17,6 +17,24 @@ struct JamendoDiscoveryView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var genre: String?
+    /// `false` until the first `load()` call actually finishes (success or
+    /// error) — guards the empty-results row below from flashing on screen
+    /// before the initial trending fetch has had a chance to return anything.
+    /// Left untouched by a cancelled `load()`, so a superseded run never
+    /// flips it back off a completed one.
+    @State private var hasLoadedOnce = false
+    /// Set by `load()` when the current query has real matches that
+    /// `commercialOnly` filtered down to nothing — as opposed to a query with
+    /// no matches at all. The two read as the same blank list without this,
+    /// and only one of them is something the user can act on. See
+    /// `emptyResultsRow`.
+    @State private var filteredEverythingByLicence = false
+    /// Tracks the in-flight load a genre tap started, so a second tap before
+    /// the first request returns cancels it instead of letting both run and
+    /// whichever answers last win — the ordinary `.task(id:)` cancellation
+    /// `query` edits get, done by hand because a genre tap does not change
+    /// `query`.
+    @State private var genreLoadTask: Task<Void, Never>?
 
     private let client = JamendoClient()
 
@@ -40,7 +58,8 @@ struct JamendoDiscoveryView: View {
                             ForEach(Self.genres, id: \.self) { name in
                                 GenreChip(name: name, isSelected: genre == name) {
                                     genre = (genre == name) ? nil : name
-                                    Task { await load() }
+                                    genreLoadTask?.cancel()
+                                    genreLoadTask = Task { await load() }
                                 }
                             }
                         }
@@ -56,12 +75,22 @@ struct JamendoDiscoveryView: View {
                     Task { await save(track) }
                 }
             }
+
+            emptyResultsRow
         }
         .navigationTitle("Khám phá")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: Text("Tìm trên Jamendo"))
         .overlay { if isLoading && results.isEmpty { ProgressView() } }
-        .task(id: query) {
+        // Keyed on `commercialOnly` as well as `query`: this screen can stay
+        // pushed on the nav stack while the user backs out to Cài đặt, flips
+        // "Chỉ nhạc dùng được cho mục đích thương mại", and returns. Keyed on
+        // `query` alone, that toggle changing `commercialOnly` did not restart
+        // this task — `.task(id:)` only restarts when its *id* changes, and
+        // the id never mentioned the setting — so the list kept showing
+        // results filtered under the setting the user had just changed, until
+        // the next keystroke incidentally changed `query` too.
+        .task(id: LoadKey(query: query, commercialOnly: commercialOnly)) {
             // Debounced: a request per keystroke would rate-limit the client id
             // in seconds. Cancellation of the previous `.task` is what makes a
             // plain sleep a debounce here.
@@ -79,17 +108,46 @@ struct JamendoDiscoveryView: View {
         }
     }
 
+    /// One row of `List`, not a `ContentUnavailableView` swapped in for the
+    /// whole screen: the genre chips above must stay reachable when a genre
+    /// or search turns up nothing, so there has to be a `List` to hold them
+    /// either way.
+    ///
+    /// Three states currently render identically without this: no matches at
+    /// all, every match filtered out by `commercialOnly`, and an API error.
+    /// The error case already has its own red line above; this row covers
+    /// the other two, and tells them apart — only one is something a toggle
+    /// in Cài đặt can fix.
+    @ViewBuilder
+    private var emptyResultsRow: some View {
+        if hasLoadedOnce, errorMessage == nil, results.isEmpty {
+            Text(filteredEverythingByLicence
+                 ? String(localized: "Không có bài nào phù hợp với cài đặt giấy phép hiện tại. Tắt “Chỉ nhạc dùng được cho mục đích thương mại” trong Cài đặt để xem thêm.",
+                          bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+                 : String(localized: "Không tìm thấy kết quả",
+                          bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .listRowSeparator(.hidden)
+        }
+    }
+
     private func load() async {
         isLoading = true
         errorMessage = nil
+        filteredEverythingByLicence = false
         defer { isLoading = false }
         do {
-            if !query.isEmpty {
-                results = try await client.search(query, commercialOnly: commercialOnly)
-            } else if let genre {
-                results = try await client.tracks(inGenre: genre, commercialOnly: commercialOnly)
-            } else {
-                results = try await client.trending(commercialOnly: commercialOnly)
+            results = try await fetch(commercialOnly: commercialOnly)
+            hasLoadedOnce = true
+            if results.isEmpty, commercialOnly {
+                // Diagnostic-only re-fetch, permissive this time, to tell "no
+                // matches" apart from "the licence filter removed every
+                // match" for `emptyResultsRow`. Best-effort: `try?`, because
+                // this call failing must not blank what is already a valid
+                // (if empty) result, and must not override `errorMessage` —
+                // the primary fetch above already succeeded.
+                filteredEverythingByLicence = (try? await fetch(commercialOnly: false))?.isEmpty == false
             }
             // One round trip for the whole page rather than one per row —
             // see the doc comment on `JamendoLibraryService.savedIDs(among:)`.
@@ -114,6 +172,17 @@ struct JamendoDiscoveryView: View {
         } catch {
             results = []
             errorMessage = error.localizedDescription
+            hasLoadedOnce = true
+        }
+    }
+
+    private func fetch(commercialOnly: Bool) async throws -> [JamendoCatalogueTrack] {
+        if !query.isEmpty {
+            return try await client.search(query, commercialOnly: commercialOnly)
+        } else if let genre {
+            return try await client.tracks(inGenre: genre, commercialOnly: commercialOnly)
+        } else {
+            return try await client.trending(commercialOnly: commercialOnly)
         }
     }
 
@@ -125,6 +194,13 @@ struct JamendoDiscoveryView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+/// `.task(id:)` restarts only when this changes as a whole — see the doc
+/// comment at that call site for why both fields have to be in it.
+private struct LoadKey: Equatable {
+    let query: String
+    let commercialOnly: Bool
 }
 
 private struct GenreChip: View {

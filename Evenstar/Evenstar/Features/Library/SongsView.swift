@@ -7,9 +7,10 @@ struct SongsView: View {
     @Environment(LibraryService.self) private var library
     @Environment(ImportService.self) private var importer
     @Environment(PlaybackService.self) private var playback
-    @Environment(JamendoLibraryService.self) private var jamendo
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
-    @Query(sort: [SortDescriptor(\JamendoTrack.dateAdded, order: .reverse)]) private var jamendoTracks: [JamendoTrack]
+    // No `@Query private var jamendoTracks` here — see `JamendoSongsList`'s
+    // doc comment for why that query moved into its own view instead of
+    // living on this one, always active regardless of the selected chip.
 
     /// Owned by `RootView`, which drives both the tab bar and the player from
     /// it. Written here only by `minimisesBottomBar` on this screen's list.
@@ -188,7 +189,7 @@ struct SongsView: View {
                 DriveSongsList(isMinimised: $isMinimised)
                     .clearsBottomBar()
             case .jamendo:
-                jamendoContent
+                JamendoSongsList(isMinimised: $isMinimised)
                     .clearsBottomBar()
             }
         }
@@ -238,56 +239,6 @@ struct SongsView: View {
             // above it, so what the modifier observes is unambiguous.
             .minimisesBottomBar($isMinimised)
         }
-    }
-
-    @ViewBuilder
-    private var jamendoContent: some View {
-        if jamendoTracks.isEmpty {
-            ContentUnavailableView {
-                Label("Chưa lưu bài nào từ Jamendo", systemImage: "music.note.list")
-            } description: {
-                Text("Jamendo là kho nhạc Creative Commons miễn phí.")
-            } actions: {
-                NavigationLink("Khám phá Jamendo") { JamendoDiscoveryView() }
-            }
-        } else {
-            List(jamendoTracks) { track in
-                SongRow(track: track, subtitle: subtitle(for: track))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        playback.play(track, in: jamendoTracks)
-                    }
-                    // Same gesture, same wording, same "commit immediately, no
-                    // confirmation dialog" behaviour as the local list's swipe
-                    // above — Jamendo was the one source with no way back out
-                    // of the library once saved: `JamendoResultRow`'s own save
-                    // button disables itself once `isSaved`, offering no
-                    // un-save, and this list had neither `.onDelete` nor
-                    // `.swipeActions`. One mis-tap on the discovery screen's
-                    // "+" put a track in the library permanently.
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            deleteJamendoTrack(track)
-                        } label: {
-                            Label("Xoá", systemImage: "trash")
-                        }
-                    }
-            }
-            .listStyle(.plain)
-            .minimisesBottomBar($isMinimised)
-        }
-    }
-
-    /// `artist · licence`, the same shape `JamendoResultRow` shows in the
-    /// discovery screen — CC-BY obliges visible credit, and a saved track
-    /// keeps it here rather than only on the way in. `nil`, not the bare
-    /// artist name, when there is no licence to show: `SongRow` already
-    /// falls back to `track.artistName` on a `nil` subtitle.
-    private func subtitle(for track: JamendoTrack) -> String? {
-        guard let licenceURLString = track.licenceURLString,
-              let licence = LicenceName.short(for: URL(string: licenceURLString))
-        else { return nil }
-        return "\(track.artistName) · \(licence)"
     }
 
     /// Loads the picked photo, shrinks it, and writes it onto the track.
@@ -368,20 +319,4 @@ struct SongsView: View {
         }
     }
 
-    /// Mirrors `deleteTrack` above: tell playback while the row is still
-    /// live, then remove it. `jamendo.unsave` does its own
-    /// `onTrackWillBeDeleted` call too (it must, for the delete paths that
-    /// don't go through this view), so this one is redundant in practice —
-    /// but kept anyway to match `deleteTrack`'s shape exactly and because a
-    /// redundant call to a pure "remove from queue if present" method is
-    /// harmless, unlike a missing one.
-    private func deleteJamendoTrack(_ track: JamendoTrack) {
-        playback.handleTrackDeleted(track)
-        do {
-            try jamendo.unsave(track)
-        } catch {
-            // 2a: log only. A polished alert is part of 2d.
-            print("Delete failed: \(error)")
-        }
-    }
 }
