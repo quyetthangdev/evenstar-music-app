@@ -18,6 +18,18 @@ final class PlaybackService {
     private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
+    /// Whether everything after the playing track is in random order.
+    ///
+    /// Only the *tail* — see `toggleShuffle()`. Read by the pill in
+    /// `NowPlayingContent` and persisted alongside `repeatMode`.
+    private(set) var isShuffled: Bool = false
+
+    /// The queue as it stood before shuffling, so the toggle can be undone.
+    ///
+    /// Empty whenever `isShuffled` is false. Not derived on demand from the
+    /// shuffled queue, because a shuffle is not invertible: the original order
+    /// is information, and the only place it exists is here.
+    private(set) var unshuffledQueue: [any Playable] = []
     /// How many times the user has explicitly picked a track to play.
     ///
     /// Incremented by `play(_:in:)` and by nothing else. That method is the only
@@ -153,15 +165,26 @@ final class PlaybackService {
     /// and *then* fails, so resetting there would clear the counter before every
     /// failure and restore the unbounded loop.
     private var failureSkipRun: Int = 0
+    /// How the tail is randomised. Injected so tests get an exact expected
+    /// order instead of asserting against whatever a seed produced.
+    ///
+    /// A closure rather than an injected `RandomNumberGenerator`:
+    /// `Array.shuffled(using:)` takes its generator `inout` and is generic over
+    /// it, and Swift will not implicitly open an existential for an `inout`
+    /// generic parameter — seeding would have meant making the whole service
+    /// generic over the generator to make one array call testable.
+    private let shuffleTail: ([any Playable]) -> [any Playable]
 
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
          library: LibraryService,
-         persistInterval: TimeInterval = 5) {
+         persistInterval: TimeInterval = 5,
+         shuffleTail: @escaping ([any Playable]) -> [any Playable] = { $0.shuffled() }) {
         self.player = player
         self.nowPlaying = nowPlaying
         self.library = library
         self.persistInterval = persistInterval
+        self.shuffleTail = shuffleTail
         self.player.didFinishCallback = { [weak self] in
             Task { @MainActor in self?.handleFinish() }
         }
@@ -175,6 +198,15 @@ final class PlaybackService {
     func play(_ track: any Playable, in queueTracks: [any Playable]) {
         queue = queueTracks
         queueIndex = queueTracks.firstIndex(where: { $0.id == track.id }) ?? 0
+        // With shuffle armed, a new queue arrives shuffled. Tapping one track of
+        // an album and having the rest follow at random is the behaviour being
+        // copied; without this, choosing a song would silently switch shuffle
+        // off. `unshuffledQueue` is set from the argument, not from `queue`,
+        // because `applyShuffleToTail` is about to overwrite the latter.
+        if isShuffled {
+            unshuffledQueue = queueTracks
+            applyShuffleToTail()
+        }
         // A deliberate tap starts a new run: whatever the last one skipped past
         // has nothing to do with what the user just asked for.
         failureSkipRun = 0
@@ -216,6 +248,64 @@ final class PlaybackService {
     func cycleRepeatMode() {
         repeatMode = repeatMode.cycled
         deferPersist()
+    }
+
+    /// Randomises everything after the playing track, or puts it back.
+    ///
+    /// **The tail only.** The head — what has already played, and what is
+    /// playing right now — never moves. Three things follow from that, and each
+    /// is why it was chosen over shuffling the whole array:
+    ///
+    /// - It is what Apple Music shows. The list that reorders under its shuffle
+    ///   button is "Continue Playing", which is exactly this tail.
+    /// - `queueIndex` does not move, so no reindexing is needed and the whole
+    ///   class of off-by-one bugs that would come with it never arises.
+    /// - `previous()` keeps its meaning. Shuffling the head would randomise the
+    ///   history the back button walks.
+    ///
+    /// Turning it off has to *search* for the playing track rather than simply
+    /// restoring the index: playback continued through the shuffled tail, so by
+    /// now that track sits somewhere else entirely in the original order.
+    func toggleShuffle() {
+        if isShuffled {
+            let restored = unshuffledQueue
+            isShuffled = false
+            unshuffledQueue = []
+            if !restored.isEmpty {
+                let playingID = currentTrack?.id
+                queue = restored
+                if let playingID,
+                   let index = restored.firstIndex(where: { $0.id == playingID }) {
+                    queueIndex = index
+                } else {
+                    // The playing track is not in the original order at all —
+                    // deleted while playing, which `handleTrackDeleted` makes
+                    // reachable. Keep the position rather than jumping to the
+                    // top: the number is meaningless now either way, and one of
+                    // these two leaves the user near where they were.
+                    queueIndex = max(0, min(queueIndex, restored.count - 1))
+                }
+            }
+        } else {
+            isShuffled = true
+            unshuffledQueue = queue
+            applyShuffleToTail()
+        }
+        persistImmediately()
+    }
+
+    /// Replaces everything after `queueIndex` with a shuffled copy of itself.
+    ///
+    /// A no-op when the playing track is the last in the queue, or when there
+    /// is no queue — both are ordinary, not errors, and both must leave
+    /// `isShuffled` set so the button reflects what the user pressed.
+    private func applyShuffleToTail() {
+        guard queue.indices.contains(queueIndex) else { return }
+        let tailStart = queueIndex + 1
+        guard tailStart < queue.count else { return }
+        let head = Array(queue[..<tailStart])
+        let tail = Array(queue[tailStart...])
+        queue = head + shuffleTail(tail)
     }
 
     func pause() {
@@ -333,6 +423,11 @@ final class PlaybackService {
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
         let wasCurrent = (removalIndex == queueIndex)
         queue.remove(at: removalIndex)
+        // The same row lives in both arrays while shuffle is on, and a deleted
+        // row left in either is a crash waiting for whoever reads it next. Safe
+        // below the guard above: `unshuffledQueue` is a permutation of `queue`,
+        // so a track absent from one is absent from both.
+        unshuffledQueue.removeAll { $0.id == track.id }
 
         if wasCurrent {
             if queueIndex >= queue.count {
