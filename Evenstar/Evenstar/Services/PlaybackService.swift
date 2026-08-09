@@ -278,16 +278,28 @@ final class PlaybackService {
                    let index = restored.firstIndex(where: { $0.id == playingID }) {
                     queueIndex = index
                 } else {
-                    // Unreachable today through the public API: `queue` only
-                    // ever empties inside `stopPlayback()`, which now clears
-                    // `unshuffledQueue` in the same breath — so `restored`
-                    // being non-empty here always means `currentTrack` is
-                    // found in it too. Kept anyway, not dead code to prune:
-                    // Task 2's `restoreFromPersistedState` will resolve
+                    // Still unreachable through the public API, even after
+                    // Task 2's `restoreFromPersistedState`. That method was
+                    // expected to reopen this branch — it resolves
                     // `unshuffledQueue` and `queue` from persisted track IDs
-                    // through two separate lookups, and a track deleted
-                    // between sessions can resolve in one and not the other —
-                    // genuinely reopening this branch. Keep the position
+                    // through two separate `compactMap` calls, and a track
+                    // deleted between sessions was expected to resolve in one
+                    // and not the other. It doesn't: `queue` and
+                    // `unshuffledQueue` are always maintained as permutations
+                    // of the *same* id set (`play(_:in:)`, `toggleShuffle()`,
+                    // `handleTrackDeleted(_:)` and `stopPlayback()` all keep
+                    // that invariant), so the two persisted id lists are
+                    // always permutations of each other too. `resolveTrack
+                    // (byID:)` is a pure function of a `UUID` — a deleted
+                    // track drops out of *both* restored lists identically,
+                    // so they stay set-equal and the playing track, drawn
+                    // from `queue`, is always found in `restored`. Confirmed
+                    // empirically: instrumenting this branch and exercising a
+                    // restore with a deleted track (including the playing one
+                    // itself) never triggered it. Kept anyway, not dead code
+                    // to prune — it is one `compactMap` divergence away from
+                    // being reachable again, and the failure mode without it
+                    // is an out-of-bounds `queueIndex`. Keep the position
                     // rather than jumping to the top: the number is
                     // meaningless now either way, and one of these two leaves
                     // the user near where they were.
@@ -502,14 +514,13 @@ final class PlaybackService {
         // bring it back. Reading it after the guard would quietly reset it to
         // off for anyone who finished their queue before quitting.
         repeatMode = RepeatMode(rawValue: state.repeatModeRaw) ?? .off
+        // Above the guard with `repeatMode`, and for the same reason given
+        // there: this is a setting rather than part of the queue, so a launch
+        // with nothing to restore must still bring it back.
+        isShuffled = state.isShuffled
+        unshuffledQueue = state.unshuffledQueueTrackIDs.compactMap { resolveTrack(byID: $0) }
         guard !state.queueTrackIDs.isEmpty else { return }
-        let resolved: [any Playable] = state.queueTrackIDs.compactMap { id -> (any Playable)? in
-            // Local first: it is the commoner case and needs no second query
-            // when it hits.
-            if let track = try? library.findTrack(byID: id) { return track }
-            if let track = try? library.findDriveTrack(byID: id) { return track }
-            return try? library.findJamendoTrack(byID: id)
-        }
+        let resolved: [any Playable] = state.queueTrackIDs.compactMap { resolveTrack(byID: $0) }
         guard !resolved.isEmpty else {
             // Stale state — clear it.
             state.queueTrackIDs = []
@@ -592,6 +603,19 @@ final class PlaybackService {
     }
 
     // MARK: - Private
+
+    /// One id, against all three sources, in the order that answers soonest.
+    ///
+    /// Extracted because the unshuffled order needs precisely the same lookup
+    /// the queue does. Two copies would be two places for a fourth source to be
+    /// forgotten.
+    private func resolveTrack(byID id: UUID) -> (any Playable)? {
+        // Local first: it is the commoner case and needs no second query when
+        // it hits.
+        if let track = try? library.findTrack(byID: id) { return track }
+        if let track = try? library.findDriveTrack(byID: id) { return track }
+        return try? library.findJamendoTrack(byID: id)
+    }
 
     /// Loads the track at `queueIndex` and starts playback. If a track fails to
     /// load (missing/corrupt file), skips forward through the remaining queue
@@ -964,6 +988,8 @@ final class PlaybackService {
         state.currentTrackID = currentTrack?.id
         state.positionSeconds = position
         state.repeatModeRaw = repeatMode.rawValue
+        state.isShuffled = isShuffled
+        state.unshuffledQueueTrackIDs = unshuffledQueue.map(\.id)
         try? library.save()
         lastPersistAt = .now
     }

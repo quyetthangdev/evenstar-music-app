@@ -18,15 +18,35 @@ final class PlaybackState {
     /// `PlaybackServiceRepeatTests.testFreshPlaybackStateDefaultsToOff`.
     var repeatModeRaw: String = "off"
 
+    /// Whether the stored `queueTrackIDs` are in shuffled order.
+    ///
+    /// A literal default, for exactly the reason `repeatModeRaw` above carries
+    /// one: it is what lets SwiftData migrate rows written before this property
+    /// existed without a migration plan. A property added without one is an app
+    /// that will not launch for anyone who has used it before.
+    var isShuffled: Bool = false
+
+    /// The queue's order *before* shuffling, so the toggle can be undone after a
+    /// relaunch. Empty when `isShuffled` is false.
+    ///
+    /// The shuffled order needs no field of its own — it is what
+    /// `queueTrackIDs` already holds. This is the information that would
+    /// otherwise be lost, because a shuffle cannot be inverted.
+    var unshuffledQueueTrackIDs: [UUID] = []
+
     init(currentTrackID: UUID? = nil,
          positionSeconds: Double = 0,
          queueTrackIDs: [UUID] = [],
          queueIndex: Int = 0,
-         repeatModeRaw: String = "off") {
+         repeatModeRaw: String = "off",
+         isShuffled: Bool = false,
+         unshuffledQueueTrackIDs: [UUID] = []) {
         self.currentTrackID = currentTrackID
         self.positionSeconds = positionSeconds
         self.queueTrackIDs = queueTrackIDs
         self.queueIndex = queueIndex
         self.repeatModeRaw = repeatModeRaw
+        self.isShuffled = isShuffled
+        self.unshuffledQueueTrackIDs = unshuffledQueueTrackIDs
     }
 }
