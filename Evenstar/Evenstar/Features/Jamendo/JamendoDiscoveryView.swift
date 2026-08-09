@@ -8,8 +8,14 @@ import SwiftUI
 /// from the number of slots.
 struct JamendoDiscoveryView: View {
     @Environment(JamendoLibraryService.self) private var jamendo
+    @Environment(PlaybackService.self) private var playback
     @AppStorage(JamendoLicencePolicy.storageKey) private var commercialOnly =
         JamendoLicencePolicy.defaultCommercialOnly
+
+    /// Owned by this screen and only this screen — previewing is a thing you do
+    /// while browsing, so it ends when the browsing does. See
+    /// `JamendoPreviewPlayer` for why it is not `PlaybackService`.
+    @State private var preview = JamendoPreviewPlayer()
 
     /// Owned by `RootView`, threaded here through both screens that push this
     /// one — `SongsView`'s toolbar link and `JamendoSongsList`'s empty state.
@@ -108,10 +114,18 @@ struct JamendoDiscoveryView: View {
                     ForEach(results) { track in
                         JamendoResultRow(
                             track: track,
-                            isSaved: savedIDs.contains(track.id)
+                            isSaved: savedIDs.contains(track.id),
+                            isPreviewing: preview.playingID == track.id
                         ) {
                             Task { await save(track) }
                         }
+                        // The row is the play/pause control, as it is in every
+                        // list in this app and in Apple Music's own search
+                        // results. `contentShape` is what makes the gaps
+                        // between title and button tappable too — without it
+                        // only the glyphs' own ink responds.
+                        .contentShape(Rectangle())
+                        .onTapGesture { preview.toggle(track) }
                     }
                 } header: {
                     resultsHeader
@@ -160,6 +174,35 @@ struct JamendoDiscoveryView: View {
         } message: { message in
             Text(message)
         }
+        // A preview that will not stream is its own failure, not a save that
+        // went wrong, and saying so is the difference between "check your
+        // connection" and "your library did not change".
+        .alert(
+            "Không phát được",
+            isPresented: Binding(get: { preview.failureMessage != nil },
+                                 set: { if !$0 { preview.failureMessage = nil } }),
+            presenting: preview.failureMessage
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
+        // Hands the preview player the two things it cannot know: whether there
+        // was music to interrupt, and how to put it back. Assigned here rather
+        // than at construction because `@State`'s initialiser runs before there
+        // is an environment to read `playback` from.
+        .onAppear {
+            preview.suspendMainPlayback = {
+                guard playback.isPlaying else { return false }
+                playback.pause()
+                return true
+            }
+            preview.resumeMainPlayback = { playback.resume() }
+        }
+        // Previewing belongs to this screen. Leaving it — back, or deeper into
+        // the stack — silences the preview and hands playback back to whatever
+        // was interrupted, which is what `stop()` does in one call.
+        .onDisappear { preview.stop() }
         .clearsBottomBar()
         // Keyed on `commercialOnly` as well as `query`: this screen can stay
         // pushed on the nav stack while the user backs out to Cài đặt, flips

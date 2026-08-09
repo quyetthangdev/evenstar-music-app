@@ -814,6 +814,22 @@
         }
       }
     },
+    "Không phát được": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t play"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không phát được"
+          }
+        }
+      }
+    },
     "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ.": {
       "localizations": {
         "en": {

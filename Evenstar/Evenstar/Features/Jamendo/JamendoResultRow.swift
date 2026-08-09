@@ -7,14 +7,37 @@ import SwiftUI
 struct JamendoResultRow: View {
     let track: JamendoCatalogueTrack
     let isSaved: Bool
+    /// Whether this row is the one currently sounding through
+    /// `JamendoPreviewPlayer`.
+    let isPreviewing: Bool
     let onSave: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
+            // The pause glyph replaces the cover rather than sitting beside it:
+            // the artwork is the largest thing in the row and the only part big
+            // enough to read at a glance which of thirty rows is sounding.
             RemoteArtworkThumbnail(url: track.coverURL, size: 44)
+                .overlay {
+                    if isPreviewing {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 44 * 0.12)
+                                .fill(.black.opacity(0.45))
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
+                    // Tinted while previewing, the way every system list marks
+                    // its currently playing row. The glyph above says "tap to
+                    // stop"; this says "this is the one" from across the row,
+                    // and survives a cover that failed to load.
+                    .foregroundStyle(isPreviewing ? AnyShapeStyle(Color.accentColor)
+                                                  : AnyShapeStyle(.primary))
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.caption)
