@@ -80,6 +80,48 @@ enum ArtworkStore {
         decodedSizes.setObject(NSNumber(value: Double(maxPixel)), forKey: relativePath as NSString)
     }
 
+    /// The same treatment for a cover that lives on someone else's server.
+    ///
+    /// Jamendo returns a cover URL, not a file in `Artwork/`, and until a track
+    /// is saved there is nothing local to key on. `AsyncImage` is the obvious
+    /// answer and the wrong one: it keeps no decoded-image cache, so every row
+    /// that scrolls back into view decodes its JPEG again, at full size, on the
+    /// main thread — down a list Jamendo will happily return 200 rows for. That
+    /// is precisely the cost this type exists to avoid. The only thing that
+    /// differs is where the bytes come from.
+    ///
+    /// Shares `images` with the local path rather than opening a second cache:
+    /// one eviction policy and one 50 MB budget, instead of two that each
+    /// believe they own the memory. The key is the absolute URL, which cannot
+    /// collide with the Documents-relative paths the local path stores.
+    ///
+    /// Bytes come from `URLSession.shared`, whose `URLCache` means a cover
+    /// survives eviction from `images` without a second trip to the network.
+    /// Nothing here throws: a cover that will not load is a placeholder, which
+    /// is what the caller draws anyway.
+    @concurrent
+    static func remoteImage(from url: URL?, maxPixel: CGFloat) async -> UIImage? {
+        guard let url else { return nil }
+        let key = cacheKey(url.absoluteString, maxPixel)
+        if let cached = images.object(forKey: key) { return cached }
+
+        guard let data = try? await URLSession.shared.data(from: url).0,
+              let image = downsample(data: data, maxPixel: maxPixel)
+        else { return nil }
+
+        images.setObject(image, forKey: key, cost: cost(of: image))
+        return image
+    }
+
+    /// The synchronous probe for `remoteImage`, and it exists for the reason
+    /// `cachedImage` does: on a hit there is neither a download nor a decode,
+    /// so suspending to discover that costs a frame of placeholder on every row
+    /// that scrolls back into view. See `cachedImage`'s doc comment.
+    static func cachedRemoteImage(from url: URL?, maxPixel: CGFloat) -> UIImage? {
+        guard let url else { return nil }
+        return images.object(forKey: cacheKey(url.absoluteString, maxPixel))
+    }
+
     /// Any decode of this picture that is already in memory, at whatever size it
     /// happens to be. Never decodes, never suspends.
     ///
@@ -198,6 +240,30 @@ enum ArtworkStore {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
             return nil
         }
+        return thumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    /// The `Data` counterpart, for bytes that arrived over the network and were
+    /// never written to disk. Used by `remoteImage(from:maxPixel:)`.
+    private static func downsample(data: Data, maxPixel: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+        return thumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    /// The decode itself, shared by both `downsample` overloads.
+    ///
+    /// One copy for the same reason `cacheKey` is one function: two copies of
+    /// this options dictionary would let the file path and the network path
+    /// drift into decoding differently, and the symptom — one of them decoding
+    /// lazily and stuttering on the draw — reports no error anywhere.
+    ///
+    /// `kCGImageSourceShouldCacheImmediately` is the load-bearing line. Without
+    /// it `UIImage` defers the decode to first draw, which puts it back on the
+    /// main thread at exactly the moment this type exists to protect.
+    private static func thumbnail(from source: CGImageSource, maxPixel: CGFloat) -> UIImage? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,

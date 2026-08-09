@@ -80,33 +80,76 @@ enum LicenceName {
     }
 }
 
-/// A remote counterpart to `ArtworkThumbnail`: the same rounded shape and the
-/// same placeholder, backed by `AsyncImage` instead of `ArtworkStore` — a
-/// Jamendo cover is a URL on Jamendo's own CDN, not a file this app has
-/// downloaded and cached, so there is nothing for `ArtworkStore`'s cache to
-/// key on until (and unless) the track is saved.
+/// A remote counterpart to `ArtworkThumbnail`: the same rounded shape, the same
+/// placeholder, the same cache-seeded first frame, for a cover that lives on
+/// Jamendo's CDN rather than in `Artwork/`.
+///
+/// **This was `AsyncImage`, which is the wrong tool for a long list.** It keeps
+/// no decoded-image cache, so every row scrolling back into view re-downloaded
+/// and re-decoded its JPEG — and it offers no seed, so even a row whose cover
+/// was already in memory drew the placeholder for a frame first. Both are
+/// problems `ArtworkThumbnail` had and solved; see
+/// `ArtworkStore.remoteImage(from:maxPixel:)`, which is the local path's
+/// machinery pointed at a URL. Deliberately a near-copy of `ArtworkThumbnail`
+/// rather than a shared generic: the two differ only in which pair of
+/// `ArtworkStore` functions they call, and a protocol to abstract that would be
+/// more moving parts than the duplication it removed.
 struct RemoteArtworkThumbnail: View {
     let url: URL?
     let size: CGFloat
 
+    /// Seeded synchronously, exactly as `ArtworkThumbnail` seeds itself, and
+    /// for the same reason: `.task` runs after the first body evaluation and
+    /// `remoteImage` is `@concurrent`, so awaiting it suspends even on a hit.
+    @State private var image: UIImage?
+
+    init(url: URL?, size: CGFloat) {
+        self.url = url
+        self.size = size
+        _image = State(
+            initialValue: ArtworkStore.cachedRemoteImage(
+                from: url,
+                maxPixel: Self.pixels(for: size)
+            )
+        )
+    }
+
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        placeholder
-                    }
-                }
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
             } else {
                 placeholder
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.12))
+        .task(id: url) {
+            // Covers a *changed* URL on a recycled row, where the seeded image
+            // belongs to the previous track. Probing the cache before clearing
+            // keeps that change flicker-free: only a genuine miss ever shows
+            // the placeholder.
+            if let cached = ArtworkStore.cachedRemoteImage(
+                from: url,
+                maxPixel: Self.pixels(for: size)
+            ) {
+                image = cached
+                return
+            }
+            image = nil
+            image = await ArtworkStore.remoteImage(
+                from: url,
+                maxPixel: Self.pixels(for: size)
+            )
+        }
+    }
+
+    /// Shared by the seed and the task so the two cannot ask the cache
+    /// different questions about the same thumbnail.
+    private static func pixels(for size: CGFloat) -> CGFloat {
+        size * UIScreen.main.scale
     }
 
     private var placeholder: some View {
