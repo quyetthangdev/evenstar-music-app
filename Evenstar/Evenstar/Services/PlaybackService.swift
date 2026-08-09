@@ -718,6 +718,12 @@ final class PlaybackService {
         failureSkipRun = 0
         queue = []
         queueIndex = 0
+        // Otherwise a shuffle toggle after this point resurrects a queue that
+        // stopped playing: `unshuffledQueue` still held tracks, and
+        // `toggleShuffle()`'s `if !restored.isEmpty` guard would treat that as
+        // real state to restore. `isShuffled` deliberately stays untouched —
+        // it is a setting, the same way `repeatMode` survives a stop.
+        unshuffledQueue = []
         currentMetadata = nil
         currentTrackTitle = nil
         position = 0

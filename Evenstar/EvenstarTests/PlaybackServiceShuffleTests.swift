@@ -185,9 +185,25 @@ final class PlaybackServiceShuffleTests: XCTestCase {
         XCTAssertEqual(service.unshuffledQueue.count, 3)
     }
 
-    /// The `else` branch of the index restore. With the playing track gone from
-    /// the original order there is no index to find, and the queue must still
-    /// end up somewhere valid.
+    /// The `if let` branch of the index restore, in the case where a deletion
+    /// changed *what* is playing out from under the shuffle.
+    ///
+    /// Deleting the track at `queueIndex` when it is not the queue's last
+    /// track does not stop playback — `handleTrackDeleted` leaves `queueIndex`
+    /// where it was and loads whatever track slid into that slot, so
+    /// `currentTrack` afterward is a *different* track than the one deleted.
+    /// That track is still in `unshuffledQueue` (only the deleted one was
+    /// removed from it), but at whatever index it held in the original order —
+    /// not the shuffled one. This confirms `toggleShuffle()` finds it there by
+    /// id rather than assuming the shuffled and original positions line up.
+    ///
+    /// This does **not** reach the `else` clamp below it: that requires
+    /// `currentTrack` to be `nil` while `unshuffledQueue` is still non-empty,
+    /// and the only path that ever produced that combination was the
+    /// `stopPlayback()` bug that left `unshuffledQueue` stale — see
+    /// `testTurningShuffleOffAfterTheLastTrackWasDeletedStaysEmpty` and the
+    /// fix-round section of the task report for why, once that bug is fixed,
+    /// the clamp has no known reachable caller left.
     func testTurningShuffleOffAfterThePlayingTrackWasDeletedKeepsAValidIndex() throws {
         let (service, _, library) = try makeStack()
         let all = try tracks(4, library: library)
@@ -204,6 +220,42 @@ final class PlaybackServiceShuffleTests: XCTestCase {
             service.queue.isEmpty || service.queue.indices.contains(service.queueIndex),
             "queueIndex \(service.queueIndex) is outside a queue of \(service.queue.count)"
         )
+    }
+
+    /// Regression test for a stale `unshuffledQueue` surviving a stop.
+    ///
+    /// Deleting the playing track when it is last in the queue routes through
+    /// `handleTrackDeleted`'s "past the end, not repeat-all" branch, which
+    /// calls `stopPlayback()` — clearing `queue` but, before this fix, not
+    /// `unshuffledQueue`. A later "off" toggle then found `unshuffledQueue`
+    /// still holding the *other* surviving tracks, took that as real state to
+    /// restore, and resurrected a queue that was not loaded and not playing:
+    /// the mini player would reappear over dead state.
+    ///
+    /// **Three tracks, not one.** `handleTrackDeleted` already removes the
+    /// deleted track from `unshuffledQueue` on every call, before this fix is
+    /// even reached — with only one track total that alone empties it, so a
+    /// one-track queue passes whether or not `stopPlayback()` clears
+    /// `unshuffledQueue` and proves nothing. What the fix actually has to
+    /// clear is the *other* tracks still sitting in `unshuffledQueue` after
+    /// the deleted one is gone from it — which needs at least one track
+    /// besides the one deleted.
+    func testTurningShuffleOffAfterTheLastTrackWasDeletedStaysEmpty() throws {
+        let (service, _, library) = try makeStack()
+        let all = try tracks(3, library: library)
+        service.play(all[0], in: all)
+        service.toggleShuffle()
+        service.next()
+        service.next()
+        let playing = try XCTUnwrap(service.currentTrack)
+        XCTAssertEqual(service.queueIndex, service.queue.count - 1, "precondition: playing the last track")
+
+        service.handleTrackDeleted(playing)
+        XCTAssertTrue(service.queue.isEmpty, "precondition: deleting it stopped playback")
+        service.toggleShuffle()
+
+        XCTAssertTrue(service.queue.isEmpty, "must not resurrect the other surviving tracks")
+        XCTAssertNil(service.currentTrack)
     }
 
     // MARK: - A new queue while shuffle is on
