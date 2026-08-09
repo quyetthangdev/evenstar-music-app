@@ -179,6 +179,91 @@ final class JamendoLibraryServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
+    // MARK: - Coalescing concurrent saves (I8)
+
+    /// **Two overlapping `save()` calls for the same Jamendo id must leave one
+    /// row and one cover file, not race each other.** Before
+    /// `inFlightSaves` existed, `save` checked `existingRow`, awaited the
+    /// cover download, then inserted — nothing held the actor across that
+    /// `await`, so a double-tap on the save button (whose `isSaved` only
+    /// flips after the full round trip) started two saves: two covers
+    /// downloaded, and — per `JamendoTrack`'s doc comment — the row that
+    /// survives SwiftData's unique-attribute upsert is not guaranteed to
+    /// keep either caller's original `id`.
+    ///
+    /// `async let` starts both calls without an `await` in between, so their
+    /// synchronous prefixes (the `existingRow` check and the `inFlightSaves`
+    /// check) race exactly the way a double-tap would.
+    func testOverlappingSavesForTheSameTrackLeaveOneRowAndOneCoverFile() async throws {
+        let (service, _) = try makeService()
+        StubURLProtocol.responses = [
+            .init(status: 200, body: jpeg),
+            .init(status: 200, body: jpeg)
+        ]
+
+        async let first = service.save(catalogueTrack(id: "42"))
+        async let second = service.save(catalogueTrack(id: "42"))
+        let (firstResult, secondResult) = try await (first, second)
+
+        if let path = firstResult.artworkRelativePath { written.append(path) }
+        if let path = secondResult.artworkRelativePath, path != firstResult.artworkRelativePath {
+            written.append(path)
+        }
+
+        XCTAssertEqual(firstResult.id, secondResult.id, "both calls must resolve to the same row")
+        XCTAssertEqual(try service.savedCount(), 1)
+        XCTAssertEqual(
+            StubURLProtocol.requestedURLs.count, 1,
+            "a coalesced second save must not re-download the cover"
+        )
+        let matchingCoverFiles = (try? FileManager.default.contentsOfDirectory(
+            atPath: FileLocation.artworkFolderURL().path
+        ))?.filter { $0.contains("jamendo-42-") } ?? []
+        XCTAssertEqual(matchingCoverFiles.count, 1, "exactly one cover file must be left on disk")
+    }
+
+    // MARK: - Deleting a row must reach the playing queue (I7)
+
+    /// The wiring `EvenstarApp` installs, reproduced so this test exercises the
+    /// same contract the app relies on rather than a test-only shortcut. Same
+    /// shape as `DriveLibraryServiceTests.makePlayback`.
+    private func makePlayback(_ library: LibraryService,
+                              notifiedBy service: JamendoLibraryService) -> PlaybackService {
+        let playback = PlaybackService(
+            player: MockAudioPlayer(), nowPlaying: MockNowPlayingPublisher(), library: library
+        )
+        service.onTrackWillBeDeleted = { playback.handleTrackDeleted($0) }
+        return playback
+    }
+
+    /// Swipe-to-delete the currently-playing Jamendo track. Without
+    /// `onTrackWillBeDeleted` wired, the queue would keep a strong reference
+    /// to a deleted-and-saved `JamendoTrack`, and the next read of any
+    /// property on it — the 30-second play-count write, the periodic
+    /// `queue.map(\.id)` persist, a tap on Next — raises
+    /// `NSObjectInaccessibleException`, uncatchable in Swift. This is
+    /// dormant until there is a way to delete a saved Jamendo track at all
+    /// (C2); this test proves the hook that must exist before that delete
+    /// path ships.
+    func testUnsavingThePlayingTrackTakesItOutOfTheQueue() async throws {
+        let (service, library) = try makeService()
+        let playback = makePlayback(library, notifiedBy: service)
+        StubURLProtocol.responses = [.init(status: 200, body: jpeg)]
+        let saved = try await service.save(catalogueTrack(id: "99"))
+        if let path = saved.artworkRelativePath { written.append(path) }
+        playback.play(saved, in: [saved])
+        XCTAssertEqual(playback.queue.count, 1)
+
+        try service.unsave(saved)
+
+        XCTAssertTrue(playback.queue.isEmpty, "the queue must not hold a deleted row")
+        XCTAssertNil(playback.currentTrack)
+        XCTAssertTrue(
+            library.playbackState.queueTrackIDs.isEmpty,
+            "and the persisted queue must not resurrect it on the next launch"
+        )
+    }
+
     // MARK: - savedIDs(among:)
 
     /// The batched replacement for calling `isSaved(jamendoID:)` once per

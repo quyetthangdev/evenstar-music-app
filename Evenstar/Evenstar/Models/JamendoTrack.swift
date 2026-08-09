@@ -8,6 +8,20 @@ import SwiftData
 ///
 /// `@Attribute(.unique)` on `jamendoID` and not on the title: two different
 /// recordings can share a title, and the same recording must not be saved twice.
+///
+/// **A `jamendoID` collision — two `JamendoTrack(jamendoID:...)` inserts for
+/// the same id — does not raise an error.** SwiftData's `@Attribute(.unique)`
+/// upserts: the two rows collapse to one, but on a collision it is `id`, not
+/// the caller, that decides which object's `id` the surviving row keeps, and
+/// it is not necessarily either original. `PlaybackState` persists queue
+/// membership as bare `UUID`s (`currentTrackID`, `queueTrackIDs`) with no
+/// relationship back to this table, so nothing re-links them when a row's
+/// `id` changes underneath it — a restored queue silently loses any track
+/// whose `id` moved. This is exactly what an unguarded double-`save()` could
+/// produce; see `JamendoLibraryService.inFlightSaves` for why a second
+/// concurrent `save()` for the same id is coalesced onto the first rather
+/// than allowed to insert its own row. Same shape as `DriveTrack`'s
+/// type-level doc comment, for the same reason.
 @Model
 final class JamendoTrack {
     @Attribute(.unique) var id: UUID

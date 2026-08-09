@@ -47,6 +47,13 @@ struct EvenstarApp: App {
         // the `@State` properties above.
         driveLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
         let jamendoLib = JamendoLibraryService(library: libService)
+        // Same wiring as `driveLib` above, and for the same reason: without
+        // it, deleting a saved Jamendo track that is in the queue (or
+        // currently playing) leaves the queue holding a deleted-and-saved
+        // row and raises an uncatchable Objective-C exception the next time
+        // anything reads a property off it. See
+        // `JamendoLibraryService.onTrackWillBeDeleted`.
+        jamendoLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
