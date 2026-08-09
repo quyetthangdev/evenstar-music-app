@@ -997,16 +997,23 @@ struct PlayerCard: View {
     }
 
     private func miniChrome(width: CGFloat) -> some View {
-        MiniPlayerChrome(playback: playback, minimised: minimised)
+        MiniPlayerChrome(
+            playback: playback,
+            minimised: minimised,
+            // The artwork's centre, which the row's trailing inset mirrors —
+            // derived here because these two constants are private to this
+            // type, and restating either of them there would let the two ends
+            // of the pill drift apart the moment one of them moved.
+            artworkCentreInset: Self.collapsedArtworkInset + Self.collapsedArtwork / 2
+        )
             // Derived rather than a literal so the text cannot drift out of
             // step with the artwork: this is where the artwork ends, plus the
             // gap. The old `collapsedArtwork + 24` folded the inset and the
             // gap into one number, so moving the artwork silently changed the
             // gap instead of moving the text with it.
             .padding(.leading, Self.collapsedArtworkInset + Self.collapsedArtwork + Self.collapsedArtworkGap)
-            // 16 rather than 12 so the forward button clears the pill's
-            // rounded right cap.
-            .padding(.trailing, 16)
+            // The trailing inset moved into `MiniPlayerChrome`: it depends on
+            // which button is last, and that now changes with `minimised`.
             .frame(width: width, height: Self.collapsedHeight)
             // The whole row takes the long press, not just the words.
             //

@@ -12,11 +12,46 @@ struct MiniPlayerChrome: View {
     /// that is squeezing it.
     let minimised: Double
 
+    /// How far the artwork's **centre** sits from the pill's leading edge —
+    /// `collapsedArtworkInset + collapsedArtwork / 2`, computed by `PlayerCard`
+    /// from constants that are private to it.
+    ///
+    /// Passed rather than restated because this row's trailing inset is defined
+    /// as its mirror: see `trailingInset`.
+    let artworkCentreInset: CGFloat
+
     /// Counts taps on Next so the tap effect retriggers on every press. A
     /// `Bool` would fire once and then sit at `true`, doing nothing for the
     /// second tap.
     @State private var nextTaps = 0
     @State private var playPauseTaps = 0
+
+    private static let buttonSize: CGFloat = 32
+    private static let buttonGap: CGFloat = 10
+
+    /// With Next present: 16, enough for it to clear the pill's rounded right
+    /// cap.
+    private static let expandedTrailingInset: CGFloat = 16
+
+    /// Where the trailing button's frame ends, measured from the pill's
+    /// trailing edge.
+    ///
+    /// Minimised, Next is gone and play/pause becomes the last thing on the
+    /// row — so it should balance the artwork at the other end. Balanced by
+    /// **centres**, not by edges: the two are different sizes (36 against 32)
+    /// and, more to the point, the glyph inside the button does not fill it and
+    /// `play.fill` is not the same width as `pause.fill`. Matching visible
+    /// edges would put the button in a different place depending on whether
+    /// music happened to be playing.
+    ///
+    /// Mirroring centres gives `36 - 16 = 20`, four points further in than the
+    /// 16 that was left over from the Next button's own inset — which is what
+    /// made the right side read as slightly loose against the left.
+    private var trailingInset: CGFloat {
+        let mirrored = artworkCentreInset - Self.buttonSize / 2
+        return Self.expandedTrailingInset
+            + (mirrored - Self.expandedTrailingInset) * minimised
+    }
 
     /// See `NowPlayingContent.acknowledge`: SwiftUI renders a button's action
     /// after it returns, so synchronous playback work sits between the tap and
@@ -31,7 +66,7 @@ struct MiniPlayerChrome: View {
             // targets rather than 36. 32 is the floor here — below it the
             // buttons drop under the 44pt Apple asks for by more than the
             // surrounding pill can excuse.
-            HStack(spacing: 10) {
+            HStack(spacing: Self.buttonGap) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(current.title)
                         .font(.footnote)
@@ -96,22 +131,25 @@ struct MiniPlayerChrome: View {
                 // `clipped()` because the glyph does not shrink with the frame
                 // — without it the arrow would spill out of a box narrower
                 // than itself while still half visible.
-                .frame(width: 32 * (1 - minimised))
+                .frame(width: Self.buttonSize * (1 - minimised))
                 .opacity(1 - minimised)
                 .clipped()
                 .allowsHitTesting(minimised < 0.5)
-                // Eats the `HStack`'s own 10pt gap on the way out.
+                // Eats the gap in front of it on the way out.
                 //
-                // Zeroing the button's width leaves that gap behind, so
-                // play/pause stopped 26pt short of the pill's inner trailing
-                // edge — 16pt of padding plus 10pt of spacing for a neighbour
-                // that is no longer there. It read as hanging back from the
-                // edge rather than sitting against it. At -10 the gap closes
-                // with the button and play/pause lands 16pt in, near enough to
-                // the artwork's own 18pt inset on the other end for the pill to
-                // look balanced.
-                .padding(.trailing, -10 * minimised)
+                // Zeroing a button's width does not remove the `HStack` spacing
+                // that preceded it, so without this play/pause would stop a
+                // whole `buttonGap` short of where `trailingInset` puts it,
+                // held off by the space reserved for a neighbour that is no
+                // longer there. Leading rather than trailing, so what collapses
+                // is the gap this button owns.
+                .padding(.leading, -Self.buttonGap * minimised)
             }
+            // Owned here rather than by `PlayerCard`, which used to apply a flat
+            // 16. It is a statement about these buttons — which one is last, how
+            // wide it is, and what it has to balance against — so it belongs
+            // where they are. See `trailingInset`.
+            .padding(.trailing, trailingInset)
         }
     }
 }
