@@ -174,6 +174,16 @@ final class LibraryService {
         return try context.fetch(descriptor).first
     }
 
+    /// The Jamendo half of session restore — same shape as `findDriveTrack`,
+    /// for the same reason: `PlaybackState` stores bare `UUID`s with no note
+    /// of which table they came from, so restoring a mixed queue has to ask
+    /// every source in turn.
+    func findJamendoTrack(byID id: UUID) throws -> JamendoTrack? {
+        var descriptor = FetchDescriptor<JamendoTrack>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
     func findExistingTrack(title: String, artist: String, duration: Double) throws -> Track? {
         // SwiftData #Predicate has limited string + math support; do the work in Swift
         // after fetching candidates with the same rounded duration.

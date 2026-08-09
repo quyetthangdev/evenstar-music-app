@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import Evenstar
 
 @MainActor
@@ -150,6 +151,43 @@ final class PlaybackServiceRestoreTests: XCTestCase {
         XCTAssertFalse(service.isPlaying)
         XCTAssertNil(service.currentTrack)
         XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    // MARK: - Mixed-source restore (C1)
+
+    /// A persisted queue can mix all three sources — local, Drive, Jamendo —
+    /// since `PlaybackState` just stores an ordered list of bare `UUID`s with
+    /// no note of which table each came from. Before `findJamendoTrack(byID:)`
+    /// existed, `restoreFromPersistedState()` had no way to resolve the
+    /// Jamendo id: it fell out of `resolved` silently, `queueIndex` clamped
+    /// onto whatever survived, and a queue that was *only* Jamendo tracks
+    /// resolved to empty and had its persisted state wiped outright. This
+    /// pins the fix: all three rows must come back, in their original order.
+    func testRestoreResolvesAMixedQueueOfAllThreeSourcesInOrder() async throws {
+        let (service, _, library) = try makeStack()
+        let local = try seed(1, library: library)[0]
+        let drive = DriveTrack(fileID: "f1", folderID: "folder1", fileName: "drive.mp3")
+        library.context.insert(drive)
+        let jamendo = JamendoTrack(
+            jamendoID: "j1",
+            title: "Jam Track",
+            artistName: "Artist",
+            albumTitle: "Album",
+            durationSeconds: 120,
+            audioURLString: "https://prod.jamendo.com/j1.mp3"
+        )
+        library.context.insert(jamendo)
+        try library.save()
+
+        let state = library.playbackState
+        state.queueTrackIDs = [local.id, drive.id, jamendo.id]
+        state.queueIndex = 0
+        state.positionSeconds = 0
+        try library.save()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertEqual(service.queue.map(\.id), [local.id, drive.id, jamendo.id])
     }
 
     // MARK: - Persist throttle (ruling item 3)

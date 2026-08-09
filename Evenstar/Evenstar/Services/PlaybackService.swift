@@ -404,7 +404,8 @@ final class PlaybackService {
             // Local first: it is the commoner case and needs no second query
             // when it hits.
             if let track = try? library.findTrack(byID: id) { return track }
-            return try? library.findDriveTrack(byID: id)
+            if let track = try? library.findDriveTrack(byID: id) { return track }
+            return try? library.findJamendoTrack(byID: id)
         }
         guard !resolved.isEmpty else {
             // Stale state — clear it.
