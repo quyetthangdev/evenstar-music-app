@@ -420,6 +420,19 @@ struct NowPlayingContent: View {
         .buttonStyle(.transportToggle(trigger: trigger))
         .disabled(!enabled)
         .accessibilityLabel(label)
+        // `.isButton` is restated alongside `.isSelected` only so both
+        // branches of the ternary share one type — `Button` already carries
+        // `.isButton` on its own, and `accessibilityAddTraits` is additive,
+        // so this never removes it. `.isSelected` is what makes VoiceOver
+        // announce whether the pill is currently armed, following
+        // `FloatingTabBar`'s precedent for the identical problem.
+        //
+        // Gated on `enabled` too: a pill for a player with nothing loaded is
+        // neither selected nor meaningfully actionable, and `isOn` for
+        // repeat is `repeatMode != .off` — a value that outlives the track
+        // that set it — so without this an idle player could still announce
+        // "selected" for a mode it can no longer act on.
+        .accessibilityAddTraits(isOn && enabled ? [.isButton, .isSelected] : .isButton)
     }
 
     // The `.frame` modifiers this used to carry at the call site were a

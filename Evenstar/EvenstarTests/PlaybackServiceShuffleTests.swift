@@ -124,6 +124,40 @@ final class PlaybackServiceShuffleTests: XCTestCase {
         XCTAssertEqual(titles(service), ["Track 0", "Track 1", "Track 2", "Track 3", "Track 4"])
     }
 
+    /// Every other test in this file injects `{ $0.reversed() }`, which is its
+    /// own inverse — applying it twice returns the input. That makes them
+    /// unable to tell a correct "off" (restore from the stored
+    /// `unshuffledQueue`) apart from a wrong one that "undoes" shuffle by
+    /// running `shuffleTail` over the tail a second time: under an
+    /// involution, restoring and reapplying land on the same answer. A
+    /// rotation is not an involution — applying it twice does not return the
+    /// input — so this is the one test in the file that actually
+    /// discriminates between the two implementations.
+    func testTurningShuffleOffRestoresFromStoredOrderNotByReapplyingTheShuffle() throws {
+        let rotateFirstToLast: ([any Playable]) -> [any Playable] = { tail in
+            guard let first = tail.first else { return tail }
+            return Array(tail.dropFirst()) + [first]
+        }
+        let (service, _, library) = try makeStack(shuffleTail: rotateFirstToLast)
+        let all = try tracks(5, library: library)
+        service.play(all[0], in: all)
+
+        service.toggleShuffle()
+        // Tail [1, 2, 3, 4] rotated once -> [2, 3, 4, 1].
+        XCTAssertEqual(
+            titles(service),
+            ["Track 0", "Track 2", "Track 3", "Track 4", "Track 1"],
+            "precondition"
+        )
+
+        service.toggleShuffle()
+
+        // A reapply-the-shuffle "off" would rotate the tail a second time —
+        // [2, 3, 4, 1] -> [3, 4, 1, 2] — landing on ["Track 0", "Track 3",
+        // "Track 4", "Track 1", "Track 2"], not the original order.
+        XCTAssertEqual(titles(service), ["Track 0", "Track 1", "Track 2", "Track 3", "Track 4"])
+    }
+
     /// The whole reason turning shuffle off needs a search rather than just
     /// restoring the array: playback moved on through the shuffled tail, so the
     /// playing track sits at a different index in the original order.
