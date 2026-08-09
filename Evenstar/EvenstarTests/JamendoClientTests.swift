@@ -185,6 +185,52 @@ final class JamendoClientTests: XCTestCase {
         }
     }
 
+    // MARK: - C3: Jamendo's own success/failure envelope
+
+    /// **The exact live response body** for a revoked/invalid client id,
+    /// captured with a bad credential against the real API (see the fix
+    /// report). Jamendo does not use HTTP status for this — this comes back
+    /// as a plain 200 — so before this fixture existed, every test in this
+    /// suite hardcoded `"status":"success"` and nothing ever exercised the
+    /// failure envelope at all. Undetected, this decoded as zero results:
+    /// indistinguishable from a query that legitimately matched nothing, and
+    /// the discovery screen showed a blank list with no explanation.
+    func testAnInvalidClientIdEnvelopeDoesNotSurfaceAsAnEmptyResultList() async {
+        StubURLProtocol.responses = [.init(status: 200, body: Data("""
+        {"headers":{"status":"failed","code":5,
+         "error_message":"Jamendo Api Invalid Client Id Error: Your credential is not authorized."},
+         "results":[]}
+        """.utf8))]
+
+        do {
+            _ = try await client().search("x", commercialOnly: true)
+            XCTFail("expected an error, not a silent empty result")
+        } catch {
+            XCTAssertEqual(error as? JamendoError, .connectionFailed)
+        }
+    }
+
+    /// Code 6 is Jamendo's documented "Rate Limit Exceeded"
+    /// (developer.jamendo.com/v3.0/response-codes) — the one place throttling
+    /// is actually reported for this endpoint. Measured live, a bad client id
+    /// still comes back as HTTP 200; nothing suggests quota errors are any
+    /// different. `.rateLimited` was reachable only from HTTP 429 before this,
+    /// which this suite never saw Jamendo actually return.
+    func testARateLimitEnvelopeBecomesRateLimited() async {
+        StubURLProtocol.responses = [.init(status: 200, body: Data("""
+        {"headers":{"status":"failed","code":6,
+         "error_message":"This requester app or the requester IP have exceeded the permitted rate limit"},
+         "results":[]}
+        """.utf8))]
+
+        do {
+            _ = try await client().search("x", commercialOnly: true)
+            XCTFail("expected rateLimited")
+        } catch {
+            XCTAssertEqual(error as? JamendoError, .rateLimited)
+        }
+    }
+
     func testAnUndecodableBodyBecomesDecodingFailed() async {
         StubURLProtocol.responses = [.init(status: 200, body: Data("not json".utf8))]
         do {
@@ -213,5 +259,93 @@ final class JamendoClientTests: XCTestCase {
 
         let url = try XCTUnwrap(StubURLProtocol.lastRequestURL?.absoluteString)
         XCTAssertTrue(url.contains("tags=jazz"))
+    }
+
+    // MARK: - I5: paging past a single 200-row page
+
+    /// `targetResultCount`/`maxPages` are injected small here rather than
+    /// left at production's 60/5 — the point under test is the paging
+    /// *mechanism*, and a fixture with 60 rows across several pages would
+    /// prove nothing this doesn't.
+    private func pagingClient(targetResultCount: Int, maxPages: Int) -> JamendoClient {
+        JamendoClient(
+            clientID: "test-id", session: StubURLProtocol.session(),
+            targetResultCount: targetResultCount, maxPages: maxPages
+        )
+    }
+
+    private func row(id: String) -> String {
+        """
+        {"id":"\(id)","name":"Track \(id)","artist_name":"Artist","album_name":"",
+         "duration":100,"audio":"https://example.com/\(id).mp3",
+         "license_ccurl":"http://creativecommons.org/licenses/by/3.0/"}
+        """
+    }
+
+    private func page(ids: [String], next: String? = nil) -> Data {
+        let rows = ids.map(row(id:)).joined(separator: ",")
+        let nextField = next.map { ",\"next\":\"\($0)\"" } ?? ""
+        return Data("""
+        {"headers":{"status":"success","code":0\(nextField)},"results":[\(rows)]}
+        """.utf8)
+    }
+
+    /// Two pages, each below target on its own, combine into one result —
+    /// this is the behaviour that turns "16 of thousands of matches" into a
+    /// full screen instead of a stub the user has no way to see more of.
+    func testPagingFollowsNextUntilTheTargetIsReached() async throws {
+        StubURLProtocol.responses = [
+            .init(status: 200, body: page(ids: ["1", "2"], next: "https://api.jamendo.com/v3.0/tracks?offset=2")),
+            .init(status: 200, body: page(ids: ["3", "4"]))
+        ]
+        let results = try await pagingClient(targetResultCount: 3, maxPages: 5)
+            .search("x", commercialOnly: true)
+
+        XCTAssertEqual(results.map(\.id), ["1", "2", "3", "4"])
+        XCTAssertEqual(StubURLProtocol.requestedURLs.count, 2)
+    }
+
+    /// The first page alone clears the target: `next` exists but must not be
+    /// followed. Issuing a request nobody asked for is the exact waste the
+    /// debounce on the typing side exists to avoid.
+    func testPagingStopsAsSoonAsTheTargetIsReached() async throws {
+        StubURLProtocol.responses = [
+            .init(status: 200, body: page(ids: ["1", "2", "3"], next: "https://api.jamendo.com/v3.0/tracks?offset=3"))
+        ]
+        let results = try await pagingClient(targetResultCount: 3, maxPages: 5)
+            .search("x", commercialOnly: true)
+
+        XCTAssertEqual(results.map(\.id), ["1", "2", "3"])
+        XCTAssertEqual(StubURLProtocol.requestedURLs.count, 1)
+    }
+
+    /// `next` keeps offering more pages, but `maxPages` caps requests
+    /// regardless — a query that stays almost entirely filtered out on every
+    /// page must not paginate indefinitely against Jamendo's own catalogue.
+    func testPagingStopsAtMaxPagesEvenBelowTarget() async throws {
+        StubURLProtocol.responses = [
+            .init(status: 200, body: page(ids: ["1"], next: "https://api.jamendo.com/v3.0/tracks?offset=1")),
+            .init(status: 200, body: page(ids: ["2"], next: "https://api.jamendo.com/v3.0/tracks?offset=2"))
+        ]
+        let results = try await pagingClient(targetResultCount: 10, maxPages: 2)
+            .search("x", commercialOnly: true)
+
+        XCTAssertEqual(results.map(\.id), ["1", "2"])
+        XCTAssertEqual(StubURLProtocol.requestedURLs.count, 2)
+    }
+
+    /// A later page failing (rate-limited three pages in, say) must not
+    /// discard the pages that already succeeded — that is still a real,
+    /// usable result, unlike a first-page failure, which has nothing to fall
+    /// back to and is still expected to throw (`testA429BecomesRateLimited`).
+    func testALaterPageFailureReturnsWhatAlreadySucceeded() async throws {
+        StubURLProtocol.responses = [
+            .init(status: 200, body: page(ids: ["1", "2"], next: "https://api.jamendo.com/v3.0/tracks?offset=2")),
+            .init(status: 429, body: Data())
+        ]
+        let results = try await pagingClient(targetResultCount: 10, maxPages: 5)
+            .search("x", commercialOnly: true)
+
+        XCTAssertEqual(results.map(\.id), ["1", "2"])
     }
 }
