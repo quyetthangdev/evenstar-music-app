@@ -144,7 +144,17 @@ struct JamendoDiscoveryView: View {
         .minimisesBottomBar($isMinimised)
         .navigationTitle("Khám phá")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: Text("Tìm trên Jamendo"))
+        // `.always`, not the default. Left automatic, the field collapses into
+        // the navigation bar and only comes back when the list is pulled down
+        // — the behaviour that is right for a list you mostly read (Mail,
+        // Settings) and wrong for one whose entire reason to exist is the
+        // search. Nobody should have to discover a search field by scrolling
+        // up on a screen called Khám phá.
+        .searchable(
+            text: $query,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: Text("Tìm trên Jamendo")
+        )
         // The keyboard covers roughly half the results it just produced, and
         // the first thing anyone does with a result list is scroll it. Every
         // system app treats that scroll as "I am done typing".

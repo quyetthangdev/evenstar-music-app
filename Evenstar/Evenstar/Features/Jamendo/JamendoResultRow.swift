@@ -52,13 +52,36 @@ struct JamendoResultRow: View {
             // only draws — it does not hit-test — so a tighter frame here
             // would tap-test just the glyph's ink. This app has shipped that
             // exact bug once already, in `FloatingTabBar`.
+            //
+            // Circled and tinted, the shape every system list uses for
+            // add-to-library. Three things a bare `plus` got wrong:
+            //
+            // `.buttonStyle(.plain)` painted it in the label colour, so the
+            // one control in the row looked exactly like the text beside it —
+            // and now that the row itself is a play/pause target, a control
+            // that does not look like a control is a control people press by
+            // accident and never on purpose. The circle gives it an edge, the
+            // accent colour says it is live.
+            //
+            // Saved is a state, not a disabled action, so it drops to
+            // `.secondary` — filled, because a filled glyph reads as "done"
+            // where an outline reads as "available".
+            //
+            // `.symbolEffect(.replace)` is what makes the swap a transition
+            // rather than a jump cut. It is the whole feedback for a tap that
+            // otherwise has nothing to show until the network answers.
             Button(action: onSave) {
-                Image(systemName: isSaved ? "checkmark" : "plus")
+                Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isSaved ? AnyShapeStyle(.secondary)
+                                             : AnyShapeStyle(Color.accentColor))
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isSaved)
+            .animation(.snappy(duration: 0.25), value: isSaved)
             .accessibilityLabel(isSaved
                 ? String(localized: "Đã lưu", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
                 : String(localized: "Lưu vào thư viện", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale))
