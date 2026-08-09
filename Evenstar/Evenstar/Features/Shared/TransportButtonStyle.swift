@@ -1,32 +1,26 @@
 import SwiftUI
 
-/// Press-and-release physics for a transport button: squeeze while held, then
-/// on release deform, kick, and spring back.
+/// Touch-down physics for a transport button: deform, kick, and spring back,
+/// starting the instant the finger lands.
 ///
 /// A `ButtonStyle` rather than a modifier on the label, because only a button
-/// style is handed `configuration.isPressed` — the touch-down and touch-up
-/// edges. A `DragGesture(minimumDistance: 0)` can fake them, but it competes
-/// with the button's own gesture and swallows the tap on the second press.
+/// style is handed `configuration.isPressed` — which is still what drives the
+/// halo and the haptic, even though the motion no longer reads it.
 ///
-/// Two motions with different natures, so they are driven differently:
-///
-/// - The **squeeze** lasts as long as the finger is down, which has no known
-///   duration, so it is state — `isPressed` with a fast animation.
-/// - The **kick** is a fixed timeline fired at the moment of release, so it is
-///   keyframes on the same tap counter the glyph handover already uses.
-///
-/// They compose by multiplication, which is what makes the seam invisible: at
-/// release the squeeze is relaxing back to 1 while the kick is deforming away
-/// from it, so the button leaves the compressed state and grows into the
-/// stretch with no step between them.
+/// **One motion, not two.** It used to be a squeeze held for the length of the
+/// press and then a kick at release, composing by multiplication. That shape
+/// belonged to a button whose command ran on touch-up. These buttons are
+/// `TouchDownButton`s now: command, kick, halo and haptic all land together on
+/// contact, and the squeeze survived only to cancel the kick out — see the note
+/// where it used to be declared for the arithmetic.
 ///
 /// Prefer the two named forms — `.transportSkip` and `.transportToggle` — over
 /// building one by hand. They are the difference between a button that goes
 /// somewhere and one that does not, and that difference is not just a zero
 /// distance: see `transportToggle`.
 struct TransportButtonStyle: ButtonStyle {
-    /// Incremented by the button's action, so the kick fires on release rather
-    /// than on touch-down, and a second press during the first retriggers it.
+    /// Incremented by the button's action — which, for every caller, now runs
+    /// at touch-down. A second press during the first retriggers the kick.
     let trigger: Int
     /// `1` kicks right, `-1` left, `0` not at all.
     let direction: CGFloat
@@ -49,18 +43,35 @@ struct TransportButtonStyle: ButtonStyle {
     /// button feel late, because the press itself still answers immediately.
     fileprivate static let rebound = Spring(mass: 1.0, stiffness: 140, damping: 13)
 
-    /// Fast enough to feel like it answers the finger, and used on the way out
-    /// as well as in: relaxing instantly instead would put a visible step
-    /// between the squeeze and the stretch. Deliberately not slowed along with
-    /// the rest — it is the part that has to be immediate.
-    fileprivate static let squeeze = Animation.easeOut(duration: 0.09)
-
-    fileprivate static let pressedScale: CGFloat = 0.92
+    /// **The held-press squeeze is gone, and its removal is the point.**
+    ///
+    /// It existed to acknowledge a press whose command had not run yet: the
+    /// action was on touch-*up*, so between contact and release the squeeze was
+    /// the only thing answering the finger. Every one of these buttons is now a
+    /// `TouchDownButton`, so the command — and the kick that announces it — fire
+    /// on contact. The squeeze had nothing left to cover.
+    ///
+    /// Worse, it cancelled the thing that replaced it. The two scales multiply,
+    /// and firing together instead of in sequence left the kick almost
+    /// invisible:
+    ///
+    ///     X: 0.92 × 1.12 = 1.03      (intended: 1.12)
+    ///     Y: 0.92 × 0.92 = 0.85
+    ///
+    /// A 3% stretch is not a response. The button was running its action the
+    /// instant it was touched and still reading as slow, because nothing on
+    /// screen said so.
 
     /// How long the kick takes to reach full deformation before the spring
-    /// takes over. Short — it is the snap of the release, not a movement in
-    /// itself.
-    fileprivate static let kickDuration = 0.14
+    /// takes over.
+    ///
+    /// Shortened from 0.14 now that this is the *whole* response rather than
+    /// the snap at the end of one. 0.14s is roughly eight frames to peak, which
+    /// was fine as a punctuation mark after a press had already been
+    /// acknowledged and reads as a ramp when it is the acknowledgement itself.
+    /// 0.09 is about five, close enough to the ~0.1s where a response stops
+    /// being perceived as a separate event from the touch.
+    fileprivate static let kickDuration = 0.09
     /// Long enough for `rebound` to actually settle: with these constants the
     /// natural frequency is `sqrt(140)` ≈ 11.8 rad/s and the damping ratio
     /// `13 / (2 * sqrt(140))` ≈ 0.55, which puts settling at roughly
@@ -115,8 +126,6 @@ struct TransportButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-                .scaleEffect(configuration.isPressed ? TransportButtonStyle.pressedScale : 1)
-                .animation(TransportButtonStyle.squeeze, value: configuration.isPressed)
                 .keyframeAnimator(initialValue: Kick(), trigger: trigger) { view, kick in
                     view
                         .scaleEffect(x: kick.scaleX, y: kick.scaleY)
@@ -199,10 +208,10 @@ extension ButtonStyle where Self == TransportButtonStyle {
     /// nowhere to go just looks like the glyph is being wrung.
     ///
     /// So the deformation here is equal on both axes: a pop rather than a
-    /// stretch. It carries the same squeeze, the same rebound spring, and the
-    /// same halo and haptic as its neighbours, so the three buttons answer a
-    /// press in one language — only the part that describes travel is dropped,
-    /// because this one does not travel.
+    /// stretch. It carries the same rebound spring and the same halo and haptic
+    /// as its neighbours, so the three buttons answer a press in one language —
+    /// only the part that describes travel is dropped, because this one does
+    /// not travel.
     static func transportToggle(trigger: Int) -> Self {
         TransportButtonStyle(
             trigger: trigger,

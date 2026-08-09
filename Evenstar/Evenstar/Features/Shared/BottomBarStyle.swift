@@ -47,8 +47,11 @@ enum BottomBarStyle {
 
     /// How a tab answers the finger, before anything has moved.
     ///
-    /// The same 0.09s ease-out `TransportButtonStyle.squeeze` uses, and for the
-    /// reason written there: it is the part that has to be immediate. A tab
+    /// 0.09s ease-out, the same figure `TransportButtonStyle.kickDuration` now
+    /// carries, and for the same reason: it is the part that has to be
+    /// immediate. (That style once had a matching `squeeze` constant named
+    /// here; it was removed when its buttons moved to touch-down, because a
+    /// held-press squeeze cancelled out the kick that replaced it.) A tab
     /// carried no press feedback at all — `.buttonStyle(.plain)` draws none —
     /// so the first thing that happened after a tap happened on touch-*up*,
     /// once the wash began to slide. Everything before that was the app
