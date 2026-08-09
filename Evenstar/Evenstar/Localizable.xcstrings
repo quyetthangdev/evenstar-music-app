@@ -1930,6 +1930,22 @@
           }
         }
       }
+    },
+    "Giấy phép khác" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other licence"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giấy phép khác"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

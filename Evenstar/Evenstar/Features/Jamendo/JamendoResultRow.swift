@@ -53,11 +53,30 @@ struct JamendoResultRow: View {
 /// A pure function so it can be tested, and because the alternative — showing
 /// the raw URL — is credit nobody reads.
 enum LicenceName {
+    /// `nil` for no URL, or a URL with no host at all (the shape a malformed
+    /// stored string parses to) — there is nothing there to name, and the
+    /// caller's fallback (the track's artist name alone, or the localized
+    /// "Jamendo" brand name in the expanded player) is the honest answer.
+    ///
+    /// A host that is present but is not `creativecommons.org` — Jamendo's
+    /// catalogue does carry non-CC licences, the Free Art License among them
+    /// — is **not** labelled "CC anything": that would assert a licence the
+    /// track does not carry, in the exact places attribution is a legal
+    /// requirement. It gets its own, honest label instead.
     static func short(for url: URL?) -> String? {
-        guard let path = url?.path else { return nil }
-        // .../licenses/by-nc-sa/3.0/  ->  CC BY-NC-SA
-        guard let component = path.split(separator: "/").dropFirst().first else { return nil }
-        return "CC " + component.uppercased()
+        guard let url, let host = url.host(), !host.isEmpty else { return nil }
+        guard host == "creativecommons.org" else {
+            return String(
+                localized: "Giấy phép khác",
+                bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
+            )
+        }
+        // .../licenses/by-nc-sa/3.0/  ->  CC BY-NC-SA. Shares its parse of the
+        // path with `JamendoLicencePolicy.ccLicenceSlug` — see that function's
+        // doc comment for why that parse wins over Jamendo's structured
+        // `licenses` object.
+        guard let slug = JamendoLicencePolicy.ccLicenceSlug(in: url) else { return nil }
+        return "CC " + slug.uppercased()
     }
 }
 

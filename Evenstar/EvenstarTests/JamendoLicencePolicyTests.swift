@@ -83,6 +83,15 @@ final class JamendoLicencePolicyTests: XCTestCase {
         ))
     }
 
+    /// `hasSuffix("creativecommons.org")` used to admit this host, which is a
+    /// different site entirely. Exact match only.
+    func testALookalikeHostIsRejectedWhenCommercialOnly() {
+        XCTAssertFalse(JamendoLicencePolicy.permits(
+            licenceURL: url("http://notcreativecommons.org/licenses/by/3.0/"),
+            commercialOnly: true
+        ))
+    }
+
     // MARK: - Setting off: nothing is examined
 
     func testEverythingPassesWhenTheSettingIsOff() {

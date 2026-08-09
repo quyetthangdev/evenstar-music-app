@@ -46,11 +46,39 @@ enum JamendoLicencePolicy {
     /// URL that is not shaped like one, which is deliberately the same outcome
     /// as an NC clause: unrecognised terms do not pass when the setting is on.
     private static func commercialClauses(in url: URL) -> [String]? {
-        guard url.host()?.hasSuffix("creativecommons.org") == true else { return nil }
+        ccLicenceSlug(in: url)?.split(separator: "-").map(String.init)
+    }
+
+    /// The slug segment of a Creative Commons licence URL — `"by-nc-sa"` from
+    /// `.../licenses/by-nc-sa/2.0/`. `nil` for anything not shaped like one,
+    /// including a licence from a different site (the Free Art License's
+    /// `artlibre.org` turns up in the catalogue too).
+    ///
+    /// Exposed (not `private`) so `LicenceName.short(for:)` shares this exact
+    /// parse rather than running its own — the same two call sites that used
+    /// to each check the host independently, and used to each get it wrong in
+    /// a different way. See `LicenceName` for why display and policy read the
+    /// URL the same way despite answering different questions.
+    ///
+    /// `host() ==`, not `hasSuffix`: a suffix check admits
+    /// `notcreativecommons.org`, which is not the same domain.
+    ///
+    /// Considered reading Jamendo's structured `licenses: {ccnc, ccnd, ccsa}`
+    /// object (returned alongside `license_ccurl` when `include=licenses` is
+    /// set) instead of parsing the URL path, for `permits(licenceURL:commercialOnly:)`.
+    /// Measured live: that object is present on **every** track regardless of
+    /// its actual licence — the Free Art License tracks in the trending page
+    /// carry `"licenses":{"ccnc":"false",...}` exactly as a CC-BY track does.
+    /// It answers "would this pass the NC test if it were CC" but not "is
+    /// this CC at all", so using it would still require this exact host
+    /// check first — it would not remove the URL parsing, only add a second,
+    /// less legible parse (string `"true"`/`"false"`) beside it. Not adopted.
+    static func ccLicenceSlug(in url: URL) -> String? {
+        guard url.host() == "creativecommons.org" else { return nil }
         let components = url.pathComponents
         guard let licencesIndex = components.firstIndex(of: "licenses") else { return nil }
         let clauseIndex = components.index(after: licencesIndex)
         guard clauseIndex < components.count else { return nil }
-        return components[clauseIndex].split(separator: "-").map(String.init)
+        return components[clauseIndex]
     }
 }
