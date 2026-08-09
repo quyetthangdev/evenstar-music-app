@@ -278,11 +278,19 @@ final class PlaybackService {
                    let index = restored.firstIndex(where: { $0.id == playingID }) {
                     queueIndex = index
                 } else {
-                    // The playing track is not in the original order at all —
-                    // deleted while playing, which `handleTrackDeleted` makes
-                    // reachable. Keep the position rather than jumping to the
-                    // top: the number is meaningless now either way, and one of
-                    // these two leaves the user near where they were.
+                    // Unreachable today through the public API: `queue` only
+                    // ever empties inside `stopPlayback()`, which now clears
+                    // `unshuffledQueue` in the same breath — so `restored`
+                    // being non-empty here always means `currentTrack` is
+                    // found in it too. Kept anyway, not dead code to prune:
+                    // Task 2's `restoreFromPersistedState` will resolve
+                    // `unshuffledQueue` and `queue` from persisted track IDs
+                    // through two separate lookups, and a track deleted
+                    // between sessions can resolve in one and not the other —
+                    // genuinely reopening this branch. Keep the position
+                    // rather than jumping to the top: the number is
+                    // meaningless now either way, and one of these two leaves
+                    // the user near where they were.
                     queueIndex = max(0, min(queueIndex, restored.count - 1))
                 }
             }
