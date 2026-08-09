@@ -288,7 +288,7 @@ struct NowPlayingContent: View {
 
     private var transport: some View {
         HStack(spacing: 48) {
-            Button {
+            TouchDownButton {
                 previousTaps += 1
                 acknowledge { playback.previous() }
             } label: {
@@ -299,7 +299,7 @@ struct NowPlayingContent: View {
             .buttonStyle(.transportSkip(trigger: previousTaps, direction: -1))
             .disabled(playback.currentTrack == nil)
 
-            Button {
+            TouchDownButton {
                 playPauseTaps += 1
                 // NOT deferred, unlike the two arrows. For play/pause the
                 // response *is* the state change: `isPlaying` flips and the
@@ -325,7 +325,7 @@ struct NowPlayingContent: View {
             .buttonStyle(.transportToggle(trigger: playPauseTaps))
             .disabled(playback.currentTrack == nil)
 
-            Button {
+            TouchDownButton {
                 nextTaps += 1
                 acknowledge { playback.next() }
             } label: {
@@ -340,7 +340,7 @@ struct NowPlayingContent: View {
     }
 
     private var repeatRow: some View {
-        Button {
+        TouchDownButton {
             repeatTaps += 1
             // Inline, not deferred. Like play/pause, the state change is the
             // feedback: both the glyph and its tint read from `repeatMode`.

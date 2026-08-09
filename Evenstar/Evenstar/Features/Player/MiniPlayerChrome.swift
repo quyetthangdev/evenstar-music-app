@@ -57,7 +57,7 @@ struct MiniPlayerChrome: View {
                         .minimumScaleFactor(0.7)
                 }
                 Spacer()
-                Button {
+                TouchDownButton {
                     playPauseTaps += 1
                     // Inline, not deferred — see the note in `NowPlayingContent`:
                     // for this button the state change is the response.
@@ -69,7 +69,7 @@ struct MiniPlayerChrome: View {
                         .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.transportToggle(trigger: playPauseTaps))
-                Button {
+                TouchDownButton {
                     nextTaps += 1
                     acknowledge { playback.next() }
                 } label: {
@@ -100,6 +100,17 @@ struct MiniPlayerChrome: View {
                 .opacity(1 - minimised)
                 .clipped()
                 .allowsHitTesting(minimised < 0.5)
+                // Eats the `HStack`'s own 10pt gap on the way out.
+                //
+                // Zeroing the button's width leaves that gap behind, so
+                // play/pause stopped 26pt short of the pill's inner trailing
+                // edge — 16pt of padding plus 10pt of spacing for a neighbour
+                // that is no longer there. It read as hanging back from the
+                // edge rather than sitting against it. At -10 the gap closes
+                // with the button and play/pause lands 16pt in, near enough to
+                // the artwork's own 18pt inset on the other end for the pill to
+                // look balanced.
+                .padding(.trailing, -10 * minimised)
             }
         }
     }
