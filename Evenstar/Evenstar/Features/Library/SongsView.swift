@@ -7,6 +7,7 @@ struct SongsView: View {
     @Environment(LibraryService.self) private var library
     @Environment(ImportService.self) private var importer
     @Environment(PlaybackService.self) private var playback
+    @Environment(JamendoLibraryService.self) private var jamendo
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
     @Query(sort: [SortDescriptor(\JamendoTrack.dateAdded, order: .reverse)]) private var jamendoTracks: [JamendoTrack]
 
@@ -256,6 +257,21 @@ struct SongsView: View {
                     .onTapGesture {
                         playback.play(track, in: jamendoTracks)
                     }
+                    // Same gesture, same wording, same "commit immediately, no
+                    // confirmation dialog" behaviour as the local list's swipe
+                    // above — Jamendo was the one source with no way back out
+                    // of the library once saved: `JamendoResultRow`'s own save
+                    // button disables itself once `isSaved`, offering no
+                    // un-save, and this list had neither `.onDelete` nor
+                    // `.swipeActions`. One mis-tap on the discovery screen's
+                    // "+" put a track in the library permanently.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            deleteJamendoTrack(track)
+                        } label: {
+                            Label("Xoá", systemImage: "trash")
+                        }
+                    }
             }
             .listStyle(.plain)
             .minimisesBottomBar($isMinimised)
@@ -346,6 +362,23 @@ struct SongsView: View {
         playback.handleTrackDeleted(track)
         do {
             try library.delete(track)
+        } catch {
+            // 2a: log only. A polished alert is part of 2d.
+            print("Delete failed: \(error)")
+        }
+    }
+
+    /// Mirrors `deleteTrack` above: tell playback while the row is still
+    /// live, then remove it. `jamendo.unsave` does its own
+    /// `onTrackWillBeDeleted` call too (it must, for the delete paths that
+    /// don't go through this view), so this one is redundant in practice —
+    /// but kept anyway to match `deleteTrack`'s shape exactly and because a
+    /// redundant call to a pure "remove from queue if present" method is
+    /// harmless, unlike a missing one.
+    private func deleteJamendoTrack(_ track: JamendoTrack) {
+        playback.handleTrackDeleted(track)
+        do {
+            try jamendo.unsave(track)
         } catch {
             // 2a: log only. A polished alert is part of 2d.
             print("Delete failed: \(error)")
