@@ -22,10 +22,29 @@ determine.
 **Audius** has an open API and modern independent music. Streaming is its
 intended use, but it offers nothing to filter licences by.
 
-**Jamendo** is the only one of the three where **the API itself can filter by
-licence**. That is the whole reason it was chosen. An app that intends to charge
-money cannot afford a catalogue where legality is a matter of the developer's
-diligence; it needs one where legality is a query parameter.
+**Jamendo** was chosen because it is the only one of the three that returns a
+**per-track licence at all** — `license_ccurl` on every row. That much was
+verified with real calls before this document was first written.
+
+**What this document originally claimed here — "the API itself can filter by
+licence... legality is a query parameter" — was not tested against the live
+API and turned out to be false.** Jamendo's `ccnc` query parameter looks like
+a filter but is not one: measured live (task-9-brief.md), it can narrow a
+result page to *only* NC-licensed tracks, or leave it unfiltered, but it
+cannot ask for "everything except NC" — the one direction this app needs. So
+there is no server-side way to exclude non-commercial tracks from a search;
+`JamendoClient` fetches a page and `JamendoLicencePolicy` filters it
+client-side, after decoding, against each row's `license_ccurl` (see
+`## Licence filtering` below, and the two files' own doc comments).
+
+Jamendo still holds up as the right choice, on the narrower ground that
+remains true: it is the only one of the three candidates whose response
+carries a licence per track in the first place. Internet Archive's mixed
+public-domain/CC collections and Audius's API have nothing to filter *by*,
+server-side or client-side — there is no field to read. A wrong claim about
+*where* the filtering happens does not change that Jamendo is still the only
+source where filtering is possible at all, which is what actually matters for
+an app that cannot afford to guess at a track's legality.
 
 YouTube, Spotify and Bandcamp were ruled out earlier: the first violates its
 terms and is refused by App Review, the second needs Premium and forbids mixing
@@ -73,7 +92,16 @@ Hiding this in an About screen would not satisfy the licence.
 
 ## Licence filtering
 
-The client always sends a licence filter. What it sends depends on one setting.
+**Originally written here: "the client always sends a licence filter" to the
+API. Also false, for the same reason given above** — there is no request
+parameter that excludes NC tracks, so nothing is ever "sent". What actually
+happens: the client always *applies* a licence filter, client-side, to
+whatever page Jamendo returns, before showing it. Same outcome from the
+user's side (an NC track never appears in the list while the setting is on),
+different mechanism, and the difference matters because it means every page
+fetched pays the cost of over-fetching to compensate — see
+`Services/JamendoClient.swift`'s paging comments for the measured numbers (a
+`piano` search sampled at roughly 8% of a page surviving the filter).
 
 **Default: only tracks that permit commercial use.** The app intends to charge
 money eventually, CC-NC forbids commercial use, and whether "playing music
@@ -81,13 +109,15 @@ inside a paid app" is commercial use is genuinely unsettled. Shipping the
 permissive default and then having to pull music out of a released app is the
 outcome worth avoiding.
 
-**Settings gains one toggle** — *"Chỉ hiện nhạc dùng được cho mục đích thương
+**Settings gains one toggle** — *"Chỉ nhạc dùng được cho mục đích thương
 mại"*, on by default. Turning it off widens the catalogue and moves the
 judgement to the user.
 
-The mapping from that toggle to query parameters is a **pure function**, so it
-can be tested without a network: the point under test is that the restrictive
-setting never produces a query missing its filter.
+The mapping from that toggle to a pass/fail decision on one track's licence
+URL (`JamendoLicencePolicy.permits(licenceURL:commercialOnly:)`) is a **pure
+function**, so it can be tested without a network: the point under test is
+that the restrictive setting never lets an NC-licensed — or unreadable, or
+non-CC — licence through.
 
 ## Data model
 
@@ -162,13 +192,16 @@ boundary is the quota and restrictions on Jamendo's side.
 No test touches the real network — `JamendoClient` takes an injected
 `URLSession`, and the suite drives it through the existing `StubURLProtocol`.
 
-- the client: search, trending, genre, error mapping, **and that the licence
-  filter is present in the URL**
+- the client: search, trending, genre, error mapping (including Jamendo's own
+  success/failure envelope, not just HTTP status), paging past one page, **and
+  that `include=licenses` — not a licence filter, there is no such request
+  parameter; the field that makes `license_ccurl` non-empty at all — is
+  present in the URL**
 - the library service: save, unsave, dedupe by Jamendo id, against an in-memory
   container
 - `JamendoTrack` as a `Playable`: `playbackURL()`, and the placeholder metadata
   path a track with missing fields takes
-- the licence-policy function, both settings
+- the licence-policy function, run against a decoded track, both settings
 
 ## Risks
 
