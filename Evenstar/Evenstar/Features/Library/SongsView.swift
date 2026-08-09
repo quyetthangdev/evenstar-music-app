@@ -70,7 +70,7 @@ struct SongsView: View {
                         // selected. The other two sources are unaffected.
                         if source == .jamendo {
                             NavigationLink {
-                                JamendoDiscoveryView()
+                                JamendoDiscoveryView(isMinimised: $isMinimised)
                             } label: {
                                 Image(systemName: "magnifyingglass")
                             }

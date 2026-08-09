@@ -11,6 +11,16 @@ struct JamendoDiscoveryView: View {
     @AppStorage(JamendoLicencePolicy.storageKey) private var commercialOnly =
         JamendoLicencePolicy.defaultCommercialOnly
 
+    /// Owned by `RootView`, threaded here through both screens that push this
+    /// one — `SongsView`'s toolbar link and `JamendoSongsList`'s empty state.
+    ///
+    /// A pushed screen scrolls under the same floating bars as a tab root, so
+    /// it folds them the same way. `AlbumDetailView` carries this binding for
+    /// exactly the same reason, and its doc comment records why: Đợt A's
+    /// Critical defect was a pushed screen left out of a bottom-bar treatment
+    /// the tab roots got. This screen was the next one left out.
+    @Binding var isMinimised: Bool
+
     @State private var query = ""
     @State private var results: [JamendoCatalogueTrack] = []
     @State private var savedIDs: Set<String> = []
@@ -63,7 +73,20 @@ struct JamendoDiscoveryView: View {
                                 }
                             }
                         }
+                        // Inside the scroller, paired with the zeroed row
+                        // insets below — that pairing is the whole point. The
+                        // insets let the scroll view itself run edge to edge;
+                        // this padding then holds the first and last chip off
+                        // the edge while still letting both scroll past it.
+                        // With the row's default insets instead, the scroller
+                        // stopped at the list margin and the end chips were
+                        // sliced off there — a horizontal carousel clipped at a
+                        // list inset, which is a shape Apple does not ship.
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
                     }
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
                 }
             }
 
@@ -78,10 +101,30 @@ struct JamendoDiscoveryView: View {
 
             emptyResultsRow
         }
+        // Every other list in this app is `.plain` — `SearchView`,
+        // `SongsView`, `DriveSongsList`, `JamendoSongsList`, and both detail
+        // screens. Setting none here did not mean "no opinion": it took the
+        // default inset-grouped look, so the one screen showing a music
+        // catalogue rendered as rounded cards on grey, like Cài đặt, next to
+        // five edge-to-edge lists of exactly the same thing.
+        .listStyle(.plain)
+        .minimisesBottomBar($isMinimised)
         .navigationTitle("Khám phá")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: Text("Tìm trên Jamendo"))
+        .refreshable { await load() }
         .overlay { if isLoading && results.isEmpty { ProgressView() } }
+        .toolbar {
+            // The overlay above only covers the first load, when there is
+            // nothing to cover. Reloading a page that already has rows must
+            // neither blank them nor dim them: with a 350ms debounce, a dim
+            // would flash on every pause in typing. A bar spinner is what the
+            // system apps use for "refreshing what you can already see".
+            if isLoading && !results.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) { ProgressView() }
+            }
+        }
+        .clearsBottomBar()
         // Keyed on `commercialOnly` as well as `query`: this screen can stay
         // pushed on the nav stack while the user backs out to Cài đặt, flips
         // "Chỉ nhạc dùng được cho mục đích thương mại", and returns. Keyed on
@@ -218,12 +261,24 @@ private struct GenreChip: View {
             // keeps the visible capsule and its hit region the same shape,
             // which a padded-out `contentShape` alone would not: that would
             // leave a bigger invisible rectangle around a smaller pill.
+            // Filled with the accent colour when selected, not a darker grey.
+            // The previous pair — `Color.primary.opacity(0.12)` selected
+            // against `Color(.tertiarySystemFill)` unselected — resolves to
+            // very nearly the same value in both appearances, so the selected
+            // chip was almost indistinguishable from its neighbours. A filter
+            // control whose state cannot be read is not a filter control.
+            //
+            // `.white` rather than `.background` for the label: the fill is the
+            // accent colour in both appearances, so a label that inverts with
+            // the appearance would go black-on-blue in dark mode.
             Text(name.capitalized)
                 .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .frame(minHeight: 44)
-                .background(isSelected ? Color.primary.opacity(0.12) : Color(.tertiarySystemFill),
+                .background(isSelected ? Color.accentColor : Color(.tertiarySystemFill),
                             in: Capsule())
                 .contentShape(Capsule())
         }

@@ -31,8 +31,10 @@ struct JamendoSongsList: View {
                 // `.prominentAction`, matching `EmptyLibraryView` and
                 // `DriveSongsList.empty`'s own call-to-action button — this
                 // was the one empty state of the three still missing it.
-                NavigationLink("Khám phá Jamendo") { JamendoDiscoveryView() }
-                    .buttonStyle(.prominentAction)
+                NavigationLink("Khám phá Jamendo") {
+                    JamendoDiscoveryView(isMinimised: $isMinimised)
+                }
+                .buttonStyle(.prominentAction)
             }
         } else {
             List(jamendoTracks) { track in
