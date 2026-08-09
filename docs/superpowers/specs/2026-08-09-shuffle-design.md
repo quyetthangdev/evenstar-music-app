@@ -67,9 +67,15 @@ Three reasons, and each is load-bearing:
 
 Turning shuffle **off** restores the original order, then finds the playing
 track in it to reset `queueIndex` — by then the track has drifted, because
-playback continued through the shuffled tail. A track that is no longer in the
-restored order at all (deleted while playing) clamps the index to a valid
-position rather than trapping the queue.
+playback continued through the shuffled tail.
+
+A track that is no longer in the restored order at all — deleted while playing,
+which `handleTrackDeleted` makes reachable — has no index to find. The index
+then becomes `min(queueIndex, restoredQueue.count - 1)`, and a restored queue
+that is empty stops playback through the existing path rather than holding an
+index into nothing. Stated as an expression rather than as "a valid position"
+because the two readings — keep the number, or start over at 0 — are different
+behaviours and only one of them keeps the user near where they were.
 
 **Starting a new queue while shuffle is on shuffles its tail too.** Tapping one
 track of an album and having the rest follow at random is the behaviour being
@@ -117,8 +123,16 @@ Nothing about the budget changes, and the buttons stop being under-sized.
 ## Testing
 
 `Array.shuffled()` draws from the system generator, which cannot produce a
-deterministic test. `PlaybackService` takes an injected `RandomNumberGenerator`
-defaulting to the system one: tests seed it, production is unchanged.
+deterministic test.
+
+`PlaybackService.init` gains a parameter — `randomGenerator: any
+RandomNumberGenerator = SystemRandomNumberGenerator()` — stored and passed to
+`shuffled(using:)`. An init parameter with a default rather than a global or a
+static hook: every existing call site compiles untouched, the dependency is
+visible in the signature beside `player` and `library`, and a test that wants a
+fixed order passes a seeded generator the same way it already passes
+`MockAudioPlayer`. Production behaviour is unchanged, which is the point — a
+test seam that alters what ships is not a seam.
 
 - the playing track does not move, and the head of the queue is byte-identical
 - the tail is a permutation of what it was — same multiset, different order
