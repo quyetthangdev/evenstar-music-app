@@ -120,19 +120,27 @@ final class PlaybackServiceShufflePersistenceTests: XCTestCase {
         XCTAssertTrue(service.isShuffled)
     }
 
-    /// `unshuffledQueue` and `queue` are resolved from persisted track IDs
-    /// through two *separate* `compactMap` lookups. A track deleted from the
-    /// library between the save and the next launch can resolve in one and
-    /// not the other, so the two restored arrays can come back as different
-    /// sets — reopening `toggleShuffle()`'s "playing track not found in the
-    /// restored order" branch, which is otherwise unreachable through the
-    /// public API (see the comment on its clamp).
+    /// Exercises a restore whose persisted queue contains an id that no
+    /// longer resolves — one of its tracks is deleted from the library
+    /// between the save and the next launch — then turns shuffle off.
     ///
-    /// This persists a shuffled queue, deletes one of its tracks from the
-    /// library so it fails to resolve, restores into a fresh service, and
-    /// turns shuffle off. The assertion is just that `queueIndex` stays a
-    /// valid index into whatever queue comes out the other side — the clamp's
-    /// whole job.
+    /// This does *not* reach `toggleShuffle()`'s "playing track not found in
+    /// the restored order" clamp; it takes the ordinary "found" path. Both
+    /// `state.queueTrackIDs` and `state.unshuffledQueueTrackIDs` are always
+    /// permutations of the same id set (`play(_:in:)`, `toggleShuffle()`,
+    /// `handleTrackDeleted(_:)` and `stopPlayback()` all preserve that), and
+    /// `restoreFromPersistedState()` resolves both with two `resolveTrack
+    /// (byID:)` calls that run back-to-back on `@MainActor` with no
+    /// suspension in between — nothing can change the library underneath
+    /// them. So an id missing from one resolved array is missing from the
+    /// other too, and the playing track is always found in `restored`. The
+    /// clamp stays unreachable through the public API even after this.
+    ///
+    /// Kept anyway, and the assertion kept general — `queueIndex` stays a
+    /// valid index into whatever queue comes out the other side, or the
+    /// queue is empty — because it is still real regression coverage for
+    /// restore-then-untoggle across a deleted track on the actual code path,
+    /// independent of which branch of the clamp happens to run.
     func testTurningShuffleOffAfterARestoreMissingATrackKeepsAValidIndex() async throws {
         let library = try InMemoryLibrary.make()
         let first = makeService(library: library)
