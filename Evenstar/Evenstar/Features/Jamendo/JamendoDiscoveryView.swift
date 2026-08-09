@@ -206,7 +206,7 @@ struct JamendoDiscoveryView: View {
         .clearsBottomBar()
         // Keyed on `commercialOnly` as well as `query`: this screen can stay
         // pushed on the nav stack while the user backs out to Cài đặt, flips
-        // "Chỉ nhạc dùng được cho mục đích thương mại", and returns. Keyed on
+        // "Ẩn nhạc hạn chế thương mại", and returns. Keyed on
         // `query` alone, that toggle changing `commercialOnly` did not restart
         // this task — `.task(id:)` only restarts when its *id* changes, and
         // the id never mentioned the setting — so the list kept showing
@@ -277,7 +277,11 @@ struct JamendoDiscoveryView: View {
                 ContentUnavailableView {
                     Label("Không tìm thấy kết quả", systemImage: "line.3.horizontal.decrease.circle")
                 } description: {
-                    Text("Không có bài nào phù hợp với cài đặt giấy phép hiện tại. Tắt “Chỉ nhạc dùng được cho mục đích thương mại” trong Cài đặt để xem thêm.")
+                    // Quotes the toggle's label verbatim, so it has to move
+                    // whenever that label does — an instruction that names a
+                    // setting by a name the Settings screen no longer uses
+                    // sends the reader looking for something that is not there.
+                    Text("Không có bài nào hợp với cài đặt giấy phép. Tắt “Ẩn nhạc hạn chế thương mại” trong Cài đặt để xem thêm.")
                 }
                 .listRowSeparator(.hidden)
             } else {

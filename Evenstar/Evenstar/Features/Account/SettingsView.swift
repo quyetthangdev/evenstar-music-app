@@ -78,7 +78,15 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Chỉ nhạc dùng được cho mục đích thương mại", isOn: $commercialOnly)
+                // Names what the switch *does to the screen*, not what the
+                // licence permits. "Chỉ nhạc dùng được cho mục đích thương
+                // mại" described a property of a licence, from a lawyer's
+                // side of the table, and left the reader to work out why they
+                // should care — the first person to read it said plainly that
+                // they could not tell. A setting nobody understands is a
+                // setting nobody can make an informed choice about, which
+                // defeats the reason this one is exposed at all.
+                Toggle("Ẩn nhạc hạn chế thương mại", isOn: $commercialOnly)
             } header: {
                 Text("Jamendo")
             } footer: {
@@ -89,7 +97,7 @@ struct SettingsView: View {
                 // `JamendoLicencePolicy`'s doc comment on why the default is
                 // the restrictive one), and it belongs on the control itself,
                 // not behind a tap into "more info".
-                Text("Tắt tuỳ chọn này sẽ hiện thêm nhạc có giấy phép cấm dùng cho mục đích thương mại. Bạn tự chịu trách nhiệm dùng đúng giấy phép.")
+                Text("Nhiều bài trên Jamendo mang giấy phép NC: nghe cá nhân thì thoải mái, nhưng cấm dùng trong sản phẩm có thu tiền. Bật để giấu chúng khỏi màn Khám phá. Tắt thì có nhiều nhạc hơn để chọn, và bạn tự chịu trách nhiệm về giấy phép.")
             }
         }
         .navigationTitle("Cài đặt")
