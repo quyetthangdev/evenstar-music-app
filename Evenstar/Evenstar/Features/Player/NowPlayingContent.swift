@@ -125,6 +125,21 @@ struct NowPlayingContent: View {
         // length — a centred block makes the artist appear to move when the
         // title wraps.
         .frame(maxWidth: .infinity, alignment: .leading)
+        // One animating unit, not three.
+        //
+        // `PlayerCard` grows this block from the collapsed pill by driving an
+        // offset and an opacity ramp on its parent. Without this, each child of
+        // the `VStack` resolves its own frame against that moving parent
+        // independently, so the title, the artist and the credit each land on
+        // their final position a frame or two apart — three lines arriving in
+        // sequence where one block should have arrived whole. `geometryGroup`
+        // is precisely the fix for that: it makes the container resolve its
+        // children's geometry together and hand the result down as a unit.
+        //
+        // The three-line case is where it shows, because that is where the
+        // stagger has the most to stagger — a Jamendo track, whose credit line
+        // is the third child.
+        .geometryGroup()
     }
 
     /// The third of the three places the spec requires Jamendo attribution

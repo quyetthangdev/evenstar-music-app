@@ -6,6 +6,12 @@ import SwiftUI
 struct MiniPlayerChrome: View {
     let playback: PlaybackService
 
+    /// 0 on its own row above the tab bar, 1 slotted into it. The same number
+    /// `PlayerCard` interpolates every other collapsed dimension from, passed
+    /// down rather than recomputed so the button leaves in step with the pill
+    /// that is squeezing it.
+    let minimised: Double
+
     /// Counts taps on Next so the tap effect retriggers on every press. A
     /// `Bool` would fire once and then sit at `true`, doing nothing for the
     /// second tap.
@@ -76,6 +82,24 @@ struct MiniPlayerChrome: View {
                 // would carry it into its neighbour.
                 .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1, translate: 4))
                 .disabled(!playback.canGoNext)
+                // Gone by the time the pill has slotted into the tab bar.
+                //
+                // Minimised, the pill loses 58pt of width to the tab bar beside
+                // it, and what is left has to carry a title, an artist and two
+                // 32pt buttons. Play/pause earns its place there — it is the
+                // one control whose absence would be felt. Next does not: the
+                // expanded player is one tap away and has a full-size one.
+                //
+                // Interpolated on `minimised` rather than switched on a
+                // threshold, so the button shrinks and fades with the pill it
+                // lives in instead of vanishing part-way through the morph.
+                // `clipped()` because the glyph does not shrink with the frame
+                // — without it the arrow would spill out of a box narrower
+                // than itself while still half visible.
+                .frame(width: 32 * (1 - minimised))
+                .opacity(1 - minimised)
+                .clipped()
+                .allowsHitTesting(minimised < 0.5)
             }
         }
     }

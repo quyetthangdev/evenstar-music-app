@@ -1,11 +1,16 @@
 import SwiftUI
 
 /// Minimises the floating tab bar while a screen's content scrolls down, and
-/// restores it scrolling up or back at the top. Applied to all six
-/// scrollable screens via `View.minimisesBottomBar(_:)` below, so the
-/// threshold and direction logic exists exactly once rather than once per
-/// screen. `SearchView` is deliberately not one of them — see the comment on
-/// its results list.
+/// restores it only at the top of the content. Applied to all six scrollable
+/// screens via `View.minimisesBottomBar(_:)` below, so the threshold and
+/// direction logic exists exactly once rather than once per screen.
+/// `SearchView` is deliberately not one of them — see the comment on its
+/// results list.
+///
+/// The asymmetry is the design: a light scroll down folds the bar away, and
+/// getting it back is a deliberate act — the restore button on the pill, or
+/// returning to the top. See the branch below for why scrolling up no longer
+/// counts.
 private struct ScrollMinimiseModifier: ViewModifier {
     @Binding var isMinimised: Bool
 
@@ -70,10 +75,22 @@ private struct ScrollMinimiseModifier: ViewModifier {
                 let sameDirectionAsBefore = (accumulatedTravel >= 0) == scrollingDown
                 accumulatedTravel = sameDirectionAsBefore ? accumulatedTravel + delta : delta
 
+                // Down minimises. Up does **not** restore.
+                //
+                // Scrolling up used to restore the bar the same way scrolling
+                // down minimised it, symmetrically. That symmetry is what made
+                // the bar feel unsettled: reading a list is not one long
+                // downward sweep, it is down-down-up-down, and every one of
+                // those small upward corrections unfolded the bar again. The
+                // bar spent the whole scroll flapping.
+                //
+                // So restoring now has exactly two triggers, both deliberate:
+                // the round button on the pill's leading edge, and arriving
+                // back at the top of the content (the `newOffset <= 0` branch
+                // above). Both are things a person does on purpose, which is
+                // the property scrolling up lacks.
                 if scrollingDown, accumulatedTravel >= Self.directionThreshold {
                     setMinimised(true)
-                } else if !scrollingDown, accumulatedTravel <= -Self.directionThreshold {
-                    setMinimised(false)
                 }
             }
             // Resets the accumulator whenever `isMinimised` changes from

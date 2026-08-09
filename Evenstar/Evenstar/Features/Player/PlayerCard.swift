@@ -997,7 +997,7 @@ struct PlayerCard: View {
     }
 
     private func miniChrome(width: CGFloat) -> some View {
-        MiniPlayerChrome(playback: playback)
+        MiniPlayerChrome(playback: playback, minimised: minimised)
             // Derived rather than a literal so the text cannot drift out of
             // step with the artwork: this is where the artwork ends, plus the
             // gap. The old `collapsedArtwork + 24` folded the inset and the
