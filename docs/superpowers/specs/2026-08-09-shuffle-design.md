@@ -77,6 +77,15 @@ index into nothing. Stated as an expression rather than as "a valid position"
 because the two readings — keep the number, or start over at 0 — are different
 behaviours and only one of them keeps the user near where they were.
 
+**Deleting a track has to reach both arrays.** `handleTrackDeleted` removes the
+row from `queue` today; while shuffle is on the same row is also in the saved
+original order, and a deleted SwiftData row left in an array is not an untidy
+entry — reading a property off one raises an uncatchable Objective-C exception.
+`EvenstarApp` documents that hazard where it wires
+`DriveLibraryService.onTrackWillBeDeleted` for the same reason. The removal is
+safe below the existing early return: the two arrays hold the same set, so a
+track absent from one is absent from both.
+
 **Starting a new queue while shuffle is on shuffles its tail too.** Tapping one
 track of an album and having the rest follow at random is the behaviour being
 copied; without this, shuffle would silently switch itself off every time the
@@ -125,14 +134,26 @@ Nothing about the budget changes, and the buttons stop being under-sized.
 `Array.shuffled()` draws from the system generator, which cannot produce a
 deterministic test.
 
-`PlaybackService.init` gains a parameter — `randomGenerator: any
-RandomNumberGenerator = SystemRandomNumberGenerator()` — stored and passed to
-`shuffled(using:)`. An init parameter with a default rather than a global or a
-static hook: every existing call site compiles untouched, the dependency is
-visible in the signature beside `player` and `library`, and a test that wants a
-fixed order passes a seeded generator the same way it already passes
-`MockAudioPlayer`. Production behaviour is unchanged, which is the point — a
-test seam that alters what ships is not a seam.
+`PlaybackService.init` gains a parameter with a default, so every existing call
+site compiles untouched and the dependency is visible in the signature beside
+`player` and `library`:
+
+```swift
+shuffleTail: @escaping ([any Playable]) -> [any Playable] = { $0.shuffled() }
+```
+
+**A closure, not the `any RandomNumberGenerator` this section first specified.**
+`Array.shuffled(using:)` takes its generator `inout` and is generic over it;
+Swift will not implicitly open an existential for an `inout` generic parameter,
+so a stored `any RandomNumberGenerator` cannot be passed to it. Seeding would
+have meant making the whole service generic over the generator — a type
+parameter on `PlaybackService` and every reference to it, to make one array
+call testable.
+
+The closure is also the better seam on its own merits: a test injects
+`{ $0.reversed() }` and asserts an exact expected order, where a seeded
+generator would only let it assert against whatever that seed happened to
+produce. Production passes nothing and gets `shuffled()`.
 
 - the playing track does not move, and the head of the queue is byte-identical
 - the tail is a permutation of what it was — same multiset, different order
