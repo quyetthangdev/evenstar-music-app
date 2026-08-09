@@ -63,23 +63,57 @@ struct SongsView: View {
                 .navigationTitle("Bài hát")
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        // Jamendo has nothing to import — its own screen is
-                        // reached by search, not by picking files off the
-                        // device — so the `+` importer swaps for a link into
-                        // `JamendoDiscoveryView` only while that chip is
-                        // selected. The other two sources are unaffected.
+                        // One glyph for all three chips, because this corner
+                        // has one meaning: add music to the source you are
+                        // looking at. Only the destination differs — a file
+                        // importer for the two local-ish sources, Jamendo's
+                        // catalogue for the third.
+                        //
+                        // It used to show `magnifyingglass` for Jamendo, on the
+                        // reasoning that its screen "is reached by search, not
+                        // by picking files off the device". That is true of the
+                        // mechanism and wrong about the user: nobody arrives
+                        // wanting a search mechanism, they arrive wanting more
+                        // music. Three things broke because of it. The `+` that
+                        // means "add" on two chips vanished on the third.
+                        // A magnifying glass already means "search the library"
+                        // a few points away, in `FloatingTabBar`'s own search
+                        // field. And with the affordance unrecognisable, the
+                        // only remaining signpost to discovery was
+                        // `JamendoSongsList`'s empty state — which deletes
+                        // itself the moment the first track is saved, leaving a
+                        // user who had saved exactly one track with no way
+                        // back in that they could find.
+                        //
+                        // The label is what carries the difference now, and it
+                        // has to: two identical glyphs would otherwise read the
+                        // same to VoiceOver.
                         if source == .jamendo {
                             NavigationLink {
                                 JamendoDiscoveryView(isMinimised: $isMinimised)
                             } label: {
-                                Image(systemName: "magnifyingglass")
+                                Image(systemName: "plus.circle")
                             }
+                            .accessibilityLabel(String(
+                                localized: "Khám phá Jamendo",
+                                bundle: AppLanguage.resolvedBundle,
+                                locale: AppLanguage.resolvedLocale
+                            ))
                         } else {
                             Button {
                                 showFileImporter = true
                             } label: {
                                 Image(systemName: "plus.circle")
                             }
+                            // "Thêm nhạc", not a new string: it is already in
+                            // the catalogue, already translated, and already
+                            // what `EmptyLibraryView`'s own import button says.
+                            // Two names for one action is how a glossary rots.
+                            .accessibilityLabel(String(
+                                localized: "Thêm nhạc",
+                                bundle: AppLanguage.resolvedBundle,
+                                locale: AppLanguage.resolvedLocale
+                            ))
                         }
                     }
                 }
