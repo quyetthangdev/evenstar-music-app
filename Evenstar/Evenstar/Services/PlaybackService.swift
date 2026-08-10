@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import AVFoundation
 import UIKit
+import SwiftUI
 
 @Observable
 @MainActor
@@ -312,6 +313,67 @@ final class PlaybackService {
             applyShuffleToTail()
         }
         persistImmediately()
+    }
+
+    /// The tracks after the playing one — what the queue panel lists.
+    ///
+    /// Computed rather than stored: `queue` and `queueIndex` are the truth, and
+    /// a stored copy would be one more thing to keep in step with them. Empty
+    /// when nothing is playing, and when the playing track is the last.
+    var upcoming: [any Playable] {
+        guard queue.indices.contains(queueIndex) else { return [] }
+        let start = queueIndex + 1
+        guard start < queue.count else { return [] }
+        return Array(queue[start...])
+    }
+
+    /// Reorders the upcoming tracks.
+    ///
+    /// **`source` and `destination` are offsets into `upcoming`, not into
+    /// `queue`.** The view hands over exactly what `.onMove` gave it and never
+    /// does arithmetic against `queueIndex`; the conversion happens here, once,
+    /// where it can be tested.
+    ///
+    /// `queueIndex` cannot move, because every index this touches is strictly
+    /// greater than it — the same property that lets `applyShuffleToTail` leave
+    /// the index alone.
+    ///
+    /// **`unshuffledQueue` is deliberately untouched.** Turning shuffle off
+    /// restores the order that existed before the shuffle, and a drag is an
+    /// edit to the shuffled arrangement, so it goes when that arrangement does.
+    /// That ruling is also what keeps the two arrays consistent for free: they
+    /// must hold the same *set*, and a permutation cannot change a set. Without
+    /// it this method would have to define where a track dragged in the
+    /// shuffled order belongs in the original one, which has no non-arbitrary
+    /// answer.
+    func moveUpcoming(from source: IndexSet, to destination: Int) {
+        guard queue.indices.contains(queueIndex) else { return }
+        let start = queueIndex + 1
+        guard start < queue.count else { return }
+        var tail = Array(queue[start...])
+        tail.move(fromOffsets: source, toOffset: destination)
+        queue.replaceSubrange(start..<queue.count, with: tail)
+        persistImmediately()
+    }
+
+    /// Jumps to an upcoming track, leaving the queue's order as it stands.
+    ///
+    /// `offset` is into `upcoming`, as above.
+    ///
+    /// **Not `play(_:in:)`.** That method rebuilds the queue from its argument
+    /// and, with shuffle armed, reshuffles the tail and resets
+    /// `unshuffledQueue` — so tapping the third row would silently reorder
+    /// everything below it and throw away the order shuffle restores to.
+    func playUpcoming(at offset: Int) {
+        guard queue.indices.contains(queueIndex) else { return }
+        let target = queueIndex + 1 + offset
+        guard queue.indices.contains(target) else { return }
+        // The two counters `play(_:in:)` resets for a deliberate tap. This is
+        // one: whatever the last run skipped past has nothing to do with the
+        // row the user just chose.
+        failureSkipRun = 0
+        explicitSelections += 1
+        advance(to: target)
     }
 
     /// Replaces everything after `queueIndex` with a shuffled copy of itself.
