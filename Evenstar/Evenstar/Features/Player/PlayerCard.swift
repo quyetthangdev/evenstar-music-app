@@ -1223,7 +1223,22 @@ struct PlayerCard: View {
         // in the collapse morph, and removing it from the hierarchy
         // mid-morph would take its `matchedGeometry`-driven frame with it.
         .opacity(showingQueue ? 0 : 1)
-        .overlay {
+        // `alignment: .top`, not the default `.center` — load-bearing for
+        // the `.frame(maxHeight:)` cap below. `.overlay` centers its content
+        // within the base view's bounds by default; the artwork's own frame
+        // is `artworkHeight` tall (~515pt at full expansion) but the panel,
+        // once capped to `contentOffset` (~474–480pt), is shorter than that.
+        // Centered, the capped panel's top would float ~20pt down from the
+        // artwork's own top edge and its bottom would land ~20pt past
+        // `contentOffset` — back into the scrubber's touch strip, silently
+        // reopening the exact overlap the cap exists to close. Top-aligning
+        // pins the panel's top to the artwork's top (y=0 in this ZStack,
+        // per `expandedCentre`'s comment), which is also where
+        // `expandedContent`'s own `.offset(y: contentOffset(...))`
+        // effectively starts its stack from — so a panel capped to
+        // `contentOffset` and top-aligned here ends exactly where that
+        // stack begins, with nothing between them to fight over.
+        .overlay(alignment: .top) {
             if showingQueue {
                 // The artwork above is deliberately flush with the card's
                 // top edge — full-bleed art under the status bar is the
@@ -1241,6 +1256,45 @@ struct PlayerCard: View {
                         .top,
                         topInset + Self.grabberTopGap + Self.grabberHeight
                             + Self.queuePanelHeaderGap
+                    )
+                    // Bounded to where `NowPlayingContent` starts, not to
+                    // the artwork's own frame the overlay would otherwise
+                    // propose.
+                    //
+                    // The artwork is allowed to reach past `contentOffset`
+                    // — that overlap is `contentBudget`'s documented,
+                    // deliberate design, and it is harmless there because
+                    // the artwork carries no gesture of its own; a touch
+                    // over it falls through to the scrubber underneath.
+                    // `QueuePanel`'s `upcomingList` is a real `List` once
+                    // the queue is non-empty, and a `List` given an
+                    // unconstrained proposed height claims all of it —
+                    // including the blank space below the last row — and
+                    // its pan recognizer covers that whole claimed bounds.
+                    // Unbounded, that reached down into the scrubber's own
+                    // 28pt touch strip and ate the drag before
+                    // `ScrubberBar` ever saw it, silently, because the
+                    // recognizer sits in front of the scrubber in the
+                    // card's `ZStack` with nothing to arbitrate the two.
+                    //
+                    // `contentOffset(fullSize:)` is the one number that
+                    // actually answers "where is it safe to end": it is
+                    // where the content stack begins, in this same
+                    // top-anchored coordinate space (both this overlay and
+                    // `expandedContent` are laid out against `cardSize`
+                    // inside the same `.topLeading` `ZStack` — see
+                    // `card(size:insets:)`). Capping here to that value
+                    // rather than to a fixed point means this stays correct
+                    // if `contentOffset`'s own inputs ever change, instead
+                    // of drifting the way a literal would.
+                    //
+                    // `max(0, …)`: `contentOffset` is allowed to go
+                    // negative on a card shorter than the content region
+                    // (`contentBudget`'s note on landscape) and a negative
+                    // `maxHeight` is not a valid frame.
+                    .frame(
+                        maxHeight: max(0, Self.contentOffset(fullSize: size)),
+                        alignment: .top
                     )
                     .opacity(progress)
                     .allowsHitTesting(progress > 0.9)
