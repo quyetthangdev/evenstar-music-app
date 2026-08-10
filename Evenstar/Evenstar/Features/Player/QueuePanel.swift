@@ -1,0 +1,201 @@
+import SwiftUI
+
+/// What plays next, with the controls that shape it.
+///
+/// Occupies the region the artwork otherwise fills — see `PlayerCard`. That is
+/// the whole reason this exists as a panel rather than a sheet: the spec's
+/// point is that Apple Music *replaces* the artwork rather than stacking a
+/// queue below it, and stacking is what this screen has no room for.
+struct QueuePanel: View {
+    let playback: PlaybackService
+
+    @State private var shuffleTaps = 0
+    @State private var repeatTaps = 0
+
+    /// Matches `SongRow`'s thumbnail, so a queue row and a library row are the
+    /// same size object.
+    private static let rowArtwork: CGFloat = 44
+    private static let headerArtwork: CGFloat = 44
+
+    /// Pill geometry, moved here with the pills.
+    ///
+    /// **36pt tall, and that is not negotiable.** `PlayerCard.contentBudget`
+    /// allows about 20pt of slack across the whole stack and its doc comment
+    /// records the same overrun shipping twice. The pills grow sideways; they
+    /// never grow down.
+    private static let pillHeight: CGFloat = 36
+    private static let pillHorizontalPadding: CGFloat = 22
+
+    /// Half of what a 36pt pill is short of HIG's 44pt hit region. Spent on the
+    /// *hit shape* rather than the frame, by the padding → `contentShape` →
+    /// negative-padding trick `NowPlayingContent.jamendoCredit` uses for the
+    /// identical collision.
+    private static let pillHitPad: CGFloat = 4
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            pillRow
+            upcomingList
+        }
+    }
+
+    /// The artwork and title, one line tall.
+    ///
+    /// `NowPlayingContent` hides its own title block while this is on screen —
+    /// see Task 3 — so these two strings appear once, not twice.
+    private var header: some View {
+        HStack(spacing: 12) {
+            ArtworkThumbnail(
+                relativePath: playback.currentTrack?.artworkRelativePath,
+                size: Self.headerArtwork
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(playback.currentTrack?.title ?? "—")
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                Text(playback.currentTrack?.artistName ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+
+    private var pillRow: some View {
+        HStack(spacing: 12) {
+            pill(
+                systemImage: "shuffle",
+                isOn: playback.isShuffled,
+                label: String(localized: "Phát ngẫu nhiên",
+                              bundle: AppLanguage.resolvedBundle,
+                              locale: AppLanguage.resolvedLocale),
+                trigger: shuffleTaps
+            ) {
+                shuffleTaps += 1
+                playback.toggleShuffle()
+            }
+
+            pill(
+                systemImage: playback.repeatMode == .one ? "repeat.1" : "repeat",
+                isOn: playback.repeatMode != .off,
+                label: String(localized: "Lặp lại",
+                              bundle: AppLanguage.resolvedBundle,
+                              locale: AppLanguage.resolvedLocale),
+                trigger: repeatTaps
+            ) {
+                repeatTaps += 1
+                playback.cycleRepeatMode()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var upcomingList: some View {
+        let upcoming = playback.upcoming
+        if upcoming.isEmpty {
+            Text("Không còn bài nào tiếp theo")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            Spacer(minLength: 0)
+        } else {
+            Text("Tiếp theo")
+                .font(.headline)
+            // `.active` edit mode is what puts the drag handles on screen and
+            // makes the rows draggable at all: a `List` outside edit mode
+            // ignores `.onMove` entirely. There is no `.onDelete` here, so the
+            // red delete affordance edit mode would otherwise add never
+            // appears — removing a track from the queue is out of scope, and
+            // deliberately so: it would have to touch `unshuffledQueue` too,
+            // which is exactly what this design avoids.
+            List {
+                ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, track in
+                    QueueRow(track: track, size: Self.rowArtwork)
+                        .contentShape(Rectangle())
+                        .onTapGesture { playback.playUpcoming(at: offset) }
+                }
+                .onMove { source, destination in
+                    playback.moveUpcoming(from: source, to: destination)
+                }
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    /// One capsule control.
+    ///
+    /// The **fill** says on or off, not the glyph's colour: `shuffle` and
+    /// `repeat` render identically armed or not, so a tint alone would leave
+    /// shuffle with no readable state. `JamendoDiscoveryView`'s genre chips
+    /// shipped that mistake with a 0.12-opacity fill against
+    /// `tertiarySystemFill` and it was invisible.
+    @ViewBuilder
+    private func pill(
+        systemImage: String,
+        isOn: Bool,
+        label: String,
+        trigger: Int,
+        action: @escaping () -> Void
+    ) -> some View {
+        let enabled = playback.currentTrack != nil
+        TouchDownButton(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                // Three branches, and set *inside* the label on purpose:
+                // `TransportButtonStyle` dims a disabled label from outside,
+                // but the innermost `foregroundStyle` wins, so its dimming
+                // would never land.
+                .foregroundStyle(
+                    !enabled ? AnyShapeStyle(.tertiary)
+                             : isOn ? AnyShapeStyle(Color.white)
+                                    : AnyShapeStyle(.secondary)
+                )
+                .contentTransition(.symbolEffect(.replace))
+                .frame(height: Self.pillHeight)
+                .padding(.horizontal, Self.pillHorizontalPadding)
+                .background(
+                    isOn && enabled ? AnyShapeStyle(Color.accentColor)
+                                    : AnyShapeStyle(Color(.tertiarySystemFill)),
+                    in: Capsule()
+                )
+                .padding(.vertical, Self.pillHitPad)
+                .contentShape(Rectangle())
+                .padding(.vertical, -Self.pillHitPad)
+        }
+        .buttonStyle(.transportToggle(trigger: trigger))
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isOn && enabled ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// One row of the queue.
+///
+/// Not `SongRow`: that one is greedy and carries its own vertical padding sized
+/// for a full-width library list, and these rows sit in a panel that is fighting
+/// for every point of height. Same 44pt thumbnail so the two read as the same
+/// kind of object.
+private struct QueueRow: View {
+    let track: any Playable
+    let size: CGFloat
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ArtworkThumbnail(relativePath: track.artworkRelativePath, size: size)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Text(track.artistName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+}

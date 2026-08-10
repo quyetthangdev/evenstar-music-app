@@ -15,8 +15,6 @@ struct NowPlayingContent: View {
     @State private var nextTaps = 0
     @State private var previousTaps = 0
     @State private var playPauseTaps = 0
-    @State private var repeatTaps = 0
-    @State private var shuffleTaps = 0
 
     /// The transport glyphs' square frame. `forward.fill` at `.title2` is
     /// 32.3pt wide and 20pt tall, so an unframed button would give the tap
@@ -46,7 +44,6 @@ struct NowPlayingContent: View {
             scrubber
             transport
             volume
-            shuffleRepeatRow
         }
     }
 
@@ -316,123 +313,6 @@ struct NowPlayingContent: View {
             .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
-    }
-
-    /// Pill geometry.
-    ///
-    /// **36pt tall, and that is not negotiable.** The row it replaces was a 36pt
-    /// frame plus 4pt of top padding, and `PlayerCard.contentBudget` allows
-    /// about 20pt of slack across the whole five-element stack — its own doc
-    /// comment records the same overrun being shipped twice. The pills grow
-    /// sideways; they never grow down.
-    private static let pillHeight: CGFloat = 36
-    private static let pillHorizontalPadding: CGFloat = 22
-
-    /// Half of what a 36pt pill is short of HIG's 44pt hit region.
-    ///
-    /// Spent on the *hit shape* rather than the frame, by the padding →
-    /// `contentShape` → negative-padding trick `jamendoCredit` above uses for
-    /// the identical collision: the tap rectangle reaches 44pt while the height
-    /// this reports to the `VStack` stays 36. The repeat button this replaces
-    /// was 36pt of hit region and simply under-sized.
-    private static let pillHitPad: CGFloat = 4
-
-    private var shuffleRepeatRow: some View {
-        HStack(spacing: 12) {
-            pill(
-                systemImage: "shuffle",
-                isOn: playback.isShuffled,
-                label: String(localized: "Phát ngẫu nhiên",
-                              bundle: AppLanguage.resolvedBundle,
-                              locale: AppLanguage.resolvedLocale),
-                trigger: shuffleTaps
-            ) {
-                shuffleTaps += 1
-                // Inline, not deferred. Like play/pause, the state change is the
-                // feedback: the pill's own fill reads from `isShuffled`.
-                playback.toggleShuffle()
-            }
-
-            pill(
-                // `repeat.1` hangs its digit outside the loop at the top right.
-                // Composing it inside was tried on both the two-arrow `repeat`
-                // and a single-arrow circular loop: the circle has a hollow and
-                // reads well, but `repeat`'s interior is a narrow horizontal
-                // slot between the two arrows, and a digit dropped in there
-                // merges with both and reads as a bar joining them rather than
-                // as a numeral. Two arrows won, so the digit goes outside.
-                systemImage: playback.repeatMode == .one ? "repeat.1" : "repeat",
-                isOn: playback.repeatMode != .off,
-                label: String(localized: "Lặp lại",
-                              bundle: AppLanguage.resolvedBundle,
-                              locale: AppLanguage.resolvedLocale),
-                trigger: repeatTaps
-            ) {
-                repeatTaps += 1
-                playback.cycleRepeatMode()
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    /// One capsule control.
-    ///
-    /// The **fill** is what says on or off, not the glyph's colour. `shuffle`
-    /// and `repeat` look the same armed or not — only `repeat.1` differs — so a
-    /// tint alone would leave shuffle with no readable state at all.
-    /// `JamendoDiscoveryView`'s genre chips shipped exactly that mistake with a
-    /// 0.12-opacity fill against `tertiarySystemFill` and it was invisible.
-    @ViewBuilder
-    private func pill(
-        systemImage: String,
-        isOn: Bool,
-        label: String,
-        trigger: Int,
-        action: @escaping () -> Void
-    ) -> some View {
-        let enabled = playback.currentTrack != nil
-        TouchDownButton(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
-                // Three branches, not two, and set *inside* the label on
-                // purpose: `TransportButtonStyle` dims a disabled label from
-                // outside, but the innermost `foregroundStyle` wins, so its
-                // dimming would never land.
-                .foregroundStyle(
-                    !enabled ? AnyShapeStyle(.tertiary)
-                             : isOn ? AnyShapeStyle(Color.white)
-                                    : AnyShapeStyle(.secondary)
-                )
-                .contentTransition(.symbolEffect(.replace))
-                .frame(height: Self.pillHeight)
-                .padding(.horizontal, Self.pillHorizontalPadding)
-                .background(
-                    isOn && enabled ? AnyShapeStyle(Color.accentColor)
-                                    : AnyShapeStyle(Color(.tertiarySystemFill)),
-                    in: Capsule()
-                )
-                // The 44pt hit region, bought without a single point of layout
-                // height. See `pillHitPad`.
-                .padding(.vertical, Self.pillHitPad)
-                .contentShape(Rectangle())
-                .padding(.vertical, -Self.pillHitPad)
-        }
-        .buttonStyle(.transportToggle(trigger: trigger))
-        .disabled(!enabled)
-        .accessibilityLabel(label)
-        // `.isButton` is restated alongside `.isSelected` only so both
-        // branches of the ternary share one type — `Button` already carries
-        // `.isButton` on its own, and `accessibilityAddTraits` is additive,
-        // so this never removes it. `.isSelected` is what makes VoiceOver
-        // announce whether the pill is currently armed, following
-        // `FloatingTabBar`'s precedent for the identical problem.
-        //
-        // Gated on `enabled` too: a pill for a player with nothing loaded is
-        // neither selected nor meaningfully actionable, and `isOn` for
-        // repeat is `repeatMode != .off` — a value that outlives the track
-        // that set it — so without this an idle player could still announce
-        // "selected" for a mode it can no longer act on.
-        .accessibilityAddTraits(isOn && enabled ? [.isButton, .isSelected] : .isButton)
     }
 
     // The `.frame` modifiers this used to carry at the call site were a
