@@ -708,7 +708,7 @@ struct PlayerCard: View {
             background
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize)
-            artworkView(size: cardSize, artworkHeight: artworkHeight)
+            artworkView(size: cardSize, artworkHeight: artworkHeight, topInset: insets.top)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
@@ -999,6 +999,16 @@ struct PlayerCard: View {
         tint ?? Color(.systemGroupedBackground)
     }
 
+    /// Between the safe area and the grabber capsule's own top edge.
+    ///
+    /// Named so `QueuePanel`'s header clearance (see `artworkView`) can read
+    /// the same gap instead of restating it — the two sit one above the
+    /// other at the top of the same card and must not drift apart the way
+    /// `BottomBarMetrics`' doc warns the bottom-edge measurements did.
+    private static let grabberTopGap: CGFloat = 8
+    /// The grabber capsule's own height.
+    private static let grabberHeight: CGFloat = 5
+
     /// Hints that the expanded card can be dragged away, the way the
     /// `.sheet` this replaced showed `.presentationDragIndicator(.visible)`.
     /// Fades in with `progress` so it is invisible while collapsed. See F8.
@@ -1006,8 +1016,8 @@ struct PlayerCard: View {
         Capsule()
             .fill(Color.secondary)
             .opacity(0.4)
-            .frame(width: 36, height: 5)
-            .padding(.top, topInset + 8)
+            .frame(width: 36, height: Self.grabberHeight)
+            .padding(.top, topInset + Self.grabberTopGap)
             .frame(maxWidth: .infinity, alignment: .top)
             .opacity(progress)
             .allowsHitTesting(false)
@@ -1075,7 +1085,21 @@ struct PlayerCard: View {
             .allowsHitTesting(progress > 0.9)
     }
 
-    private func artworkView(size: CGSize, artworkHeight: CGFloat) -> some View {
+    /// Space between the grabber's bottom edge and `QueuePanel`'s header,
+    /// once the header has cleared the safe area and the grabber above it.
+    /// Purely a breathing-room number — the safe-area and grabber terms
+    /// above it are the ones that actually vary by device.
+    private static let queuePanelHeaderGap: CGFloat = 12
+
+    /// - Parameter topInset: the real top safe-area inset from
+    ///   `card(size:insets:)`'s `GeometryReader` — **not** a literal 44 or
+    ///   59. Devices differ (notch vs. no notch, portrait vs. landscape on a
+    ///   Dynamic Island phone), the same reason `BottomBarMetrics` takes
+    ///   `bottomSafeAreaInset` as a parameter rather than assuming one.
+    ///   Used only to pad `QueuePanel` below; the artwork itself reads
+    ///   neither this parameter nor any safe-area term, so its own framing
+    ///   is untouched by queue mode.
+    private func artworkView(size: CGSize, artworkHeight: CGFloat, topInset: CGFloat) -> some View {
         // Width and height interpolate separately now that the expanded artwork
         // is not square. Collapsed it still is: both start at
         // `collapsedArtwork`, so the pill's thumbnail is unchanged and only the
@@ -1201,8 +1225,23 @@ struct PlayerCard: View {
         .opacity(showingQueue ? 0 : 1)
         .overlay {
             if showingQueue {
+                // The artwork above is deliberately flush with the card's
+                // top edge — full-bleed art under the status bar is the
+                // design (see `expandedCentre`'s comment). `QueuePanel`'s
+                // header is text, not art, and flush the same way it
+                // collides with the status bar and, one element lower, with
+                // `grabber`. The padding here is what fixes that; it is
+                // applied to the panel alone, inside this overlay, so the
+                // artwork's own frame and `.position(centre)` above are
+                // untouched by queue mode — only the panel's content starts
+                // lower.
                 QueuePanel(playback: playback)
                     .padding(.horizontal, 24)
+                    .padding(
+                        .top,
+                        topInset + Self.grabberTopGap + Self.grabberHeight
+                            + Self.queuePanelHeaderGap
+                    )
                     .opacity(progress)
                     .allowsHitTesting(progress > 0.9)
             }
