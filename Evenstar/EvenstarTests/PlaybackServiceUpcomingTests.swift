@@ -212,4 +212,49 @@ final class PlaybackServiceUpcomingTests: XCTestCase {
 
         XCTAssertNil(service.currentTrack)
     }
+
+    // MARK: - Fix round 1: destination/source/offset validation
+
+    /// `Array.move(fromOffsets:toOffset:)` traps when `destination` is past
+    /// the collection's end. `moveUpcoming` must guard against that itself
+    /// rather than let a bad drag target crash the app.
+    func testMoveUpcomingWithDestinationPastTheEndDoesNothing() throws {
+        let (service, _, library) = try makeStack()
+        let all = try tracks(5, library: library)
+        service.play(all[0], in: all)
+        // upcoming: [1, 2, 3, 4] — valid destinations are 0...4
+
+        service.moveUpcoming(from: IndexSet(integer: 0), to: 99)
+
+        XCTAssertEqual(titles(service.queue), ["Track 0", "Track 1", "Track 2", "Track 3", "Track 4"])
+    }
+
+    /// A malformed `source` is as invalid as a malformed `destination`, even
+    /// though the underlying collection method happens not to trap on it.
+    func testMoveUpcomingWithSourceIndexPastTheEndDoesNothing() throws {
+        let (service, _, library) = try makeStack()
+        let all = try tracks(5, library: library)
+        service.play(all[0], in: all)
+        // upcoming: [1, 2, 3, 4] — valid source indices are 0...3
+
+        service.moveUpcoming(from: IndexSet(integer: 99), to: 1)
+
+        XCTAssertEqual(titles(service.queue), ["Track 0", "Track 1", "Track 2", "Track 3", "Track 4"])
+    }
+
+    /// A negative offset resolves to a valid *queue* index below `queueIndex`
+    /// and, unguarded, jumps playback backwards into already-played tracks.
+    func testPlayUpcomingWithNegativeOffsetDoesNothing() throws {
+        let (service, _, library) = try makeStack()
+        let all = try tracks(5, library: library)
+        service.play(all[0], in: all)
+        service.next()
+        service.next()
+        XCTAssertEqual(service.currentTrack?.title, "Track 2", "precondition")
+
+        service.playUpcoming(at: -3)
+
+        XCTAssertEqual(service.queueIndex, 2)
+        XCTAssertEqual(service.currentTrack?.title, "Track 2")
+    }
 }

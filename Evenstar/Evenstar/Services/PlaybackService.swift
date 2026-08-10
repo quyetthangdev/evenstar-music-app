@@ -338,6 +338,15 @@ final class PlaybackService {
     /// greater than it — the same property that lets `applyShuffleToTail` leave
     /// the index alone.
     ///
+    /// **`source` and `destination` are validated before either is used.**
+    /// `Array.move(fromOffsets:toOffset:)` traps — a fatal error, not a thrown
+    /// error — when `destination` falls outside `0...tail.count`; an
+    /// out-of-range `source` happens not to trap, but silently doing nothing
+    /// with garbage input is not a guarantee this method makes on purpose, so
+    /// it is rejected the same way. Both guards below mean a malformed offset,
+    /// from any caller and not just the planned `.onMove` row, is an ordinary
+    /// no-op rather than a crash or an unverified pass-through.
+    ///
     /// **`unshuffledQueue` is deliberately untouched.** Turning shuffle off
     /// restores the order that existed before the shuffle, and a drag is an
     /// edit to the shuffled arrangement, so it goes when that arrangement does.
@@ -351,6 +360,8 @@ final class PlaybackService {
         let start = queueIndex + 1
         guard start < queue.count else { return }
         var tail = Array(queue[start...])
+        guard source.allSatisfy({ tail.indices.contains($0) }) else { return }
+        guard (0...tail.count).contains(destination) else { return }
         tail.move(fromOffsets: source, toOffset: destination)
         queue.replaceSubrange(start..<queue.count, with: tail)
         persistImmediately()
@@ -364,7 +375,13 @@ final class PlaybackService {
     /// and, with shuffle armed, reshuffles the tail and resets
     /// `unshuffledQueue` — so tapping the third row would silently reorder
     /// everything below it and throw away the order shuffle restores to.
+    ///
+    /// A negative `offset` is rejected rather than left to resolve on its own:
+    /// `queueIndex + 1 + offset` can land back on an already-played index,
+    /// which is a valid `queue` index and would otherwise pass the bounds
+    /// check below and jump playback backwards.
     func playUpcoming(at offset: Int) {
+        guard offset >= 0 else { return }
         guard queue.indices.contains(queueIndex) else { return }
         let target = queueIndex + 1 + offset
         guard queue.indices.contains(target) else { return }
