@@ -5,6 +5,14 @@ import SwiftUI
 struct NowPlayingContent: View {
     let playback: PlaybackService
 
+    /// Owned by `PlayerCard`, which swaps the artwork for `QueuePanel` when it
+    /// is true. A `Binding` rather than local state because two views have to
+    /// agree about it: the icon that flips it lives here, and the region that
+    /// changes lives there.
+    @Binding var showingQueue: Bool
+
+    @State private var queueTaps = 0
+
     /// Counts taps on each transport control, exactly as `MiniPlayerChrome`
     /// does for Next and for the same
     /// reason — a `Bool` would fire once and then sit at `true`. Its own
@@ -40,10 +48,17 @@ struct NowPlayingContent: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            titleBlock
+            // Hidden in queue mode: `QueuePanel`'s header already carries the
+            // title and artist, and showing both prints the same two strings
+            // twice on one screen. It is also the only element this stack drops
+            // in queue mode, which is what buys the list its room.
+            if !showingQueue {
+                titleBlock
+            }
             scrubber
             transport
             volume
+            queueToggleRow
         }
     }
 
@@ -313,6 +328,42 @@ struct NowPlayingContent: View {
             .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
+    }
+
+    /// The glyph frame. 44pt, so the hit region needs no tricks — unlike the
+    /// pills, this row replaces nothing and can afford its own height.
+    private static let queueGlyphFrame: CGFloat = 44
+
+    /// One icon, trailing. Apple Music puts three here — lyrics, AirPlay and
+    /// the queue — and this app has nothing to put behind the other two.
+    private var queueToggleRow: some View {
+        HStack {
+            Spacer()
+            TouchDownButton {
+                queueTaps += 1
+                withAnimation(BottomBarStyle.settle) {
+                    showingQueue.toggle()
+                }
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(
+                        playback.currentTrack == nil ? AnyShapeStyle(.tertiary)
+                            : showingQueue ? AnyShapeStyle(Color.accentColor)
+                                           : AnyShapeStyle(.secondary)
+                    )
+                    .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.transportToggle(trigger: queueTaps))
+            .disabled(playback.currentTrack == nil)
+            .accessibilityLabel(String(
+                localized: "Hàng đợi",
+                bundle: AppLanguage.resolvedBundle,
+                locale: AppLanguage.resolvedLocale
+            ))
+            .accessibilityAddTraits(showingQueue ? [.isButton, .isSelected] : .isButton)
+        }
     }
 
     // The `.frame` modifiers this used to carry at the call site were a

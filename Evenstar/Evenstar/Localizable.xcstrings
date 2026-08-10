@@ -2122,6 +2122,22 @@
           }
         }
       }
+    },
+    "Hàng đợi" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queue"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hàng đợi"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

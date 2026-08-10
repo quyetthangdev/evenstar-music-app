@@ -154,6 +154,15 @@ struct PlayerCard: View {
     /// region, which is precisely the case that broke.
     @State private var isDragging = false
 
+    /// Whether the artwork region is showing `QueuePanel` instead of the
+    /// artwork.
+    ///
+    /// Reset when the card collapses, in the `progress` observer below: the
+    /// queue is something you open while looking at the player, and reopening
+    /// the player later should show the artwork rather than whatever was on
+    /// screen last time.
+    @State private var showingQueue = false
+
     @State private var artwork: UIImage?
     /// Which track `artwork` was loaded for.
     ///
@@ -540,6 +549,14 @@ struct PlayerCard: View {
         }
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
+        .onChange(of: progress) { _, newValue in
+            // Collapsed, or nearly. Not `== 0`: a drag that ends just short of
+            // closed still means the player is gone from the user's view, and
+            // reopening it should start from the artwork.
+            if newValue < 0.05, showingQueue {
+                showingQueue = false
+            }
+        }
         .allowsHitTesting(playback.currentTrack != nil)
         // Nothing is announced or focusable while the card is invisible —
         // without this a screen reader can still reach the "—" title, the
@@ -1047,7 +1064,7 @@ struct PlayerCard: View {
     }
 
     private func expandedContent(size: CGSize) -> some View {
-        NowPlayingContent(playback: playback)
+        NowPlayingContent(playback: playback, showingQueue: $showingQueue)
             .padding(.horizontal, 24)
             .frame(width: size.width)
             // Measured from the card's bottom, not from the artwork — see
@@ -1173,6 +1190,23 @@ struct PlayerCard: View {
         // one lighting model for every surface on this screen.
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         .position(centre)
+        // The panel occupies the artwork's frame rather than being pushed
+        // below it — the artwork is the only region on this screen with
+        // room, and `contentBudget` documents that there is none to spare
+        // anywhere else.
+        //
+        // `opacity` on both rather than an `if`: the artwork participates
+        // in the collapse morph, and removing it from the hierarchy
+        // mid-morph would take its `matchedGeometry`-driven frame with it.
+        .opacity(showingQueue ? 0 : 1)
+        .overlay {
+            if showingQueue {
+                QueuePanel(playback: playback)
+                    .padding(.horizontal, 24)
+                    .opacity(progress)
+                    .allowsHitTesting(progress > 0.9)
+            }
+        }
     }
 
     // MARK: - Gesture
