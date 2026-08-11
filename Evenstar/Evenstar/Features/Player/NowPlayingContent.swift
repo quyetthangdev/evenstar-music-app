@@ -173,13 +173,15 @@ struct NowPlayingContent: View {
             // `jamendoCredit` is a third child of `titleBlock`'s `VStack`,
             // and `titleBlock` is element #1 of the five-element stack
             // `PlayerCard.contentBudget` reserves ~400pt for, with the doc
-            // on that constant measuring only ~20pt of slack against the
+            // on that constant measuring only ~16pt of slack against the
             // existing five — already spoken for by one step of Dynamic
             // Type, by that same comment. A real `.frame(minHeight: 44)`
             // here added +48pt (44 plus the 4pt `VStack` gap) to that
-            // budget and clipped the repeat row and part of the volume
-            // slider off an iPhone SE screen — confirmed in the simulator,
-            // portrait and landscape, before this was rewritten. Two
+            // budget and clipped the fifth element — the pill row, at the
+            // time this was measured; `queueToggleRow` occupies that slot
+            // today — and part of the volume slider off an iPhone SE
+            // screen — confirmed in the simulator, portrait and landscape,
+            // before this was rewritten. Two
             // alternatives were rejected instead of raising the budget to
             // match:
             //   - Raising `contentBudget` itself, per its own documented

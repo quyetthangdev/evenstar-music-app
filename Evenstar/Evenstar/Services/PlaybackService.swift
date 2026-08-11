@@ -22,7 +22,7 @@ final class PlaybackService {
     /// Whether everything after the playing track is in random order.
     ///
     /// Only the *tail* — see `toggleShuffle()`. Read by the pill in
-    /// `NowPlayingContent` and persisted alongside `repeatMode`.
+    /// `QueuePanel` and persisted alongside `repeatMode`.
     private(set) var isShuffled: Bool = false
 
     /// The queue as it stood before shuffling, so the toggle can be undone.

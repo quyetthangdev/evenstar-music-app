@@ -115,6 +115,39 @@ struct QueuePanel: View {
                     QueueRow(track: track, size: Self.rowArtwork)
                         .contentShape(Rectangle())
                         .onTapGesture { playback.playUpcoming(at: offset) }
+                        // `TouchDownButton`'s doc comment names this exact
+                        // failure two lines up the file from here: "VoiceOver's
+                        // activation never produces a touch sequence, so the
+                        // gesture below cannot serve it." A bare
+                        // `.onTapGesture` is that gesture with nothing else
+                        // added — this is the only way to jump to a specific
+                        // upcoming track, and without an accessibility action
+                        // it would be inert to anyone using VoiceOver.
+                        //
+                        // `.accessibilityElement(children: .ignore)` plus an
+                        // explicit label, not `.combine`: `QueueRow`'s
+                        // `ArtworkThumbnail` is a bare `Image` with no label of
+                        // its own, so combining children would read as
+                        // "image, <title>, <artist>" — noise in front of the
+                        // two things that matter. Ignoring the children and
+                        // stating the label directly is also what makes this
+                        // one stop for VoiceOver rather than three, which
+                        // `.isButton` alone would not fix: without it the row
+                        // would still swipe as separate, uninteractive text
+                        // and image elements.
+                        // `Text(verbatim:)`, not a bare string-interpolation
+                        // literal: that overload resolves to
+                        // `LocalizedStringKey` and Xcode's build-time String
+                        // Catalog extraction then treats the interpolated
+                        // "%@, %@" as a *new* translatable string — for two
+                        // fields of track metadata, not a phrase anyone
+                        // should be asked to translate. Localization is its
+                        // own separate work item; this keeps this label out
+                        // of it, matching what `verbatim` is for.
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: "\(track.title), \(track.artistName)"))
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { playback.playUpcoming(at: offset) }
                 }
                 .onMove { source, destination in
                     playback.moveUpcoming(from: source, to: destination)

@@ -317,11 +317,18 @@ struct PlayerCard: View {
     /// `440 - 40 = 400pt`. It is now that 400pt directly and unconditionally:
     /// `contentOffset(fullSize:)` measures up from the card's bottom, so the
     /// region is the same on every device and no longer depends on the artwork
-    /// at all. Against a ~380pt stack that leaves ~20pt. Do not
-    /// read that as headroom: `NowPlayingContent` has no `.dynamicTypeSize`
-    /// cap, so one step up in accessibility text grows the two `.title2` lines
-    /// and the `.subheadline` beneath them by more than 20pt and clips the
-    /// bottom again on a 4.7" screen. The durable fix is to measure the stack
+    /// at all. Against the ~380pt stack this was last measured for that left
+    /// ~20pt; the fifth element is `queueToggleRow` now, not the repeat pill
+    /// row (see `jamendoCredit`'s comment on `NowPlayingContent`) — a plain
+    /// 44pt frame where the pill row's 36pt frame plus 4pt of top padding
+    /// contributed 40, four points taller — so the real stack is ~384pt and
+    /// the real slack is **~16pt**, not 20. `contentBudget` was correctly not
+    /// raised for that four-point difference (still comfortably inside the
+    /// existing floor), but do not read either number as headroom:
+    /// `NowPlayingContent` has no `.dynamicTypeSize` cap, so one step up in
+    /// accessibility text grows the two `.title2` lines and the
+    /// `.subheadline` beneath them by more than 16pt and clips the bottom
+    /// again on a 4.7" screen. The durable fix is to measure the stack
     /// instead of allowing for it; until then this constant is a floor, not a
     /// margin. At 380
     /// the region was 340pt, 52pt short, and the whole volume slider sat below
@@ -1296,6 +1303,50 @@ struct PlayerCard: View {
                         maxHeight: max(0, Self.contentOffset(fullSize: size)),
                         alignment: .top
                     )
+                    // `.frame(maxHeight:)` only bounds what `QueuePanel`
+                    // *reports upward* as its size — it does not draw
+                    // anything, and it does not stop a child from drawing
+                    // past the space it was proposed. `List` happens to
+                    // honour a small proposed height by clipping itself,
+                    // which is the only reason the comment above could once
+                    // say the frame was enough. `header` and `pillRow` are
+                    // ordinary `HStack`/`VStack` content with no such
+                    // self-discipline: a `VStack` does not compress
+                    // non-flexible children below their natural size, so on
+                    // a card short enough that `contentOffset` collapses
+                    // toward (or past) zero — every supported iPhone in
+                    // landscape — they render at full size regardless of
+                    // the cap and spill into the band `ScrubberBar` occupies,
+                    // just less obviously than the `List` bug this frame was
+                    // first added for: nothing here has a UIKit pan
+                    // recognizer to visibly steal the drag, so the failure
+                    // is a silent visual collision (the header's artwork and
+                    // title painting over the scrubber's time labels) rather
+                    // than a dead control. Verified by screenshot on iPhone
+                    // 17 landscape: without this modifier the header's
+                    // artwork thumbnail visibly overlaps the scrubber's
+                    // elapsed-time label.
+                    //
+                    // `.clipped()` makes the frame above true in the way its
+                    // own comment already claims: content that does not fit
+                    // the region `NowPlayingContent` needs is cut, not
+                    // spilled. This is a deliberate choice among the real
+                    // alternatives — scrolling the header and pills along
+                    // with the list would fight the list's own drag-to-
+                    // reorder recognizer for the same gesture, and hiding
+                    // the whole panel below some arbitrary height threshold
+                    // would need a second number to invent and keep in sync
+                    // with `contentOffset` — and it costs nothing new: it
+                    // only ever removes pixels `List` would already have
+                    // removed from itself if it were the thing overflowing,
+                    // and on every portrait size `contentOffset` comfortably
+                    // exceeds the panel's ~380pt natural height, so nothing
+                    // here is visibly cropped there. `.clipped()` also
+                    // bounds hit-testing to the same rectangle, so a pill
+                    // that a future, tighter layout pushed into this same
+                    // overflow can no longer be tapped from outside the
+                    // region it is visible in either.
+                    .clipped()
                     .opacity(progress)
                     .allowsHitTesting(progress > 0.9)
             }
