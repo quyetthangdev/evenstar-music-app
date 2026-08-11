@@ -46,7 +46,7 @@ struct JamendoDiscoveryView: View {
     /// that set wholesale on every page, so the haptic would fire on searches
     /// and refreshes rather than on the one thing the user did.
     @State private var savedTick = 0
-    @State private var genre: String?
+    @State private var genre: JamendoGenre?
     /// `false` until the first `load()` call actually finishes (success or
     /// error) — guards the empty-results row below from flashing on screen
     /// before the initial trending fetch has had a chance to return anything.
@@ -68,10 +68,9 @@ struct JamendoDiscoveryView: View {
 
     private let client = JamendoClient()
 
-    /// Fixed rather than fetched. Jamendo's tag vocabulary is thousands of
-    /// words long; a row of six familiar ones is a starting point, and a tag
-    /// list nobody can read is not.
-    private static let genres = ["rock", "pop", "electronic", "jazz", "classical", "hiphop"]
+    /// Which chips to offer, and in what order — see `JamendoGenre.offered`,
+    /// which also owns the split between the tag sent to the API and the label
+    /// a person reads.
 
     var body: some View {
         List {
@@ -79,9 +78,9 @@ struct JamendoDiscoveryView: View {
                 Section {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(Self.genres, id: \.self) { name in
-                                GenreChip(name: name, isSelected: genre == name) {
-                                    genre = (genre == name) ? nil : name
+                            ForEach(JamendoGenre.offered, id: \.self) { candidate in
+                                GenreChip(genre: candidate, isSelected: genre == candidate) {
+                                    genre = (genre == candidate) ? nil : candidate
                                     genreLoadTask?.cancel()
                                     genreLoadTask = Task { await load() }
                                 }
@@ -250,11 +249,15 @@ struct JamendoDiscoveryView: View {
         if !query.isEmpty {
             Text("Kết quả")
         } else if let genre {
-            // The tag verbatim from `Self.genres`, not a translated string:
-            // these are Jamendo's own vocabulary, they go to the API as typed,
-            // and inventing a Vietnamese name for a tag the catalogue does not
-            // have one for would describe a filter this screen is not applying.
-            Text(genre.capitalized)
+            // `label`, the same string the chip shows — see `JamendoGenre`.
+            //
+            // This used to print the tag verbatim, on the reasoning that a
+            // translated name would describe a filter the screen was not
+            // applying. That reasoning was about the *tag*, and it still holds
+            // for the tag: it goes to the API untouched. It does not hold for
+            // the words under it. The chip and the header name the same filter,
+            // so they name it the same way.
+            Text(genre.label)
         } else {
             Text("Thịnh hành")
         }
@@ -351,7 +354,8 @@ struct JamendoDiscoveryView: View {
         if !query.isEmpty {
             return try await client.search(query, commercialOnly: commercialOnly)
         } else if let genre {
-            return try await client.tracks(inGenre: genre, commercialOnly: commercialOnly)
+            // `.tag`, not the label: this is the wire value.
+            return try await client.tracks(inGenre: genre.tag, commercialOnly: commercialOnly)
         } else {
             return try await client.trending(commercialOnly: commercialOnly)
         }
@@ -390,7 +394,7 @@ private struct LoadKey: Equatable {
 }
 
 private struct GenreChip: View {
-    let name: String
+    let genre: JamendoGenre
     let isSelected: Bool
     let action: () -> Void
 
@@ -414,7 +418,10 @@ private struct GenreChip: View {
             // `.white` rather than `.background` for the label: the fill is the
             // accent colour in both appearances, so a label that inverts with
             // the appearance would go black-on-blue in dark mode.
-            Text(name.capitalized)
+            // `label`, never `tag.capitalized`: the tag is a wire value and
+            // capitalising it produced "Hiphop" and, in a Vietnamese
+            // interface, "Electronic" and "Classical". See `JamendoGenre`.
+            Text(genre.label)
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
