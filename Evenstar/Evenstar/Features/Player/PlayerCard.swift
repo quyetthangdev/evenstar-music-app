@@ -800,9 +800,28 @@ struct PlayerCard: View {
 
         return ZStack(alignment: .topLeading) {
             background
+            // Behind the controls, not in front of them.
+            //
+            // It used to sit last, above `expandedContent`, and that was
+            // harmless only because it covered the top of the card and the
+            // controls lived below it — the order was never right, it just
+            // never mattered. Once the picture filled the whole card it was
+            // drawing over the scrubber, the transport row and the volume
+            // slider, and its frost was hazing all three: the player looked
+            // like something translucent had been laid over it.
+            //
+            // Disabling its hit testing fixed the touches and not the
+            // appearance, because those are two different problems — one is
+            // who receives a tap, the other is who is painted last.
+            //
+            // `QueuePanel` rides inside this view as an overlay, so it moves
+            // back here too. That is correct: the panel occupies the region
+            // above `contentOffset`, where the content stack begins, so the
+            // two do not overlap and nothing needs to be painted over
+            // anything.
+            artworkView(size: cardSize, artworkHeight: artworkHeight, topInset: insets.top)
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize)
-            artworkView(size: cardSize, artworkHeight: artworkHeight, topInset: insets.top)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
