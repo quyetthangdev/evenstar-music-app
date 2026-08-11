@@ -1377,6 +1377,25 @@ struct PlayerCard: View {
         // one lighting model for every surface on this screen.
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         .position(centre)
+        // The picture takes no touches, and it must not — it now covers the
+        // whole card.
+        //
+        // Before it filled the card it only covered the top of it, so the
+        // controls beneath were reachable simply because nothing was over
+        // them. Growing it to full height put it in front of the scrubber,
+        // the transport row, the volume slider and the queue button all at
+        // once, and the player stopped responding to anything: a screen that
+        // looked normal and answered nothing.
+        //
+        // Applied *here*, above the `.overlay` that adds `QueuePanel` below,
+        // so the panel keeps its own hit testing. Disabling the whole result
+        // would take the queue's rows and pills down with it.
+        //
+        // The card's own drag and its tap-to-expand live one level up, on the
+        // card rather than on this view, so they are unaffected — touches that
+        // land on the artwork now fall through to them, which is what happened
+        // before this view grew.
+        .allowsHitTesting(false)
         // The panel occupies the artwork's frame rather than being pushed
         // below it — the artwork is the only region on this screen with
         // room, and `contentBudget` documents that there is none to spare
