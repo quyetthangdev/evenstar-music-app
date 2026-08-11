@@ -73,8 +73,16 @@ struct JamendoResultRow: View {
             Button(action: onSave) {
                 Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle")
                     .font(.system(size: 22))
+                    // `.primary`, not the accent colour. This glyph has no
+                    // fill of its own to sit on — it tints directly against
+                    // the row's own background — so an accent turned white
+                    // (design Part 2 item 5) makes it disappear outright
+                    // rather than merely lose contrast. The glyph's own shape
+                    // (plus vs. filled checkmark) and weight (`.primary` vs.
+                    // `.secondary`) already carry the saved/unsaved state; the
+                    // accent was never required to say it a second time.
                     .foregroundStyle(isSaved ? AnyShapeStyle(.secondary)
-                                             : AnyShapeStyle(Color.accentColor))
+                                             : AnyShapeStyle(Color.primary))
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())

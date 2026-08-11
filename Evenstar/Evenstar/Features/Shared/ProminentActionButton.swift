@@ -1,30 +1,18 @@
 import SwiftUI
 
-/// The app's prominent action button: an accent-filled capsule with a **black**
-/// label.
+/// The app's prominent action button: a solid capsule with a label drawn in
+/// the inverse of it.
 ///
-/// The accent is light enough that white on it fails to read. Measured against
-/// WCAG's 4.5:1 for body text:
+/// **No longer tied to the accent colour.** It used to fill with
+/// `Color.accentColor` and rely on a hardcoded `.black` label to stay
+/// readable against the old purple-pink accent. The accent is white now
+/// (design Part 2 item 5), and a white-filled capsule is invisible against
+/// the light backgrounds this button actually sits on — `ContentUnavailableView`
+/// actions, `.systemGroupedBackground` lists — whatever colour its label is.
 ///
-/// | Accent | white label | black label |
-/// |---|---|---|
-/// | `#C64BD1` (light) | 3.94:1 | 5.33:1 |
-/// | `#E48CF0` (dark) | 2.26:1 | 9.31:1 |
-///
-/// Black wins in both appearances, and in dark mode it is not close — 2.26 is
-/// roughly half the threshold, which is why the label looked washed out on the
-/// filled button before this.
-///
-/// Literal `.black`, not `Color(.systemBackground)`: the button is filled with
-/// the accent in *both* appearances, so the label's job is to contrast with the
-/// accent, not with the page behind it. `.systemBackground` would hand back
-/// white in dark mode and reinstate exactly the problem above.
-///
-/// A whole `ButtonStyle` rather than `.borderedProminent` plus a colour, which
-/// was the first attempt and does not work: `.borderedProminent` takes its
-/// *fill* from the tint, and a `.foregroundStyle` applied to the button sets
-/// that tint — so asking for a black label produced a black button with a black
-/// label on it. The label colour is only reachable from inside the style.
+/// `Color.primary`/`Color(.systemBackground)` sidesteps the whole class of
+/// bug: the fill is always the *opposite* of the page behind it, in both
+/// appearances, so the button can never colour-match its own background again.
 struct ProminentActionButtonStyle: ButtonStyle {
     /// These give a 33pt-tall button against the 28pt `.borderedProminent`
     /// measured before it was replaced, so the three buttons using it grew
@@ -36,10 +24,10 @@ struct ProminentActionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.black)
+            .foregroundStyle(Color(.systemBackground))
             .padding(.horizontal, Self.horizontalPadding)
             .padding(.vertical, Self.verticalPadding)
-            .background(Capsule().fill(Color.accentColor))
+            .background(Capsule().fill(Color.primary))
             // The system style dims on press; without this the button would be
             // the one control in the app that does not answer a finger.
             .opacity(configuration.isPressed ? 0.75 : 1)

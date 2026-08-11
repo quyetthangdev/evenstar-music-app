@@ -408,27 +408,29 @@ private struct GenreChip: View {
             // keeps the visible capsule and its hit region the same shape,
             // which a padded-out `contentShape` alone would not: that would
             // leave a bigger invisible rectangle around a smaller pill.
-            // Filled with the accent colour when selected, not a darker grey.
-            // The previous pair — `Color.primary.opacity(0.12)` selected
-            // against `Color(.tertiarySystemFill)` unselected — resolves to
-            // very nearly the same value in both appearances, so the selected
-            // chip was almost indistinguishable from its neighbours. A filter
-            // control whose state cannot be read is not a filter control.
-            //
-            // `.white` rather than `.background` for the label: the fill is the
-            // accent colour in both appearances, so a label that inverts with
-            // the appearance would go black-on-blue in dark mode.
             // `label`, never `tag.capitalized`: the tag is a wire value and
             // capitalising it produced "Hiphop" and, in a Vietnamese
             // interface, "Electronic" and "Classical". See `JamendoGenre`.
             Text(genre.label)
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                // `Color(.systemBackground)`, not `.white`: the fill below is
+                // `Color.primary` now, not the accent, and a literal white
+                // label would go invisible against a light-mode fill — the
+                // same pair that already shipped invisible once before, at
+                // 0.12 opacity. See the fill's own comment.
+                .foregroundStyle(isSelected ? Color(.systemBackground) : Color.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .frame(minHeight: 44)
-                .background(isSelected ? Color.accentColor : Color(.tertiarySystemFill),
+                // `Color.primary`, not the accent colour. The accent is white
+                // now (design Part 2 item 5), and a white fill is invisible
+                // against this screen's light backgrounds regardless of what
+                // colour the label is — the same failure `ProminentActionButtonStyle`
+                // was rewritten to avoid. `Color.primary` inverts with the page
+                // in both appearances instead, so the selected chip stays
+                // visible independent of the accent.
+                .background(isSelected ? Color.primary : Color(.tertiarySystemFill),
                             in: Capsule())
                 .contentShape(Capsule())
         }
