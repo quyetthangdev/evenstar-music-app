@@ -149,6 +149,22 @@ struct QueuePanel: View {
             List {
                 ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, track in
                     QueueRow(track: track, size: Self.rowArtwork)
+                        // Clear, so the card's own gradient and the artwork
+                        // behind it show through the queue.
+                        //
+                        // `.scrollContentBackground(.hidden)` below already
+                        // hides the `List`'s own backing, and was not enough:
+                        // each *row* carries a separate system background, and
+                        // that is what made the panel read as a solid slab
+                        // laid over the player rather than as part of it.
+                        //
+                        // It also removes a measurement problem. Two attempts
+                        // to judge whether the artwork's dissolve mask animates
+                        // smoothly were defeated by this exact background —
+                        // the panel's opaque rows sat over the same pixels the
+                        // mask was being judged on, so neither could be told
+                        // apart from the other by eye.
+                        .listRowBackground(Color.clear)
                         .contentShape(Rectangle())
                         .onTapGesture { playback.playUpcoming(at: offset) }
                         // `TouchDownButton`'s doc comment names this exact

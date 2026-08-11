@@ -97,6 +97,21 @@ struct PlayerCard: View {
     /// point of fade is a point of cover that is no longer crisp. At 0.55 the
     /// sharp region is 45% of the artwork's height — on an iPhone 12, 224pt of
     /// the 498 it occupies.
+    /// The backdrop's longest edge, in pixels.
+    ///
+    /// **This number is the blur.** A 20px image drawn across a 400pt card is
+    /// magnified about sixty times, and the GPU's own bilinear filtering does
+    /// the smoothing for free — no `.blur(radius:)`, and therefore no offscreen
+    /// pass on every frame of an animation. That matters more here than
+    /// anywhere: this project already removed `AmbientMesh` after Instruments
+    /// traced 81% of its dropped frames to it, and a full-screen effect that
+    /// re-renders during the collapse morph is the same shape of mistake.
+    ///
+    /// `dominantColor` uses the same trick at 10px. 20 rather than 10 because
+    /// this one is looked at rather than averaged: at 10 the bands of colour
+    /// are large enough to read as facets.
+    private static let backdropPixels: CGFloat = 20
+
     private static let artworkFadeFraction: Double = 0.55
 
     /// The dissolve's alpha ramp, eased rather than linear.
@@ -210,6 +225,12 @@ struct PlayerCard: View {
     /// worst. See `displayedArtwork`.
     @State private var artworkOwner: ArtworkIdentity?
     @State private var tint: Color?
+
+    /// The cover at `backdropPixels`, drawn across the whole card behind
+    /// everything else.
+    ///
+    /// Loaded beside `artwork` rather than derived from it — see `loadArtwork`.
+    @State private var backdrop: UIImage?
 
     private var progress: Double { min(max(settled + dragDelta, 0), 1) }
 
@@ -799,6 +820,9 @@ struct PlayerCard: View {
 
         return ZStack(alignment: .topLeading) {
             background
+            // Directly on the background and under everything else, so the
+            // darkening overlay, the content and the cover all read against it.
+            backdropView(size: cardSize, topInset: insets.top)
             miniChrome(width: cardWidth)
             expandedContent(size: cardSize)
             artworkView(size: cardSize, artworkHeight: artworkHeight, topInset: insets.top)
@@ -1195,6 +1219,50 @@ struct PlayerCard: View {
     ///   Used only to pad `QueuePanel` below; the artwork itself reads
     ///   neither this parameter nor any safe-area term, so its own framing
     ///   is untouched by queue mode.
+    /// The cover, magnified across the whole card, behind everything.
+    ///
+    /// **This is what makes the shrink read as the screen folding away rather
+    /// than a band at the top folding away.** The cover itself keeps the frame
+    /// it has always had — it is a square, and stretching it to a 402×874 card
+    /// would crop away 54% of its width, showing *less* of the artwork rather
+    /// than more. So the full-screen impression comes from a second layer, and
+    /// the cover stays intact on top of it.
+    ///
+    /// It shrinks to the same destination the cover does, through the same
+    /// function: `artworkGeometry` already takes `artworkHeight` as a
+    /// parameter, so passing the card's full height instead of the cover's is
+    /// the entire difference. Two layers, one set of arithmetic — they cannot
+    /// arrive at different places or at different times.
+    ///
+    /// Nothing here carries the dissolve mask. That mask exists so text can be
+    /// read over the cover's lower edge; this layer sits under the darkening
+    /// overlay that already does that job, and has no edge of its own to hide.
+    @ViewBuilder
+    private func backdropView(size: CGSize, topInset: CGFloat) -> some View {
+        if let backdrop {
+            let geometry = Self.artworkGeometry(
+                progress: progress,
+                queueFactor: queueFactor,
+                cardSize: size,
+                // The card's whole height, where the cover passes its own.
+                artworkHeight: size.height,
+                queueThumbCentre: Self.queueThumbCentre(topInset: topInset),
+                queueThumbSide: QueuePanel.headerArtwork
+            )
+            Image(uiImage: backdrop)
+                .resizable()
+                .scaledToFill()
+                .frame(width: geometry.width, height: geometry.height)
+                .clipped()
+                .position(geometry.centre)
+                // Fades in with the card, exactly as `expandedContent` does.
+                // Collapsed, the pill shows its own thumbnail and this would be
+                // a second copy of the same picture behind it.
+                .opacity(progress)
+                .allowsHitTesting(false)
+        }
+    }
+
     private func artworkView(size: CGSize, artworkHeight: CGFloat, topInset: CGFloat) -> some View {
         // The queue panel's own horizontal inset, named because two things
         // depend on it: the panel's `.padding(.horizontal,)` below, and the
@@ -1732,14 +1800,21 @@ struct PlayerCard: View {
             maxPixel: max(fullSize.width, artworkHeight) * UIScreen.main.scale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
-        // Concurrently with the other two, not after them: all three read the
-        // same cached decode chain, and the palette is the cheapest of the
-        // three by a wide margin — a 48px decode and a nine-pixel draw.
-        let (loadedImage, loadedColour) = await (image, colour)
+        // The full-screen backdrop, at `backdropPixels` on its longest edge.
+        // Asked of the same store rather than derived from `loadedImage`,
+        // because `ArtworkStore` keys its cache by size and this is very
+        // likely a hit on a decode chain it already holds — `dominantColor`
+        // one line up asks it for a 10px copy of this same file.
+        async let backdropImage = ArtworkStore.image(for: path, maxPixel: Self.backdropPixels)
+        // Concurrently with the others, not after them: all read the same
+        // cached decode chain, and the palette is the cheapest of them by a
+        // wide margin — a 48px decode and a nine-pixel draw.
+        let (loadedImage, loadedColour, loadedBackdrop) = await (image, colour, backdropImage)
 
         guard playback.currentTrack?.artworkRelativePath == path else { return }
         artworkOwner = artworkIdentity
         artwork = loadedImage
         tint = loadedColour
+        backdrop = loadedBackdrop
     }
 }
