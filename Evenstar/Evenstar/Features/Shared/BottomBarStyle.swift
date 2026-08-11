@@ -165,6 +165,26 @@ enum BottomBarStyle {
     /// mass arriving somewhere, and a bounce on a 5pt height change is noise.
     static let control = Animation.easeOut(duration: 0.15)
 
+    /// The queue panel opening and closing.
+    ///
+    /// Given as mass/stiffness/damping rather than duration/bounce because
+    /// those are the terms it was specified in. Damping ratio is
+    /// `22 / (2 * sqrt(180))` ≈ 0.82 and it settles in roughly 0.36s — firm,
+    /// with barely any overshoot.
+    ///
+    /// **It drives three things and only three:** the capsule's fade-and-grow,
+    /// the list's rise, and `queueFactor` — which is the artwork's shrink,
+    /// since that is the value the shrink interpolates on. Those are parts of
+    /// one gesture and must share a clock or they will visibly disagree.
+    ///
+    /// It is deliberately *not* `settle`. A drag-collapse begun while the queue
+    /// is open already runs two clocks — `progress` tracks the finger while
+    /// `queueFactor` runs a spring — and a third timing character makes that
+    /// harder to read. If a slow collapse-drag with the queue open ever looks
+    /// like two objects moving separately rather than one thing folding away,
+    /// the answer is to point this at `settle` and let both share it.
+    static let queue = Animation.spring(Spring(mass: 1, stiffness: 180, damping: 22))
+
     // MARK: - Surface
 
     /// What lifts a floating surface off the content behind it.

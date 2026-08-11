@@ -354,7 +354,7 @@ struct NowPlayingContent: View {
         HStack {
             Spacer()
             TouchDownButton {
-                withAnimation(BottomBarStyle.settle) {
+                withAnimation(BottomBarStyle.queue) {
                     showingQueue.toggle()
                 }
             } label: {

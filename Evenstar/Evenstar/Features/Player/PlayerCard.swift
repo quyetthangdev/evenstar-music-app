@@ -630,7 +630,7 @@ struct PlayerCard: View {
         // artwork, by an amount that shrinks toward 0 as `progress` keeps
         // falling.
         .onChange(of: showingQueue) { _, newValue in
-            withAnimation(BottomBarStyle.settle) {
+            withAnimation(BottomBarStyle.queue) {
                 queueFactor = newValue ? 1 : 0
             }
         }
@@ -1334,7 +1334,7 @@ struct PlayerCard: View {
                 // artwork's own frame and `.position(centre)` above are
                 // untouched by queue mode — only the panel's content starts
                 // lower.
-                QueuePanel(playback: playback)
+                QueuePanel(playback: playback, factor: queueFactor)
                     .padding(.horizontal, sideMargin)
                     .padding(.top, panelTop)
                     // Bounded to where `NowPlayingContent` starts, not to

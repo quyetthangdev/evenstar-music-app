@@ -9,6 +9,15 @@ import SwiftUI
 struct QueuePanel: View {
     let playback: PlaybackService
 
+    /// 0 closed, 1 open — the same animated value `PlayerCard` interpolates the
+    /// artwork's shrink on.
+    ///
+    /// Passed in rather than derived from a `Bool` here, and that is the point:
+    /// the list's rise and the cover's shrink are one gesture, and reading the
+    /// same number is what makes them incapable of disagreeing. A local
+    /// animation would be a second clock.
+    let factor: Double
+
     @State private var shuffleTaps = 0
     @State private var repeatTaps = 0
 
@@ -17,9 +26,16 @@ struct QueuePanel: View {
     private static let rowArtwork: CGFloat = 44
 
     /// Read by `PlayerCard`, which flies the real artwork down into this slot —
-    /// so the two must agree on its size. Not `private` for that reason alone;
-    /// `rowArtwork` beside it stays private because nothing outside needs it.
-    static let headerArtwork: CGFloat = 44
+    /// so the two must agree on its size.
+    ///
+    /// **54, where every other artwork thumbnail in this app is 44** —
+    /// `SongRow`, `QueueRow`, `JamendoResultRow`. Chosen deliberately for
+    /// prominence at the top of the panel. Recorded here so a later reader
+    /// finds a decision rather than an inconsistency.
+    static let headerArtwork: CGFloat = 54
+
+    /// How far the list starts below its resting place.
+    private static let riseDistance: CGFloat = 50
 
     /// Pill geometry, moved here with the pills.
     ///
@@ -38,9 +54,17 @@ struct QueuePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // No offset on the header. It is where the artwork is flying to,
+            // and a destination that moves while something is travelling toward
+            // it makes the two chase each other — the motion version of the
+            // 12pt landing mismatch this file has already produced once.
             header
             pillRow
+                .offset(y: Self.riseDistance * (1 - factor))
+                .opacity(factor)
             upcomingList
+                .offset(y: Self.riseDistance * (1 - factor))
+                .opacity(factor)
         }
     }
 
