@@ -454,6 +454,22 @@ struct PlayerCard: View {
         fullSize.height - (Self.contentBudget - Self.contentInset)
     }
 
+    /// How far the queue list may grow past `contentOffset`, into the space
+    /// `NowPlayingContent`'s title block reserves but leaves invisible in
+    /// queue mode (`titleBlock` stays in the layout at `opacity(0)` rather
+    /// than being removed — see its own doc comment for why).
+    ///
+    /// 81 (the title block's own measured height, per `contentBudget`'s doc)
+    /// plus 24 (the `VStack(spacing: 24)` gap before the scrubber) lands the
+    /// cap exactly on `ScrubberBar`'s own top edge — the top of its **28pt**
+    /// touch strip — never past it. That strip is what a Critical was fixed
+    /// over once already: `QueuePanel`'s `List` is a `UIScrollView`, and its
+    /// pan recogniser swallowed it, making seeking impossible while the
+    /// queue was open. This constant is the boundary that keeps this change
+    /// from reopening that defect — close to the scrubber is the
+    /// requirement, touching it is the regression.
+    private static let queueListReclaimedHeight: CGFloat = 81 + 24
+
     /// What has to change for the card to reload its artwork.
     ///
     /// **The path, not only the track ID.** Keyed on the ID alone — which is
@@ -1491,7 +1507,7 @@ struct PlayerCard: View {
                     // (`contentBudget`'s note on landscape) and a negative
                     // `maxHeight` is not a valid frame.
                     .frame(
-                        maxHeight: max(0, Self.contentOffset(fullSize: size)),
+                        maxHeight: max(0, Self.contentOffset(fullSize: size) + Self.queueListReclaimedHeight),
                         alignment: .top
                     )
                     // `.frame(maxHeight:)` only bounds what `QueuePanel`
