@@ -234,9 +234,14 @@ struct QueuePanel: View {
                 // `TransportButtonStyle` dims a disabled label from outside,
                 // but the innermost `foregroundStyle` wins, so its dimming
                 // would never land.
+                // Dark when on, because the capsule behind it is filled white
+                // on the same condition — a white glyph there would be white
+                // on white, which is `ProminentActionButton`'s failure moved
+                // to a new control. Inverting is also what Apple Music does:
+                // the armed pill is a white capsule with a dark glyph.
                 .foregroundStyle(
                     !enabled ? AnyShapeStyle(.tertiary)
-                             : isOn ? AnyShapeStyle(Color.white)
+                             : isOn ? AnyShapeStyle(Color.black)
                                     : AnyShapeStyle(.secondary)
                 )
                 .contentTransition(.symbolEffect(.replace))
