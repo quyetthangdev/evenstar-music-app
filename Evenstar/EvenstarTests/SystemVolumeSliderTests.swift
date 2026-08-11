@@ -104,4 +104,54 @@ final class SystemVolumeSliderTests: XCTestCase {
 
         XCTAssertNotEqual(opaque.pngData(), faded.pngData())
     }
+
+    // MARK: - Touch response (design Part 2 item 4)
+
+    func testTrackImageAcceptsACustomHeight() {
+        let image = SystemVolumeSlider.trackImage(color: .label, height: 12)
+
+        XCTAssertEqual(image.size.height, 12, accuracy: 0.01)
+        XCTAssertEqual(image.capInsets.left, 6, accuracy: 0.01)
+        XCTAssertEqual(image.capInsets.right, 6, accuracy: 0.01)
+    }
+
+    func testTouchDownSwellsTheTrackToTheActiveHeight() throws {
+        let (_, slider) = try requireSlider()
+
+        slider.sendActions(for: .touchDown)
+
+        let minimum = try XCTUnwrap(slider.currentMinimumTrackImage)
+        XCTAssertEqual(minimum.size.height, ScrubberBar.activeHeight, accuracy: 0.01)
+    }
+
+    func testReleasingRestoresTheRestingHeight() throws {
+        let (_, slider) = try requireSlider()
+        slider.sendActions(for: .touchDown)
+
+        slider.sendActions(for: .touchUpInside)
+
+        let minimum = try XCTUnwrap(slider.currentMinimumTrackImage)
+        XCTAssertEqual(minimum.size.height, ScrubberBar.restingHeight, accuracy: 0.01)
+    }
+
+    func testTouchDownFiresTheCallbackExactlyOnce() throws {
+        let view = TintedVolumeView(
+            frame: CGRect(x: 0, y: 0, width: 300, height: ScrubberBar.touchHeight)
+        )
+        var fireCount = 0
+        view.onTouchDown = { fireCount += 1 }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
+        window.addSubview(view)
+        window.isHidden = false
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        guard let slider = Self.findSlider(in: view) else {
+            throw XCTSkip("MPVolumeView builds no UISlider without audio hardware; run on a device")
+        }
+
+        slider.sendActions(for: .touchDown)
+        slider.sendActions(for: .touchDown) // a second down without a release in between
+
+        XCTAssertEqual(fireCount, 1, "one press must fire the callback once, not once per event")
+    }
 }

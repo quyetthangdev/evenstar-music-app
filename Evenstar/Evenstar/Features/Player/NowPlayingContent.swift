@@ -21,6 +21,7 @@ struct NowPlayingContent: View {
     @State private var nextTaps = 0
     @State private var previousTaps = 0
     @State private var playPauseTaps = 0
+    @State private var volumeTaps = 0
 
     /// The transport glyphs' square frame. `forward.fill` at `.title2` is
     /// 32.3pt wide and 20pt tall, so an unframed button would give the tap
@@ -408,11 +409,12 @@ struct NowPlayingContent: View {
         HStack(spacing: 10) {
             Image(systemName: "speaker.fill")
                 .frame(height: ScrubberBar.touchHeight)
-            SystemVolumeSlider()
+            SystemVolumeSlider(onTouchDown: { volumeTaps += 1 })
             Image(systemName: "speaker.wave.3.fill")
                 .frame(height: ScrubberBar.touchHeight)
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
+        .sensoryFeedback(.impact(weight: .light), trigger: volumeTaps)
     }
 }

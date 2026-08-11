@@ -13,6 +13,14 @@ import UIKit
 /// is expected, not a bug.
 struct SystemVolumeSlider: UIViewRepresentable {
 
+    /// Called once per touch-down on the slider, so a caller wanting a
+    /// haptic can drive its own `.sensoryFeedback` from it — the same
+    /// contract `TransportButtonStyle`/`QueueToggleStyle` use, and for the
+    /// same reason given there: SwiftUI owns the generator's lifetime and
+    /// respects the system's haptics settings, where a raw
+    /// `UIImpactFeedbackGenerator` inside this representable would not.
+    var onTouchDown: () -> Void = {}
+
     /// `showsRouteButton` was deprecated by iOS 13 in favour of
     /// `AVRoutePickerView`, but it is still the only way to hide this
     /// button: `AVRoutePickerView` is a *separate control*, not a switch for
@@ -41,10 +49,13 @@ struct SystemVolumeSlider: UIViewRepresentable {
         view.setVolumeThumbImage(Self.invisibleThumb, for: .normal)
         view.setVolumeThumbImage(Self.invisibleThumb, for: .highlighted)
         view.tintColor = .label
+        view.onTouchDown = onTouchDown
         return view
     }
 
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {
+        (uiView as? TintedVolumeView)?.onTouchDown = onTouchDown
+    }
 
     /// Takes the intrinsic size out of the width decision entirely.
     ///
@@ -90,18 +101,17 @@ struct SystemVolumeSlider: UIViewRepresentable {
     ///
     /// The caps make it stretch from the middle, so one bitmap draws both a
     /// short filled section and a long unfilled one.
-    static func trackImage(color: UIColor) -> UIImage {
-        let side = ScrubberBar.restingHeight
-        let size = CGSize(width: side, height: side)
+    static func trackImage(color: UIColor, height: CGFloat = ScrubberBar.restingHeight) -> UIImage {
+        let size = CGSize(width: height, height: height)
         let capsule = UIGraphicsImageRenderer(size: size).image { _ in
             color.setFill()
             UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: size),
-                cornerRadius: side / 2
+                cornerRadius: height / 2
             ).fill()
         }
         return capsule.resizableImage(
-            withCapInsets: UIEdgeInsets(top: 0, left: side / 2, bottom: 0, right: side / 2),
+            withCapInsets: UIEdgeInsets(top: 0, left: height / 2, bottom: 0, right: height / 2),
             resizingMode: .stretch
         )
     }
@@ -176,25 +186,46 @@ final class TintedVolumeView: MPVolumeView {
     /// The appearance the current track images were drawn for, so they are
     /// rebuilt when it changes and not on every layout pass.
     private var renderedStyle: UIUserInterfaceStyle?
+    /// Whether the images last drawn were the pressed (swelled) ones — kept
+    /// separately from `isPressed` so a press/release toggle also triggers a
+    /// rebuild even when the appearance has not changed.
+    private var renderedPressed = false
+    /// True while a finger is down on the slider — mirrors
+    /// `ScrubberBar.isDragging` and drives the same swell, from
+    /// `restingHeight` to `ScrubberBar.activeHeight`.
+    private var isPressed = false
+    private var isObservingSliderTouches = false
+
+    /// Fired once per touch-down — see its doc comment on `SystemVolumeSlider`.
+    var onTouchDown: (() -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let slider = Self.findSlider(in: self) else { return }
+
+        if !isObservingSliderTouches {
+            isObservingSliderTouches = true
+            slider.addTarget(self, action: #selector(handleTouchDown), for: .touchDown)
+            slider.addTarget(self, action: #selector(handleTouchUp),
+                              for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        }
 
         // On the slider itself, not through
         // `MPVolumeView.setMinimum/MaximumVolumeSliderImage`. Those were tried
         // first and had no visible effect on device — which the simulator
         // could not have shown either way, since `MPVolumeView` draws nothing
         // there. `UISlider`'s own setters do land.
-        if renderedStyle != traitCollection.userInterfaceStyle {
+        if renderedStyle != traitCollection.userInterfaceStyle || renderedPressed != isPressed {
             renderedStyle = traitCollection.userInterfaceStyle
+            renderedPressed = isPressed
             let filled = UIColor.label.resolvedColor(with: traitCollection)
+            let height = isPressed ? ScrubberBar.activeHeight : ScrubberBar.restingHeight
             slider.setMinimumTrackImage(
-                SystemVolumeSlider.trackImage(color: filled),
+                SystemVolumeSlider.trackImage(color: filled, height: height),
                 for: .normal
             )
             slider.setMaximumTrackImage(
-                SystemVolumeSlider.trackImage(color: filled.withAlphaComponent(0.25)),
+                SystemVolumeSlider.trackImage(color: filled.withAlphaComponent(0.25), height: height),
                 for: .normal
             )
         }
@@ -206,6 +237,19 @@ final class TintedVolumeView: MPVolumeView {
         if abs(slider.frame.minY - centred) > 0.5 {
             slider.frame.origin.y = centred
         }
+    }
+
+    @objc private func handleTouchDown() {
+        guard !isPressed else { return }
+        isPressed = true
+        onTouchDown?()
+        setNeedsLayout()
+    }
+
+    @objc private func handleTouchUp() {
+        guard isPressed else { return }
+        isPressed = false
+        setNeedsLayout()
     }
 
     /// Searches the whole subtree, not just the direct children.
