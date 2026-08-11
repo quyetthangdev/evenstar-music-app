@@ -160,8 +160,17 @@ final class LibraryService {
         return try context.fetch(descriptor)
     }
 
+    /// The local half of session restore, and the first of the three asked —
+    /// see `findDriveTrack` and `findJamendoTrack`, which share its shape.
+    ///
+    /// `fetchLimit = 1` for the same reason they carry it: the id is unique, so
+    /// one row is all there can be, and saying so lets SwiftData stop looking
+    /// rather than materialise every remaining `Track` to hand back a list this
+    /// throws away. It was the only one of the three without it — the outlier,
+    /// on the table most likely to be the largest.
     func findTrack(byID id: UUID) throws -> Track? {
-        let descriptor = FetchDescriptor<Track>(predicate: #Predicate { $0.id == id })
+        var descriptor = FetchDescriptor<Track>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
     }
 
