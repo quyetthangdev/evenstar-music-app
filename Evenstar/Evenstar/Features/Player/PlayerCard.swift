@@ -599,8 +599,32 @@ struct PlayerCard: View {
             // Collapsed, or nearly. Not `== 0`: a drag that ends just short of
             // closed still means the player is gone from the user's view, and
             // reopening it should start from the artwork.
+            //
+            // **`withAnimation` is load-bearing, and its absence was a real
+            // defect.** `settled` is plain `@State`, and `drag(...).onEnded`
+            // assigns its final value *synchronously* — so `progress` reads 0
+            // on the very next evaluation, the instant the finger lifts, while
+            // the card is still visibly mid-spring for another ~0.4s. A bare
+            // write here therefore fired at release, not at arrival, and
+            // `QueuePanel` is mounted behind a plain `if showingQueue`: SwiftUI
+            // removed it from the tree on the next frame with no transition at
+            // all, at whatever opacity it happened to have.
+            //
+            // What that looked like: flick the card down and let go before it
+            // reaches the bottom, and the queue's header, pills and list
+            // vanished in one frame while the cover carried on shrinking toward
+            // the pill for several hundred milliseconds. Two objects on
+            // different clocks — the failure this transition was designed to
+            // avoid, arriving by a route nobody was watching.
+            //
+            // Note what does *not* fix it: `BottomBarStyle.queue`'s own doc
+            // suggests pointing it at `settle` if a collapse ever reads as two
+            // objects. That addresses a spring-character mismatch. Here there
+            // was no spring — the removal was not animated by anything.
             if newValue < 0.05, showingQueue {
-                showingQueue = false
+                withAnimation(BottomBarStyle.queue) {
+                    showingQueue = false
+                }
             }
         }
         .allowsHitTesting(playback.currentTrack != nil)
