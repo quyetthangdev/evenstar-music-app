@@ -243,7 +243,13 @@ struct QueuePanel: View {
                 .frame(height: Self.pillHeight)
                 .padding(.horizontal, Self.pillHorizontalPadding)
                 .background(
-                    isOn && enabled ? AnyShapeStyle(Color.accentColor)
+                    // Literal white, not the accent: this pill sits on the
+                    // now-playing card, over artwork the darkening overlay
+                    // already keeps dark, so white is legible there and only
+                    // there — it is not a statement about what the accent
+                    // colour should be. Matches the glyph above, which already
+                    // goes `Color.white` on the same condition.
+                    isOn && enabled ? AnyShapeStyle(Color.white)
                                     : AnyShapeStyle(Color(.tertiarySystemFill)),
                     in: Capsule()
                 )

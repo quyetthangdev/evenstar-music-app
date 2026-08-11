@@ -362,8 +362,13 @@ struct NowPlayingContent: View {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(
+                        // Literal white, not the accent, when the queue is
+                        // open: this glyph sits on the now-playing card, over
+                        // artwork the darkening overlay already keeps dark, so
+                        // white is legible there and only there — it is not a
+                        // statement about what the accent colour should be.
                         playback.currentTrack == nil ? AnyShapeStyle(.tertiary)
-                            : showingQueue ? AnyShapeStyle(Color.accentColor)
+                            : showingQueue ? AnyShapeStyle(Color.white)
                                            : AnyShapeStyle(.secondary)
                     )
                     .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)

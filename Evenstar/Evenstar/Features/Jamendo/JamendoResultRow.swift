@@ -32,12 +32,15 @@ struct JamendoResultRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
-                    // Tinted while previewing, the way every system list marks
-                    // its currently playing row. The glyph above says "tap to
-                    // stop"; this says "this is the one" from across the row,
-                    // and survives a cover that failed to load.
-                    .foregroundStyle(isPreviewing ? AnyShapeStyle(Color.accentColor)
-                                                  : AnyShapeStyle(.primary))
+                    // Weight, not colour, carries "this is the one" — the
+                    // same fix the save button below just got. This row sits
+                    // in a list on a light background, and an accent that is
+                    // white today (or changes again tomorrow) would make a
+                    // colour-tinted title invisible here exactly as it did on
+                    // the button; weight has no such dependency. The glyph
+                    // above already says "tap to stop"; bold survives a cover
+                    // that failed to load just as well as colour did.
+                    .fontWeight(isPreviewing ? .semibold : .regular)
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.caption)
