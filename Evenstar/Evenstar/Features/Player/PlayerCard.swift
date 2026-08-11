@@ -166,18 +166,40 @@ struct PlayerCard: View {
     /// Mirrors `showingQueue`, animated explicitly rather than read from a
     /// `showingQueue ? 1 : 0` ternary at the call site.
     ///
-    /// Measured on device: with the ternary, `artworkGeometry`'s `width`,
-    /// `height` and `centre` glide smoothly (they're ordinary `CGFloat`/
-    /// `CGPoint` outputs consumed by `.frame`/`.position`, both `Animatable`),
-    /// but the dissolve mask's `[Gradient.Stop]` snapped in during the last
-    /// couple of frames instead of growing in step — `LinearGradient` given a
-    /// new stops array has no `Animatable` conformance to interpolate through,
-    /// so SwiftUI held the old mask and then jumped to the new one rather than
-    /// tweening between them. A genuine `@State` value that is itself the
-    /// thing being animated, changed inside its own `withAnimation`, gives
-    /// SwiftUI a continuous number to re-evaluate `dissolveStops(progress:)`
-    /// against on every frame instead of two discrete snapshots to jump
-    /// between.
+    /// **What was measured, before this state existed:** with the ternary,
+    /// `artworkGeometry`'s `width`/`height`/`centre` glided smoothly, but the
+    /// dissolve mask held fully opaque through most of the size animation —
+    /// a 30fps, ~230ms, 7-frame capture showed frames 1-5 still hard-edged
+    /// with no visible blend, by which point the artwork had already grown
+    /// to roughly 60-90% of its final width/height — and then the dissolve
+    /// appeared abruptly between frames 5 and 6, already near its full
+    /// extent, inside the last ~33ms of the transition. (See the task-1
+    /// report's "Evidence of the snap".)
+    ///
+    /// **What was measured after** introducing this `@State`, driven by its
+    /// own `withAnimation(BottomBarStyle.settle)`: a 60fps re-capture of the
+    /// same transition showed the dissolve already partially present and
+    /// visibly growing frame-over-frame across roughly the 70-85% window of
+    /// the size animation, instead of appearing only in the last frame.
+    ///
+    /// **What that does not establish is the mechanism.** `[Gradient.Stop]`
+    /// has no `Animatable` conformance regardless of where the `Double`
+    /// driving `dissolveStops(progress:)` is stored — moving it into `@State`
+    /// does not, by itself, make SwiftUI interpolate between stop arrays; it
+    /// still receives discrete `[Gradient.Stop]` values frame to frame either
+    /// way. The improvement above may come from this being a separate,
+    /// explicitly-scoped `withAnimation` transaction rather than from the
+    /// value being stored — the two were changed together, so this
+    /// comment cannot tell you which one did the work. The before/after
+    /// comparison is also confounded: `QueuePanel`'s own content fades
+    /// in/out over the same pixels with its own default insertion/removal
+    /// transition, and its list sits on a solid background occupying almost
+    /// the same screen region as the dissolve, so "the mask is fading in"
+    /// and "the panel's own fade is covering the seam" could not be told
+    /// apart by eye in the frames captured. Treat "smoother" as established
+    /// and "why" as open — re-measure by driving `queueFactor`/`progress`
+    /// from a slider with `QueuePanel` unmounted before trusting more than
+    /// that.
     @State private var queueFactor: Double = 0
 
     @State private var artwork: UIImage?
@@ -591,13 +613,22 @@ struct PlayerCard: View {
         }
         // Drives `queueFactor` from `showingQueue`, in its own explicit
         // animation rather than inline with whatever transaction toggled the
-        // boolean — see `queueFactor`'s doc comment for why the ternary this
-        // replaced left the dissolve mask snapping instead of gliding.
+        // boolean — see `queueFactor`'s doc comment for what was observed on
+        // device about the ternary this replaced.
         // Fires for every path that sets `showingQueue`, including the
         // collapse-triggered reset above: at that point `progress` is already
-        // under 0.05, where `artworkGeometry` ignores `queueFactor`
-        // entirely, so animating it back to 0 here has nothing left to
-        // visibly move.
+        // under 0.05, where `artworkGeometry`'s response to `queueFactor` is
+        // bounded and vanishing, not gated off — `width`/`height` scale
+        // `queueFactor`'s effect by `progress` rather than by a cutoff, so a
+        // full 0→1 swing still moves `width` by
+        // `progress * (cardSize.width - queueThumbSide)`: on an iPhone
+        // 17-sized card (~402pt-wide artwork, 44pt header slot) that is
+        // ~18pt at `progress == 0.05`, not 0. The claim of no visible effect
+        // is exact only at `progress == 0`, which is what
+        // `testTheCollapsedPillIsUnchangedByTheQueueFactor` pins — below
+        // that, animating `queueFactor` back to 0 here still nudges the
+        // artwork, by an amount that shrinks toward 0 as `progress` keeps
+        // falling.
         .onChange(of: showingQueue) { _, newValue in
             withAnimation(BottomBarStyle.settle) {
                 queueFactor = newValue ? 1 : 0
