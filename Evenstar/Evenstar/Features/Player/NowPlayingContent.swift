@@ -11,8 +11,6 @@ struct NowPlayingContent: View {
     /// changes lives there.
     @Binding var showingQueue: Bool
 
-    @State private var queueTaps = 0
-
     /// Counts taps on each transport control, exactly as `MiniPlayerChrome`
     /// does for Next and for the same
     /// reason — a `Bool` would fire once and then sit at `true`. Its own
@@ -356,7 +354,6 @@ struct NowPlayingContent: View {
         HStack {
             Spacer()
             TouchDownButton {
-                queueTaps += 1
                 withAnimation(BottomBarStyle.settle) {
                     showingQueue.toggle()
                 }
@@ -369,9 +366,24 @@ struct NowPlayingContent: View {
                                            : AnyShapeStyle(.secondary)
                     )
                     .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)
+                    // Grows from its own centre rather than sliding or wiping:
+                    // the capsule belongs to the button, so it should look like
+                    // it came out of it.
+                    //
+                    // `.ultraThinMaterial` over the card's own frosted layer is
+                    // the risk the design names. If this reads as a flat grey
+                    // swatch rather than something the gradient shows through,
+                    // the answer is `.regularMaterial` or a solid tint at low
+                    // opacity — not more blur.
+                    .background {
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .opacity(showingQueue ? 1 : 0)
+                            .scaleEffect(showingQueue ? 1 : 0.6)
+                    }
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.transportToggle(trigger: queueTaps))
+            .buttonStyle(.queueToggle)
             .disabled(playback.currentTrack == nil)
             .accessibilityLabel(String(
                 localized: "Hàng đợi",
