@@ -163,6 +163,23 @@ struct PlayerCard: View {
     /// screen last time.
     @State private var showingQueue = false
 
+    /// Mirrors `showingQueue`, animated explicitly rather than read from a
+    /// `showingQueue ? 1 : 0` ternary at the call site.
+    ///
+    /// Measured on device: with the ternary, `artworkGeometry`'s `width`,
+    /// `height` and `centre` glide smoothly (they're ordinary `CGFloat`/
+    /// `CGPoint` outputs consumed by `.frame`/`.position`, both `Animatable`),
+    /// but the dissolve mask's `[Gradient.Stop]` snapped in during the last
+    /// couple of frames instead of growing in step — `LinearGradient` given a
+    /// new stops array has no `Animatable` conformance to interpolate through,
+    /// so SwiftUI held the old mask and then jumped to the new one rather than
+    /// tweening between them. A genuine `@State` value that is itself the
+    /// thing being animated, changed inside its own `withAnimation`, gives
+    /// SwiftUI a continuous number to re-evaluate `dissolveStops(progress:)`
+    /// against on every frame instead of two discrete snapshots to jump
+    /// between.
+    @State private var queueFactor: Double = 0
+
     @State private var artwork: UIImage?
     /// Which track `artwork` was loaded for.
     ///
@@ -571,6 +588,20 @@ struct PlayerCard: View {
         .accessibilityHidden(playback.currentTrack == nil)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
+        }
+        // Drives `queueFactor` from `showingQueue`, in its own explicit
+        // animation rather than inline with whatever transaction toggled the
+        // boolean — see `queueFactor`'s doc comment for why the ternary this
+        // replaced left the dissolve mask snapping instead of gliding.
+        // Fires for every path that sets `showingQueue`, including the
+        // collapse-triggered reset above: at that point `progress` is already
+        // under 0.05, where `artworkGeometry` ignores `queueFactor`
+        // entirely, so animating it back to 0 here has nothing left to
+        // visibly move.
+        .onChange(of: showingQueue) { _, newValue in
+            withAnimation(BottomBarStyle.settle) {
+                queueFactor = newValue ? 1 : 0
+            }
         }
         // Picking a track from a list opens the full player.
         //
@@ -1016,6 +1047,9 @@ struct PlayerCard: View {
     /// The grabber capsule's own height.
     private static let grabberHeight: CGFloat = 5
 
+    /// How far `QueuePanel` is inset from each side of the card.
+    private static let queuePanelSideMargin: CGFloat = 24
+
     /// Hints that the expanded card can be dragged away, the way the
     /// `.sheet` this replaced showed `.presentationDragIndicator(.visible)`.
     /// Fades in with `progress` so it is invisible while collapsed. See F8.
@@ -1107,30 +1141,32 @@ struct PlayerCard: View {
     ///   neither this parameter nor any safe-area term, so its own framing
     ///   is untouched by queue mode.
     private func artworkView(size: CGSize, artworkHeight: CGFloat, topInset: CGFloat) -> some View {
-        // Width and height interpolate separately now that the expanded artwork
-        // is not square. Collapsed it still is: both start at
-        // `collapsedArtwork`, so the pill's thumbnail is unchanged and only the
-        // destination differs.
-        let width = Self.collapsedArtwork
-            + (size.width - Self.collapsedArtwork) * progress
-        let height = Self.collapsedArtwork
-            + (artworkHeight - Self.collapsedArtwork) * progress
-        let collapsedCentre = CGPoint(
-            x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
-            y: Self.collapsedHeight / 2
+        // The queue panel's own horizontal inset, named because two things
+        // depend on it: the panel's `.padding(.horizontal,)` below, and the
+        // header slot's centre computed here. A literal in both places is two
+        // numbers that must agree and nothing to notice when they stop.
+        let sideMargin = Self.queuePanelSideMargin
+        let panelTop = topInset + Self.grabberTopGap + Self.grabberHeight
+        let geometry = Self.artworkGeometry(
+            progress: progress,
+            // `queueFactor`, not `showingQueue ? 1 : 0` — see that property's
+            // doc comment for why the mask needs a genuinely animated number
+            // here rather than a ternary re-evaluated at two discrete points.
+            queueFactor: queueFactor,
+            cardSize: size,
+            artworkHeight: artworkHeight,
+            // The header slot, derived from constants rather than measured: a
+            // measurement would depend on a layout pass that has not run on
+            // the first frame of the transition.
+            queueThumbCentre: CGPoint(
+                x: sideMargin + QueuePanel.headerArtwork / 2,
+                y: panelTop + QueuePanel.headerArtwork / 2
+            ),
+            queueThumbSide: QueuePanel.headerArtwork
         )
-        // Flush with the card's top edge: the artwork's centre sits exactly
-        // half its own height down, with no safe-area term. The status bar is
-        // drawn over it, in white — see `PlayerChromeScheme`, which forces the
-        // whole window dark while the card is open.
-        let expandedCentre = CGPoint(
-            x: size.width / 2,
-            y: artworkHeight / 2
-        )
-        let centre = CGPoint(
-            x: collapsedCentre.x + (expandedCentre.x - collapsedCentre.x) * progress,
-            y: collapsedCentre.y + (expandedCentre.y - collapsedCentre.y) * progress
-        )
+        let width = geometry.width
+        let height = geometry.height
+        let centre = geometry.centre
 
         // Decided from the model, not from the loaded image — see `source(_:_:)`
         // for why, and for the bug that rule fixes.
@@ -1197,7 +1233,7 @@ struct PlayerCard: View {
         // with no view inserted or removed mid-morph to pop.
         .mask(
             LinearGradient(
-                stops: Self.dissolveStops(progress: progress),
+                stops: Self.dissolveStops(progress: geometry.shapeProgress),
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -1206,7 +1242,12 @@ struct PlayerCard: View {
         // full-bleed, and a rounded corner floating against the screen's own
         // rounded corner reads as a mistake. The card's `clipShape` supplies
         // the top corners at that point.
-        .clipShape(RoundedRectangle(cornerRadius: width * 0.12 * (1 - progress)))
+        //
+        // Reads `geometry.shapeProgress`, not `progress`: while the queue is
+        // open this is 0 even at full expansion, so the artwork stays rounded
+        // like the 44pt thumbnail it has become instead of squaring off like
+        // a full-bleed cover.
+        .clipShape(RoundedRectangle(cornerRadius: width * 0.12 * (1 - geometry.shapeProgress)))
         // Constant, for the same reason the card's own shadow is constant —
         // see the note at `.floatingBarShadow()` above. This was
         // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
@@ -1226,10 +1267,11 @@ struct PlayerCard: View {
         // room, and `contentBudget` documents that there is none to spare
         // anywhere else.
         //
-        // `opacity` on both rather than an `if`: the artwork participates
-        // in the collapse morph, and removing it from the hierarchy
-        // mid-morph would take its `matchedGeometry`-driven frame with it.
-        .opacity(showingQueue ? 0 : 1)
+        // No `.opacity(showingQueue ? 0 : 1)` here any more: the artwork no
+        // longer disappears when the queue opens, it *becomes* the header
+        // thumbnail — `geometry` above already carries it down onto that
+        // 44pt slot. Fading it out here would shrink an invisible view onto
+        // an invisible slot.
         // `alignment: .top`, not the default `.center` — load-bearing for
         // the `.frame(maxHeight:)` cap below. `.overlay` centers its content
         // within the base view's bounds by default; the artwork's own frame
@@ -1258,7 +1300,7 @@ struct PlayerCard: View {
                 // untouched by queue mode — only the panel's content starts
                 // lower.
                 QueuePanel(playback: playback)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, sideMargin)
                     .padding(
                         .top,
                         topInset + Self.grabberTopGap + Self.grabberHeight
@@ -1434,6 +1476,75 @@ struct PlayerCard: View {
         if translationHeight > 0 { return max(0, translationHeight - threshold) }
         if translationHeight < 0 { return min(0, translationHeight + threshold) }
         return 0
+    }
+
+    /// Where the artwork is and what shape it is, for one pair of progresses.
+    ///
+    /// `shapeProgress` is deliberately separate from the size and position: the
+    /// mask and the corner radius only need to know whether the artwork
+    /// currently looks like a thumbnail or like a full-bleed cover, and both
+    /// existing expressions already answer that from a single number.
+    struct ArtworkGeometry: Equatable {
+        let width: CGFloat
+        let height: CGFloat
+        let centre: CGPoint
+        let shapeProgress: Double
+    }
+
+    /// The artwork's geometry across all three states it can be in.
+    ///
+    /// Pure and `static` for the reason `dragOffset` and `dragThreshold` are:
+    /// this is the arithmetic that is easy to get wrong and impossible to see
+    /// wrong, and a view modifier chain cannot be asserted against.
+    ///
+    /// **`queueFactor` is folded into `progress` for shape, and applied after
+    /// it for position.** That asymmetry is the design. For shape,
+    /// `progress * (1 - queueFactor)` reuses the appearance the code already
+    /// draws at `progress == 0` — rounded, opaque, no dissolve — which is
+    /// exactly what a 44pt thumbnail wants, so no new formula is written and
+    /// the two shipped ends cannot move. For position, the queue slot is a
+    /// third destination the collapsed→expanded interpolation has to reach
+    /// *through*, so it is applied to the expanded end before that
+    /// interpolation runs.
+    static func artworkGeometry(
+        progress: Double,
+        queueFactor: Double,
+        cardSize: CGSize,
+        artworkHeight: CGFloat,
+        queueThumbCentre: CGPoint,
+        queueThumbSide: CGFloat
+    ) -> ArtworkGeometry {
+        // Where the artwork ends up once the card is fully open — full bleed,
+        // or the header slot if the queue is showing.
+        let openWidth = cardSize.width + (queueThumbSide - cardSize.width) * queueFactor
+        let openHeight = artworkHeight + (queueThumbSide - artworkHeight) * queueFactor
+        // Flush with the card's top edge: the artwork's centre sits exactly
+        // half its own height down, with no safe-area term. The status bar is
+        // drawn over it, in white — see `PlayerChromeScheme`, which forces the
+        // whole window dark while the card is open. Two comments elsewhere in
+        // `PlayerCard` (`artworkView` and the `QueuePanel` overlay) point back
+        // here for that reasoning.
+        let expandedCentre = CGPoint(x: cardSize.width / 2, y: artworkHeight / 2)
+        let openCentre = CGPoint(
+            x: expandedCentre.x + (queueThumbCentre.x - expandedCentre.x) * queueFactor,
+            y: expandedCentre.y + (queueThumbCentre.y - expandedCentre.y) * queueFactor
+        )
+
+        // The collapsed end is untouched by any of this — see the tests.
+        let collapsedCentre = CGPoint(
+            x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
+            y: Self.collapsedHeight / 2
+        )
+
+        return ArtworkGeometry(
+            width: Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * progress,
+            height: Self.collapsedArtwork + (openHeight - Self.collapsedArtwork) * progress,
+            centre: CGPoint(
+                x: collapsedCentre.x + (openCentre.x - collapsedCentre.x) * progress,
+                y: collapsedCentre.y + (openCentre.y - collapsedCentre.y) * progress
+            ),
+            shapeProgress: progress * (1 - queueFactor)
+        )
     }
 
     private func drag(travel: CGFloat, threshold: CGFloat) -> some Gesture {

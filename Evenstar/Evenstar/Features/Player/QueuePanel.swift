@@ -15,7 +15,11 @@ struct QueuePanel: View {
     /// Matches `SongRow`'s thumbnail, so a queue row and a library row are the
     /// same size object.
     private static let rowArtwork: CGFloat = 44
-    private static let headerArtwork: CGFloat = 44
+
+    /// Read by `PlayerCard`, which flies the real artwork down into this slot —
+    /// so the two must agree on its size. Not `private` for that reason alone;
+    /// `rowArtwork` beside it stays private because nothing outside needs it.
+    static let headerArtwork: CGFloat = 44
 
     /// Pill geometry, moved here with the pills.
     ///
@@ -46,10 +50,18 @@ struct QueuePanel: View {
     /// see Task 3 — so these two strings appear once, not twice.
     private var header: some View {
         HStack(spacing: 12) {
+            // Invisible, and that is the whole job. `PlayerCard` shrinks the
+            // real artwork down onto exactly this rect, so drawing a second
+            // copy here would double it for the length of the animation and
+            // leave two thumbnails stacked at rest. What this still does is
+            // reserve the space, so the title and artist do not slide sideways
+            // when the queue opens.
             ArtworkThumbnail(
                 relativePath: playback.currentTrack?.artworkRelativePath,
                 size: Self.headerArtwork
             )
+            .opacity(0)
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(playback.currentTrack?.title ?? "—")
                     .font(.subheadline.bold())
