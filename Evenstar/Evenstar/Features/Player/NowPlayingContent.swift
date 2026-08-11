@@ -48,13 +48,27 @@ struct NowPlayingContent: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            // Hidden in queue mode: `QueuePanel`'s header already carries the
-            // title and artist, and showing both prints the same two strings
-            // twice on one screen. It is also the only element this stack drops
-            // in queue mode, which is what buys the list its room.
-            if !showingQueue {
-                titleBlock
-            }
+            // Invisible in queue mode, **not removed from the layout.**
+            //
+            // Hiding it is right: `QueuePanel`'s header already carries the
+            // title and artist, and drawing both prints the same two strings
+            // twice on one screen. Taking it out of the stack was not. This
+            // `VStack` is positioned by `.offset(y: contentOffset(fullSize:))`,
+            // which pins its *top*, so dropping the first child pulled the
+            // scrubber, the transport row, the volume slider and the queue
+            // toggle up by the title block's height plus a 24pt gap — the whole
+            // player jumped every time the queue opened, and jumped back when
+            // it closed.
+            //
+            // The design note that used to sit here claimed the removal "buys
+            // the list its room". It bought nothing. `QueuePanel` is capped at
+            // `contentOffset`, and this block lives *below* `contentOffset` —
+            // the panel could never have used the space. All the removal ever
+            // did was move the controls.
+            titleBlock
+                .opacity(showingQueue ? 0 : 1)
+                .allowsHitTesting(!showingQueue)
+                .accessibilityHidden(showingQueue)
             scrubber
             transport
             volume
