@@ -102,4 +102,35 @@ final class ArtworkGeometryTests: XCTestCase {
         XCTAssertTrue(queued.centre.y < half.centre.y && half.centre.y < open.centre.y)
         XCTAssertTrue(queued.shapeProgress < half.shapeProgress && half.shapeProgress < open.shapeProgress)
     }
+
+    // MARK: - The wiring between the destination point and the panel's own padding
+
+    /// `queueThumbCentre(topInset:)` computes the point the artwork flies to;
+    /// `queuePanelTop(topInset:)` computes the offset `QueuePanel`'s own
+    /// `.padding(.top,)` actually applies. They must describe the same panel:
+    /// the header sits at the very top of `QueuePanel`'s `VStack` with no
+    /// further offset, so the point's y has to be exactly the panel's own
+    /// top padding plus half the header artwork.
+    ///
+    /// This pins that *relationship*, not either side's value — pinning a
+    /// value here would fail the moment the panel's padding changed, for
+    /// reasons unrelated to what this checks (see the fixture note above).
+    /// It is a different case from every other test in this file: those
+    /// exercise the pure `artworkGeometry` arithmetic given an arbitrary
+    /// fixture `thumbCentre`; this one exercises whether the two independent
+    /// expressions that are supposed to produce that fixture in real life
+    /// still agree with each other.
+    func testQueueThumbCentreLandsOnThePanelsOwnTopPadding() {
+        for topInset: CGFloat in [0, 47, 59] {
+            let centre = PlayerCard.queueThumbCentre(topInset: topInset)
+            let panelTop = PlayerCard.queuePanelTop(topInset: topInset)
+
+            XCTAssertEqual(
+                centre.y,
+                panelTop + QueuePanel.headerArtwork / 2,
+                accuracy: 0.001,
+                "topInset \(topInset)"
+            )
+        }
+    }
 }

@@ -1177,7 +1177,14 @@ struct PlayerCard: View {
         // header slot's centre computed here. A literal in both places is two
         // numbers that must agree and nothing to notice when they stop.
         let sideMargin = Self.queuePanelSideMargin
-        let panelTop = topInset + Self.grabberTopGap + Self.grabberHeight
+        // The panel's own top offset, `queuePanelHeaderGap` folded in — see
+        // `queuePanelTop`'s doc comment. Read once, here, and used again at
+        // the `.padding(.top,)` call site below instead of re-derived
+        // there: that re-derivation is what used to drop the gap from the
+        // point the artwork animates to while keeping it in the panel's own
+        // padding, landing the cover 12pt above the header it was aiming
+        // for.
+        let panelTop = Self.queuePanelTop(topInset: topInset)
         let geometry = Self.artworkGeometry(
             progress: progress,
             // `queueFactor`, not `showingQueue ? 1 : 0` — see that property's
@@ -1189,10 +1196,7 @@ struct PlayerCard: View {
             // The header slot, derived from constants rather than measured: a
             // measurement would depend on a layout pass that has not run on
             // the first frame of the transition.
-            queueThumbCentre: CGPoint(
-                x: sideMargin + QueuePanel.headerArtwork / 2,
-                y: panelTop + QueuePanel.headerArtwork / 2
-            ),
+            queueThumbCentre: Self.queueThumbCentre(topInset: topInset),
             queueThumbSide: QueuePanel.headerArtwork
         )
         let width = geometry.width
@@ -1332,11 +1336,7 @@ struct PlayerCard: View {
                 // lower.
                 QueuePanel(playback: playback)
                     .padding(.horizontal, sideMargin)
-                    .padding(
-                        .top,
-                        topInset + Self.grabberTopGap + Self.grabberHeight
-                            + Self.queuePanelHeaderGap
-                    )
+                    .padding(.top, panelTop)
                     // Bounded to where `NowPlayingContent` starts, not to
                     // the artwork's own frame the overlay would otherwise
                     // propose.
@@ -1575,6 +1575,40 @@ struct PlayerCard: View {
                 y: collapsedCentre.y + (openCentre.y - collapsedCentre.y) * progress
             ),
             shapeProgress: progress * (1 - queueFactor)
+        )
+    }
+
+    /// The panel's own top offset from the safe area — exactly what
+    /// `QueuePanel`'s `.padding(.top,)` in `artworkView`'s overlay applies,
+    /// `queuePanelHeaderGap` folded in.
+    ///
+    /// Read by `queueThumbCentre` below **and** by that `.padding(.top,)`
+    /// call site (via `artworkView`'s own `panelTop` local, assigned from
+    /// this), so the two name the same offset instead of each restating
+    /// `topInset + grabberTopGap + grabberHeight + queuePanelHeaderGap`.
+    /// Two independently-typed copies of that sum is exactly how the
+    /// artwork used to land 12pt above the header it was flying to: the
+    /// fold-in lived in the panel's own padding and not in the point the
+    /// artwork animated toward, and nothing made the two agree once they
+    /// diverged. `sideMargin`, two lines into `artworkView`, exists for the
+    /// identical reason on the horizontal axis — "a literal in both places
+    /// is two numbers that must agree and nothing to notice when they
+    /// stop." The same mistake was live on the vertical axis at the same
+    /// time.
+    static func queuePanelTop(topInset: CGFloat) -> CGFloat {
+        topInset + Self.grabberTopGap + Self.grabberHeight + Self.queuePanelHeaderGap
+    }
+
+    /// Where the artwork animates to when the queue opens: the header
+    /// slot's centre, in this card's own coordinate space.
+    ///
+    /// `QueuePanel.header` sits at the very top of the panel's own
+    /// `VStack` with no further offset, so its centre is `queuePanelTop`
+    /// plus half the header artwork — nothing else.
+    static func queueThumbCentre(topInset: CGFloat) -> CGPoint {
+        CGPoint(
+            x: Self.queuePanelSideMargin + QueuePanel.headerArtwork / 2,
+            y: Self.queuePanelTop(topInset: topInset) + QueuePanel.headerArtwork / 2
         )
     }
 
