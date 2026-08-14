@@ -61,7 +61,7 @@ xctrace export --input <n>.trace --xpath '...table[@schema="potential-hangs"]'
 
 ## Đợt 1 — Chi phí lặp lại ngoài player
 
-Rẻ nhất, và nhắm vào hai mục Nghiêm trọng. Không đụng tới một dòng nào trong `PlayerCard`.
+Rẻ nhất, và nhắm vào hai mục Nghiêm trọng. Không đụng tới `PlayerCard` — trừ việc 1.4, vốn chỉ đích danh `PlayerCard.swift:743`.
 
 - [ ] **1.1 — `AccountView` thôi gom nhóm trong `body`**
 

@@ -85,11 +85,20 @@ final class LibraryStore {
     /// the queue, which is why the plain case looks fine and the "delete the song
     /// that is playing" case is the one that crashes.
     ///
-    /// The five screens used to be safe from this for free: each held its own
-    /// `@Query`, and `Query` is a `DynamicProperty` whose `update()` runs
-    /// *before* the body of the view holding it, so a body could never read a
-    /// pre-delete array. Moving the query out is what lost that, and this is
-    /// what buys it back.
+    /// **Three** of the five screens used to be safe from this for free — Bài
+    /// hát, Tài khoản and Tìm kiếm. Each held its own `@Query`, and `Query` is
+    /// a `DynamicProperty` whose `update()` runs *before* the body of the view
+    /// holding it, so a body could never read a pre-delete array. Moving the
+    /// query out is what lost that for those three, and this is what buys it
+    /// back for them.
+    ///
+    /// Album and Nghệ sĩ never had that safety, and the difference matters to
+    /// whoever reads this next: it means handing a `@Query` back to a screen is
+    /// *not* a way to make it safe. Both already kept their own `@State` cache
+    /// of `[Track]`, refreshed by `onChange` — the same one-pass-late shape as
+    /// this array — from before the queries were merged into one. That is why
+    /// they are covered structurally instead, by holding no rows at all: see
+    /// `AlbumGroup`.
     ///
     /// Called from `LibraryService.delete` through `onTrackWillBeDeleted` —
     /// the same hook, with the same "before the delete, while the row is still
@@ -123,10 +132,14 @@ final class LibraryStore {
 /// that quietly stops updating. SwiftData already notices every one of those
 /// writes, so the trigger stays where it cannot be forgotten.
 ///
-/// What this does NOT report is a property edited in place: the array holds the
-/// same rows in the same order after a rename, so `onChange` does not fire.
-/// That is unchanged from before — `LibraryService.metadataRevision` is the
-/// signal for that case, and Album and Nghệ sĩ still listen to it.
+/// What this does NOT report is an edit to a property that is *not* in the
+/// `SortDescriptor` below: rename an album or an artist and the array holds the
+/// same rows in the same order, so `onChange` does not fire. A **title** edit
+/// is not in that set — the query sorts by title, so renaming a song can move
+/// its row and the array does change, which `LibraryStoreTests`
+/// `testReplaceNotifiesOnAReorderAlone` pins. That is unchanged from before —
+/// `LibraryService.metadataRevision` is the signal for the properties the sort
+/// cannot see, and Album and Nghệ sĩ still listen to it.
 struct LibraryQueryBridge: View {
     @Environment(LibraryStore.self) private var store
     @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)])
