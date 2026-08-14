@@ -5,10 +5,14 @@ struct SearchView: View {
     @Environment(PlaybackService.self) private var playback
     /// The local library, fetched once for the whole app — see `LibraryStore`.
     ///
-    /// Read only from the branch below that actually searches, so while the
-    /// query is empty — which is most of this screen's life, including every
-    /// moment it is not on screen and holding its last state — this screen has
-    /// no dependency on the library and is not rebuilt when it changes.
+    /// Read only from inside the `.task(id:)` below, after it has already
+    /// confirmed the query is non-empty — so while the query is empty, which
+    /// is most of this screen's life, including every moment it is not on
+    /// screen and holding its last state, this screen has no dependency on
+    /// the library and is not rebuilt when it changes. A `Task` body reading
+    /// an `@Observable` property does not register as a `body` dependency
+    /// the way a synchronous read would, so moving the read off the render
+    /// pass and into the task does not reopen that cost.
     @Environment(LibraryStore.self) private var store
 
     /// Read-only, and owned by `RootView`. The field that edits it lives in the
@@ -16,6 +20,15 @@ struct SearchView: View {
     /// in — so this screen cannot own it, and must not add a second search
     /// field of its own.
     let query: String
+
+    /// The outcome of filtering `store.tracks` against `query`, or `nil`
+    /// while that filter has not produced an answer yet — either the 150ms
+    /// debounce below is still waiting, or a keystroke cancelled the wait and
+    /// a fresh one just started. `nil` is a distinct state from "filtered and
+    /// found nothing": collapsing the two would show "Không tìm thấy kết quả"
+    /// for a query the app has not actually finished checking, which is
+    /// wrong for as long as the debounce is in flight.
+    @State private var results: [Track]?
 
     var body: some View {
         NavigationStack {
@@ -28,6 +41,46 @@ struct SearchView: View {
                 // screen does not fold the bar, but the bar is still on top of
                 // its results and its last row still has to clear it.
                 .clearsBottomBar()
+                // Restarts on every keystroke, because `id: query` changes on
+                // every keystroke — and `.task(id:)` cancels the in-flight
+                // task from the previous id before starting the new one. So
+                // typing ten characters in a row starts and cancels nine
+                // waits and lets exactly one run to completion: the one
+                // behind the character the user was still on 150ms later.
+                // `LibraryGrouping.search` itself never runs on that
+                // cancelled path.
+                .task(id: query) {
+                    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else {
+                        results = nil
+                        return
+                    }
+                    // Clear any answer left over from the previous query so
+                    // `content` falls into the "still working" branch below,
+                    // not the stale one, for the length of this wait.
+                    results = nil
+                    // `Task.sleep` throws `CancellationError` when this task
+                    // is cancelled — which happens the moment `query` changes
+                    // again, per the note on `.task(id:)` above. `.task(id:)`
+                    // requires a non-throwing closure, so that error cannot
+                    // propagate out on its own the way it would from a
+                    // throwing function; it has to be caught here. The catch
+                    // block deliberately does nothing but `return` — it does
+                    // NOT fall through to the filter below the way `try?`
+                    // would. That is what keeps the debounce cancellable: a
+                    // stale wait must never reach `LibraryGrouping.search`
+                    // and overwrite `results` with an answer to a query the
+                    // user already typed past.
+                    do {
+                        try await Task.sleep(for: .milliseconds(150))
+                    } catch {
+                        return
+                    }
+                    // `LibraryGrouping.search` owns matching — case- and
+                    // diacritic-insensitive — so this view never
+                    // re-implements it, and never runs it from `body`.
+                    results = LibraryGrouping.search(query, in: store.tracks)
+                }
         }
     }
 
@@ -39,10 +92,7 @@ struct SearchView: View {
                 systemImage: "magnifyingglass",
                 description: Text("Tìm theo tên bài hát, nghệ sĩ hoặc album.")
             )
-        } else {
-            // `LibraryGrouping.search` owns matching — case- and
-            // diacritic-insensitive — so this view never re-implements it.
-            let results = LibraryGrouping.search(query, in: store.tracks)
+        } else if let results {
             if results.isEmpty {
                 // Hand-written rather than `ContentUnavailableView.search(text:)`.
                 // That convenience draws its title and description from the
@@ -86,6 +136,15 @@ struct SearchView: View {
                 // back "for coverage" — see Finding 1 of the whole-plan
                 // review (2026-08-03).
             }
+        } else {
+            // Neither "type something" nor "no results" is true yet — the
+            // debounce above is still waiting, or the filter it kicked off
+            // has not returned. Up to 150ms plus one filter pass, on a
+            // library this size effectively the 150ms. A spinner says
+            // nothing false; "Không tìm thấy kết quả" here would, for
+            // however briefly.
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
