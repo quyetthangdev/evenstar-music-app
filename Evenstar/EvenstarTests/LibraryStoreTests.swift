@@ -144,54 +144,21 @@ final class LibraryStoreTests: XCTestCase {
 
     // MARK: - The crash window
 
-    /// Wires the delete hook the way `EvenstarApp` does, then deletes.
-    ///
-    /// What this pins: by the time `delete(_:)` returns, the store is already
-    /// clean — no later update pass, no `onChange`, has to run for it to be
-    /// honest. That is the property the five screens depend on, because in the
-    /// app `RootView` reads `playback.currentTrack` and so gets invalidated
-    /// mid-delete, dragging the tabs into a pass before the bridge's `onChange`.
-    ///
-    /// What this does NOT pin, despite being about the same bug: that `remove`
-    /// runs *before* `context.delete`. Moving the hook below the delete would
-    /// leave this test green, since it only looks at the end state. The ordering
-    /// itself is pinned by `LibraryServiceTests`
-    /// `testDeleteAnnouncesTheTrackWhileItIsStillLive`, which reads the row
-    /// count from inside the handler and requires it to still be 1 — hence the
-    /// name here says what it checks and no more.
-    func testDeleteThroughTheHookLeavesTheStoreCleanWhenItReturns() throws {
-        let library = try InMemoryLibrary.make()
-        let keep = InMemoryLibrary.makeTrack(title: "Giữ", relativePath: "Music/a.mp3")
-        let doomed = InMemoryLibrary.makeTrack(title: "Xoá", relativePath: "Music/b.mp3")
-        try library.insert(keep)
-        try library.insert(doomed)
-        let store = LibraryStore(tracks: [keep, doomed])
-        let doomedID = doomed.persistentModelID
-        library.onTrackWillBeDeleted = { playable in
-            if let track = playable as? Track { store.remove(track) }
-        }
-
-        try library.delete(doomed)
-
-        XCTAssertFalse(store.tracks.contains { $0.persistentModelID == doomedID })
-        // Reading a stored property off every surviving row is the part that
-        // would raise `NSObjectInaccessibleException` — and take the whole test
-        // process with it, since the exception is uncatchable — if the deleted
-        // row were still in this array. It is the same read `SongRow` does.
-        XCTAssertEqual(store.tracks.map(\.title), ["Giữ"])
-    }
-
-    // No test here for "a `DriveTrack` handed to the hook leaves this store
-    // alone", and its absence is deliberate.
+    // No delete-through-the-hook test here any more, and its absence is the
+    // point rather than a gap.
     //
-    // The version that existed rebuilt the closure from `EvenstarApp` inside the
-    // test and then exercised the copy — so deleting the `as? Track` cast from
-    // the real one, in the `onTrackWillBeDeleted` assignment in
-    // `EvenstarApp.init`, left this green. It also asserted something the type
-    // system already guarantees: `remove(_:)` takes a `Track`, so handing it a
-    // `DriveTrack` does not compile.
+    // The version that stood here rebuilt `EvenstarApp`'s closure inside the
+    // test body and then exercised the copy. A copy always agrees with itself:
+    // deleting `store.remove(track)` from the app's real wiring left it green,
+    // which is the opposite of what a test about a single point of failure is
+    // for. The same shape had already cost this suite one test, for the same
+    // reason — `as? Track` was likewise only checked against a copy.
     //
-    // The real closure is built inside `EvenstarApp.init` and is not reachable
-    // from a test, and the honest answer to that is no test rather than a copy
-    // that always agrees with itself.
+    // The closure now lives in `LibraryDeletionWiring.install`, a plain
+    // function a test can call, and `LibraryDeletionWiringTests` calls exactly
+    // it. Removing `store.remove(track)` turns
+    // `testInstalledHookTakesTheDeletedRowOutOfTheLibraryStore` red.
+    //
+    // What stays over there rather than here: everything about the hook. What
+    // stays here: `remove(_:)`'s own behaviour, above.
 }

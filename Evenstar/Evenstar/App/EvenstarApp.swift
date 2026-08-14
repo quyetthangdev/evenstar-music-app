@@ -67,32 +67,20 @@ struct EvenstarApp: App {
         // held only for as long as it stayed the single caller of
         // `library.delete(_:)`. See `LibraryService.onTrackWillBeDeleted`.
         //
-        // `[weak play]`, unlike the two below, and the difference is real rather
-        // than defensive: `PlaybackService` holds `LibraryService` (it reads and
-        // writes `PlaybackState` through it), so a strong capture here would
-        // close the loop — play → library → this closure → play. It holds no
-        // reference to either remote service, so those two need no such care.
+        // Three riders on one closure — the playing queue, the songs list, and
+        // Tìm kiếm's own filtered list — and each of them has to land on this
+        // hook rather than in a refresh afterwards, because each must run while
+        // the row is still readable. See `LibraryStore.remove(_:)` for the
+        // crash they close.
         //
-        // `store.remove` rides this same hook, and it has to be this hook rather
-        // than a refresh afterwards: it must land while the row is still
-        // readable. See `LibraryStore.remove(_:)` for the crash it closes.
-        // `search.remove` rides it for the same reason and against the same
-        // crash, over Tìm kiếm's own filtered list — the one array
-        // `store.remove` cannot reach. See `SearchResultsStore`.
-        // Both are captured strongly on purpose — neither holds a reference
-        // back to `libService`, so there is no loop to break here.
+        // The closure body lives in `LibraryDeletionWiring` rather than here,
+        // and only so a test can reach it: nothing built inside `App.init` is
+        // reachable from a unit test, so the coverage for a single point of
+        // failure this size was a copy of the closure rebuilt inside the test.
         let search = SearchResultsStore()
-        libService.onTrackWillBeDeleted = { [weak play] playable in
-            play?.handleTrackDeleted(playable)
-            // Always a `Track`: this hook belongs to `LibraryService.delete`,
-            // whose parameter is one. The two remote services fire their own
-            // hooks for their own tables, and no row of theirs is in either of
-            // these.
-            if let track = playable as? Track {
-                store.remove(track)
-                search.remove(track)
-            }
-        }
+        LibraryDeletionWiring.install(
+            on: libService, playback: play, store: store, search: search
+        )
         let driveLib = DriveLibraryService(library: libService)
         // The only wiring that keeps a deleted `DriveTrack` out of the playing
         // queue. Unlinking a folder, and a rescan that finds a file gone from

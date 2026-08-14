@@ -109,41 +109,17 @@ final class SearchResultsStoreTests: XCTestCase {
 
     // MARK: - The crash window
 
-    /// Wires the delete hook the way `EvenstarApp` does, then deletes.
-    ///
-    /// What this pins: by the time `delete(_:)` returns, the list is already
-    /// clean — no keystroke, no update pass, no `onChange` has to run for it to
-    /// be honest. That is the whole difference between this and a cleanup
-    /// driven from the view, which would arrive after the pass that kills the
-    /// row and only for a `SearchView` that SwiftUI happens to be updating.
-    ///
-    /// What this does NOT pin, exactly as in `LibraryStoreTests`: that `remove`
-    /// runs *before* `context.delete`. It only reads the end state. The
-    /// ordering itself is pinned by `LibraryServiceTests`
-    /// `testDeleteAnnouncesTheTrackWhileItIsStillLive`.
-    func testDeleteThroughTheHookLeavesTheResultsCleanWhenItReturns() throws {
-        let library = try InMemoryLibrary.make()
-        let keep = InMemoryLibrary.makeTrack(title: "Giữ", relativePath: "Music/a.mp3")
-        let doomed = InMemoryLibrary.makeTrack(title: "Xoá", relativePath: "Music/b.mp3")
-        try library.insert(keep)
-        try library.insert(doomed)
-        let store = SearchResultsStore()
-        store.record([keep, doomed], for: "xo")
-        let doomedID = doomed.persistentModelID
-        library.onTrackWillBeDeleted = { playable in
-            if let track = playable as? Track { store.remove(track) }
-        }
-
-        try library.delete(doomed)
-
-        XCTAssertFalse(store.results?.contains { $0.persistentModelID == doomedID } ?? false)
-        // Reading a stored property off every surviving row is the part that
-        // would raise `NSObjectInaccessibleException` — and take the whole test
-        // process with it, since the exception is uncatchable — if the deleted
-        // row were still in this list. It is the same read `SongRow` does for
-        // every row of the results list.
-        XCTAssertEqual(store.results?.map(\.title), ["Giữ"])
-    }
+    // No delete-through-the-hook test here any more, for the reason spelled out
+    // in `LibraryStoreTests`: the version that stood here assigned
+    // `library.onTrackWillBeDeleted` itself, so it exercised a copy of
+    // `EvenstarApp`'s closure rather than the closure, and deleting
+    // `search.remove(track)` from the app left it green.
+    //
+    // `LibraryDeletionWiringTests` calls the real
+    // `LibraryDeletionWiring.install` instead;
+    // `testInstalledHookTakesTheDeletedRowOutOfTheSearchResults` is the one
+    // that goes red for that deletion. `remove(_:)`'s own behaviour stays
+    // pinned above.
 
     // MARK: - Keeping or dropping the list on screen
 
