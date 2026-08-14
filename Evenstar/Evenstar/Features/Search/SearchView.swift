@@ -52,13 +52,26 @@ struct SearchView: View {
                 .task(id: query) {
                     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else {
+                        // The query was wiped, not just changed — this is
+                        // the one case that must NOT keep a stale list on
+                        // screen: `content` needs to fall back to the
+                        // "type something" prompt, not the last answer to a
+                        // question that no longer exists.
                         results = nil
                         return
                     }
-                    // Clear any answer left over from the previous query so
-                    // `content` falls into the "still working" branch below,
-                    // not the stale one, for the length of this wait.
-                    results = nil
+                    // Deliberately does NOT reset `results` to `nil` here.
+                    // The first search of a session has nothing to show yet,
+                    // so `content` falls into the "still working" placeholder
+                    // on its own — `results` is already `nil` at that point.
+                    // But every search after that already has a previous
+                    // answer on screen, and clearing it here would erase a
+                    // correct, still-relevant list for the length of every
+                    // wait whose keystrokes are more than 150ms apart — which
+                    // is most natural typing on a touch keyboard, not an edge
+                    // case. A list that is briefly one keystroke stale is a
+                    // smaller lie than a spinner replacing a right answer
+                    // several times over the course of one search.
                     // `Task.sleep` throws `CancellationError` when this task
                     // is cancelled — which happens the moment `query` changes
                     // again, per the note on `.task(id:)` above. `.task(id:)`
@@ -137,12 +150,14 @@ struct SearchView: View {
                 // review (2026-08-03).
             }
         } else {
-            // Neither "type something" nor "no results" is true yet — the
-            // debounce above is still waiting, or the filter it kicked off
-            // has not returned. Up to 150ms plus one filter pass, on a
-            // library this size effectively the 150ms. A spinner says
-            // nothing false; "Không tìm thấy kết quả" here would, for
-            // however briefly.
+            // Only reached on the first search of a session: `query` just
+            // became non-empty and the task above has not produced an
+            // answer yet, so there is no previous list to keep showing.
+            // Every search after the first keeps its predecessor's `results`
+            // on screen instead of landing here — see the task's comment on
+            // why. Neither "type something" nor "no results" is true in
+            // this gap, so a spinner is shown rather than either; a spinner
+            // says nothing false, "Không tìm thấy kết quả" here would.
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
