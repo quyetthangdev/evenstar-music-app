@@ -23,13 +23,30 @@ struct AccountView: View {
     /// no files.
     @State private var bytesOnDisk: Int64?
 
+    /// Counts only, not the grouped arrays `AlbumsView`/`ArtistsView` keep —
+    /// this screen never renders an album or artist, just their tally, so
+    /// there's no reason to hold the groups themselves in state.
+    ///
+    /// Recomputed in the same `.task(id: tracks.count)` below that already
+    /// drives `bytesOnDisk`, not in `body`: `LibraryGrouping.albums`/
+    /// `.artists` are each a `Dictionary(grouping:)` over the whole library
+    /// plus a localized sort, and `body` reruns on every `@Query` change —
+    /// one inserted track was paying for two full regroupings just to show
+    /// two integers. Keyed on `tracks.count` rather than `tracks` itself for
+    /// the same reason `bytesOnDisk` is: cheap, but blind to an edit that
+    /// changes an album or artist name without changing how many tracks
+    /// there are — these two numbers can be briefly stale after a rename,
+    /// same as the byte count already tolerates for the file set.
+    @State private var albumCount = 0
+    @State private var artistCount = 0
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Thư viện") {
                     row("Bài hát", value: "\(tracks.count)")
-                    row("Album", value: "\(LibraryGrouping.albums(from: tracks).count)")
-                    row("Nghệ sĩ", value: "\(LibraryGrouping.artists(from: tracks).count)")
+                    row("Album", value: "\(albumCount)")
+                    row("Nghệ sĩ", value: "\(artistCount)")
                     row("Dung lượng", value: storageText)
                 }
 
@@ -71,7 +88,15 @@ struct AccountView: View {
             // Keyed on the count so importing or deleting re-measures. It is a
             // cheap proxy: editing a track's tags does not change what is on
             // disk, and nothing else alters the file set.
+            //
+            // `albumCount`/`artistCount` ride along here rather than getting
+            // a `.task` of their own: they're synchronous and cheap next to
+            // the disk scan below, and sharing the one trigger keeps the
+            // "keyed on count, not content" tradeoff in a single place
+            // instead of explaining it twice.
             .task(id: tracks.count) {
+                albumCount = LibraryGrouping.albums(from: tracks).count
+                artistCount = LibraryGrouping.artists(from: tracks).count
                 bytesOnDisk = await Self.bytesOnDisk(for: filePaths)
             }
         }
