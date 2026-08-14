@@ -30,6 +30,8 @@ struct TransportButtonStyle: ButtonStyle {
     /// and equal for one that does not — see `transportToggle`.
     let stretchX: CGFloat
     let stretchY: CGFloat
+    /// Hình của vệt sáng khi chạm — xem `TapHalo.shape`.
+    var haloShape: AnyShape = AnyShape(Circle())
 
     /// The rebound.
     ///
@@ -99,7 +101,8 @@ struct TransportButtonStyle: ButtonStyle {
             direction: direction,
             translate: translate,
             stretchX: stretchX,
-            stretchY: stretchY
+            stretchY: stretchY,
+            haloShape: haloShape
         )
     }
 
@@ -122,6 +125,7 @@ struct TransportButtonStyle: ButtonStyle {
         let translate: CGFloat
         let stretchX: CGFloat
         let stretchY: CGFloat
+        let haloShape: AnyShape
 
         var body: some View {
             configuration.label
@@ -153,7 +157,7 @@ struct TransportButtonStyle: ButtonStyle {
                 // Keyed on touch-down, not on the completed tap: the halo is the
                 // acknowledgement, and an acknowledgement that waits for the
                 // finger to leave is not one.
-                .tapHalo(trigger: presses)
+                .tapHalo(trigger: presses, in: haloShape)
                 // Same counter as the halo, so the tap lands in the hand at the
                 // same moment it lands in the eye — which is now the moment of
                 // contact rather than the moment of release. `.sensoryFeedback`
@@ -212,6 +216,18 @@ extension ButtonStyle where Self == TransportButtonStyle {
     /// as its neighbours, so the three buttons answer a press in one language —
     /// only the part that describes travel is dropped, because this one does
     /// not travel.
+    /// Cho một viên thuốc: shuffle và repeat trong hàng đợi.
+    ///
+    /// Giống `transportToggle` về chuyển động, khác đúng một điểm: vệt sáng khi
+    /// chạm là **capsule**, không phải hình tròn. Vệt sáng là lời đáp cho cú
+    /// chạm, và một lời đáp có hình khác hẳn cái nút vừa bị chạm thì đọc ra
+    /// như đang đáp cho thứ khác.
+    static func transportPill(trigger: Int) -> Self {
+        var style = Self.transportToggle(trigger: trigger)
+        style.haloShape = AnyShape(Capsule())
+        return style
+    }
+
     static func transportToggle(trigger: Int) -> Self {
         TransportButtonStyle(
             trigger: trigger,

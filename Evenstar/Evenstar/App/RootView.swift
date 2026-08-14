@@ -90,6 +90,9 @@ struct RootView: View {
     /// on the way to the screen.
     private var isMinimisedActive: Bool { isMinimised && !isSearching }
 
+    /// Lớp làm nóng đã được vẽ xong chưa — xem chỗ dùng nó bên dưới.
+    @State private var hasWarmedPlayerChrome = false
+
     var body: some View {
         ZStack(alignment: .bottom) {
             // The one place the window's bottom inset is measured. Invisible,
@@ -268,6 +271,31 @@ struct RootView: View {
             // minimised inset must not apply while `isSearching` is
             // true, or the pill lands on top of the 48pt search field. See
             // `isMinimisedActive`'s doc comment.
+            // Trả trước hoá đơn vẽ-lần-đầu của chrome mở rộng.
+            //
+            // Đo trong bản thử: khung hình **đầu tiên** của cú bung *đầu tiên*
+            // tốn 56ms, những lần sau sạch. Chữ ký của chi phí một-lần — lần
+            // đầu chrome mở rộng được vẽ thật, máy phải rasterize glyph cho
+            // các cỡ chữ chưa dùng ở đâu khác, ký hiệu ở cỡ mới, và dựng các
+            // `Slider`. `NowPlayingContent` tuy luôn nằm trong cây view nhưng ở
+            // opacity 0 thì lớp của nó chưa từng được vẽ.
+            //
+            // Vẽ nó một lần lúc app vừa mở, **dưới** cả TabView đục nên không
+            // ai thấy, rồi bỏ. 56ms chìm vào cú khởi động thay vì rơi vào
+            // khung đầu của một animation.
+            //
+            // Trên màn hình chứ không `offset` ra ngoài: một lớp nằm ngoài
+            // khung nhìn có thể bị bỏ qua hoàn toàn, và thế thì chẳng làm nóng
+            // được gì. Opacity 0.02 để nó vẫn buộc phải vẽ.
+            if !hasWarmedPlayerChrome {
+                NowPlayingContent(playback: playback, showingQueue: .constant(false))
+                    .padding(.horizontal, 24)
+                    .opacity(0.02)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .zIndex(-1)
+            }
+
             PlayerCard(
                 playback: playback,
                 minimised: isMinimisedActive ? 1 : 0,
@@ -290,10 +318,26 @@ struct RootView: View {
                 // not, and the animation must key on what the card receives.
                 .animation(BottomBarStyle.morph, value: isMinimisedActive)
         }
-        // The user's appearance override and the expanded player's forced dark,
-        // resolved in one place because `preferredColorScheme` does not
-        // compose — see `PlayerChromeScheme`.
-        .playerChromeScheme(expansion, theme: theme)
+        // Chỉ lựa chọn giao diện của người dùng. **Player không còn ép cả cửa
+        // sổ sang tối nữa** — nó chỉ tô tối phần chrome của chính nó, xem
+        // `expandedContent` trong `PlayerCard`.
+        //
+        // Cú ép toàn cửa sổ hỏng theo hai cách. Thấy được: ở chế độ sáng, mở
+        // player làm **cả phần UI còn lại** đen theo, trong lúc morph và cả sau
+        // khi đã thu. Đo được: đổi `preferredColorScheme` ở gốc bắt mọi view
+        // trong cửa sổ tính lại màu và vẽ lại — hai khung hình đứng im, 66ms,
+        // rơi đúng khung đầu tiên của lò xo.
+        //
+        // `preferredColorScheme` là *preference*: nó đi ngược lên cửa sổ, nên
+        // không có cách nào giới hạn phạm vi. `\.colorScheme` trong environment
+        // thì đi xuôi xuống, và đó là thứ chrome của player cần.
+        .task {
+            // Xem lớp làm nóng trong `ZStack` bên trên. Nửa giây là quá đủ cho
+            // một lượt vẽ; giữ lâu hơn chỉ tốn công vô ích.
+            try? await Task.sleep(for: .milliseconds(500))
+            hasWarmedPlayerChrome = true
+        }
+        .preferredColorScheme(theme.colorScheme)
         // Covers every `Text` in the app, live and without a relaunch: a
         // `LocalizedStringKey` resolves against the environment's locale.
         //

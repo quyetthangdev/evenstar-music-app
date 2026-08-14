@@ -94,10 +94,126 @@ struct PlayerCard: View {
     /// more than half the artwork's height there is no stretch to point at.
     ///
     /// The cost is real and is the reason this is not simply maximised: every
-    /// point of fade is a point of cover that is no longer crisp. At 0.55 the
-    /// sharp region is 45% of the artwork's height — on an iPhone 12, 224pt of
-    /// the 498 it occupies.
-    private static let artworkFadeFraction: Double = 0.55
+    /// point of fade is a point of cover that is no longer crisp.
+    ///
+    /// **0.25, hạ từ 0.55.** Ở 0.55 hơn một nửa tấm bìa nằm trong vệt tan —
+    /// nhìn ra là bìa bị mờ chứ không phải bìa hoà vào nền, và người xem mất
+    /// hẳn nửa dưới của ảnh. Một phần tư đủ để không thấy mép mà vẫn giữ 75%
+    /// tấm bìa sắc nét.
+    ///
+    /// Chỗ vệt tan kết thúc giờ được `background` bám theo: dải màu phía dưới
+    /// giữ nguyên màu trội tới đúng điểm ấy rồi mới tối dần, nên chỗ nối không
+    /// có bậc màu nào. Hai con số này đi cùng nhau — đổi cái này phải xem cái
+    /// kia.
+    private static let artworkFadeFraction: Double = 0.25
+
+    /// Dải màu nền giữ nguyên màu trội tới đâu, tính theo chiều cao thẻ.
+    ///
+    /// Đúng chỗ bìa bắt đầu tan. Bìa tràn phủ cả chiều cao thẻ, nên điểm ấy là
+    /// `1 − artworkFadeFraction` — dẫn xuất chứ không phải số gõ tay, để đổi độ
+    /// dài vệt tan thì chỗ nối tự đi theo và không có hai con số phải nhớ giữ
+    /// đồng bộ.
+    private static var tintHoldLocation: Double {
+        1 - Self.artworkFadeFraction
+    }
+
+    /// Màu trội, kéo tối lại theo mức mở của hàng đợi.
+    ///
+    /// **Vì sao sửa nền chứ không sửa màu chữ.** Mở hàng đợi thì dải màu này
+    /// thôi làm nền cho tấm bìa và trở thành nền cho *chữ* — hai chục hàng chạy
+    /// suốt chiều cao thẻ. Mà nó là một dải: đỉnh là màu trội, đáy là
+    /// `systemGroupedBackground`. Với một tấm bìa sáng, dải ấy đi từ sáng xuống
+    /// gần đen, nên **không màu chữ nào đúng cho cả hai đầu** — chọn đen thì
+    /// chìm ở đáy, chọn trắng thì chìm ở đỉnh. Thứ sửa được là cái nền: kéo nó
+    /// về một trường tối đều, rồi chữ trắng đúng ở mọi chỗ.
+    ///
+    /// Kéo *trần* độ sáng chứ không nhân: một tấm bìa vốn đã tối thì không tối
+    /// thêm, nên phép này chỉ động tới đúng những tấm bìa gây ra vấn đề.
+    ///
+    /// Bão hoà giữ nguyên, có chủ đích — thứ nhận ra một tấm bìa là sắc màu của
+    /// nó, không phải độ sáng. Đây cũng là chỗ Apple Music dừng: hàng đợi của
+    /// họ nằm trên một bản tối của màu bìa, chữ trắng suốt, không lật sang chữ
+    /// đen cho album sáng.
+    ///
+    /// Đi theo `queueFactor` chứ không bật tắt: nó là cùng con số mà tấm bìa
+    /// đang co lại theo, nên nền tối dần *trong lúc* danh sách hiện ra thay vì
+    /// nhảy một bậc ở giữa chừng.
+    static func queueBackdrop(_ tint: Color, queueFactor: Double) -> Color {
+        guard queueFactor > 0, let hsb = Self.hsb(tint) else { return tint }
+        let ceiling = 1 - (1 - Self.queueBackdropBrightness) * queueFactor
+        return Color(UIColor(hue: hsb.hue,
+                             saturation: hsb.saturation,
+                             brightness: min(hsb.brightness, ceiling),
+                             alpha: hsb.alpha))
+    }
+
+    /// Cùng màu ấy, nhưng cho những mặt phẳng **đặt trên** nền: nền hàng lúc
+    /// nhấc, nền viên thuốc lúc tắt, ô placeholder của hàng không có bìa.
+    ///
+    /// Độ sáng đặt cứng chứ không kéo trần, và cao hơn `queueBackdropBrightness`
+    /// — đó là toàn bộ điểm của nó. Một lớp giấy đặt lên mặt bàn thì sáng hơn
+    /// mặt bàn; lấy đúng màu nền cho nó thì nó biến mất, và một cái bóng quanh
+    /// một mảng vô hình đọc ra như lỗi vẽ.
+    ///
+    /// Sắc màu và bão hoà giữ nguyên, nên nó vẫn là màu của tấm bìa chứ không
+    /// phải một mảng xám hệ thống dán lên.
+    static func queueSurface(_ tint: Color) -> Color {
+        guard let hsb = Self.hsb(tint) else { return tint }
+        return Color(UIColor(hue: hsb.hue,
+                             saturation: hsb.saturation,
+                             brightness: Self.queueSurfaceBrightness,
+                             alpha: hsb.alpha))
+    }
+
+    private static func hsb(_ colour: Color)
+        -> (hue: CGFloat, saturation: CGFloat, brightness: CGFloat, alpha: CGFloat)? {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(colour).getHue(&hue, saturation: &saturation,
+                                     brightness: &brightness, alpha: &alpha) else { return nil }
+        return (hue, saturation, brightness, alpha)
+    }
+
+    /// Trần độ sáng của nền khi hàng đợi mở hẳn.
+    ///
+    /// `ArtworkStore.enrich` cho màu trội lên tới 0.88 — đủ sáng để chữ trắng
+    /// biến mất. 0.34 là mức mà một mảng màu vẫn đọc ra được là *màu ấy* chứ
+    /// không thành xám đen, mà chữ trắng trên nó vẫn thừa tương phản.
+    private static let queueBackdropBrightness: CGFloat = 0.34
+
+    /// Đủ trên `queueBackdropBrightness` để thấy là một lớp riêng, đủ dưới mức
+    /// làm chữ trắng khó đọc.
+    private static let queueSurfaceBrightness: CGFloat = 0.50
+
+    /// Các chặng của dải màu nền.
+    ///
+    /// **Không `.blur` ở đây, và đó là một bài học.** Bản trước làm mềm các mối
+    /// nối bằng `.blur(radius: 12)`. Một phép làm mờ lấy mẫu ra ngoài khung của
+    /// chính nó, nên ở sát mép thẻ nó pha dần về trong suốt và để lớp bên dưới
+    /// lộ ra — một viền sáng chạy quanh mép, thấy rõ ngay khi mở hàng đợi. Các
+    /// chặng dưới đây đã đủ mềm mà không cần nó.
+    /// `base` là màu ở đáy dải, truyền vào chứ không gõ cứng
+    /// `Color(.systemGroupedBackground)` như trước.
+    ///
+    /// Vì cái đáy ấy cũng phải tối đi khi hàng đợi mở, và với lý do y hệt cái
+    /// đỉnh — xem `queueBackdrop`. Ở chế độ sáng, `systemGroupedBackground` gần
+    /// trắng: kéo tối màu trội ở đỉnh mà để nguyên đáy thì dải chạy từ tối
+    /// xuống *sáng*, và nửa dưới danh sách lại chìm đúng như cũ, chỉ đổi đầu.
+    private static func tintStops(tint: Color, base: Color, hold: Double,
+                                  fullBleed: Bool) -> [Gradient.Stop] {
+        guard fullBleed else {
+            return [
+                .init(color: tint, location: 0),
+                .init(color: base, location: 1)
+            ]
+        }
+        let clamped = min(max(hold, 0), 0.95)
+        return [
+            .init(color: tint, location: 0),
+            .init(color: tint, location: clamped),
+            .init(color: tint.opacity(0.55), location: (clamped + 1) / 2),
+            .init(color: base, location: 1)
+        ]
+    }
 
     /// The dissolve's alpha ramp, eased rather than linear.
     ///
@@ -123,6 +239,10 @@ struct PlayerCard: View {
     private static func dissolveStops(progress: Double) -> [Gradient.Stop] {
         let span = Self.artworkFadeFraction * progress
         let start = 1 - span
+        // Bảy điểm được chọn khi vệt tan dài 55% chiều cao bìa; ở 25% cùng
+        // số điểm ấy nằm dày hơn, nên mỗi đoạn ngắn hơn và mỗi mối nối phẳng
+        // hơn. Giữ nguyên: thứ phải nhỏ là độ gãy tại mối nối, và thu ngắn
+        // nhịp chỉ làm nó nhỏ thêm.
         let steps = 6
         return (0...steps).map { step in
             let t = Double(step) / Double(steps)
@@ -133,6 +253,7 @@ struct PlayerCard: View {
             )
         }
     }
+
 
     /// Where the frosted layer in `background` stops being rendered at all.
     ///
@@ -153,6 +274,34 @@ struct PlayerCard: View {
     /// has clamped `progress` to 0 is still in flight and must keep the large
     /// region, which is precisely the case that broke.
     @State private var isDragging = false
+
+    /// Ba khối trong `QueuePanel` hiện ra tới đâu: 0 chưa có gì, 1 đã tới nơi.
+    ///
+    /// **Một giá trị riêng, không phải một phép ánh xạ trên `queueFactor`.**
+    /// Apple cho ba khối ấy chạy ở đuôi cú morph — quãng 0.92 → 1.0 của lò xo —
+    /// và đó đúng là chỗ SwiftUI cắt lò xo đi. Xem `BottomBarStyle.queueContentIn`.
+    @State private var queueContentReveal: Double = 0
+
+    /// Ba khối ấy đã **về chỗ** tới đâu: 0 còn ở dưới, 1 đã tới nơi.
+    ///
+    /// Tách khỏi `queueContentReveal` vì Apple cho hai thứ hai độ dài khác
+    /// nhau — xem `BottomBarStyle.queueContentSlide`.
+    @State private var queueContentSlide: Double = 0
+
+    /// Khối chữ lớn bị giấu đi tới đâu: 0 đọc rõ, 1 mất hẳn.
+    ///
+    /// Cùng lý do với `queueContentReveal` — một cửa sổ trên `queueFactor` chạy
+    /// ngược khi đóng và đặt cú hiện lại của khối chữ vào đúng quãng panel đang
+    /// tan. Xem `BottomBarStyle.queueTitleOut`.
+    @State private var queueTitleHidden: Double = 0
+
+    /// Có một hàng trong hàng đợi đang được kéo.
+    ///
+    /// Cần vì hai cử chỉ dọc chồng lên nhau trên cùng một vùng: kéo một hàng
+    /// **xuống** cũng chính là vuốt thẻ xuống để đóng, và ngưỡng của cử chỉ
+    /// đóng chỉ là 2 điểm khi thẻ đang mở. Cả hai cùng nhận thì thẻ đóng lại
+    /// giữa lúc người dùng đang sắp bài. Xem `.gesture(drag(...))` bên dưới.
+    @State private var queueIsReordering = false
 
     /// Whether the artwork region is showing `QueuePanel` instead of the
     /// artwork.
@@ -410,31 +559,51 @@ struct PlayerCard: View {
     /// against.
     private static let contentInset: CGFloat = 40
 
-    /// How tall the expanded artwork is, as a fraction of the card.
+    /// Lề hai bên của bìa vuông khi mở hết.
     ///
-    /// **Taller than it is wide, which means the cover is cropped left and
-    /// right.** That is a deliberate trade, chosen over the alternative:
-    /// a square full-bleed cover can only ever reach the card's *width* down the
-    /// screen — 46% on an iPhone 12 — and everything below that is background.
-    /// Reaching further down the screen requires a taller frame, and
-    /// `scaledToFill` pays for extra height by cropping width. At 0.59 a square
-    /// cover keeps 78% of its width.
+    /// **Bìa mở rộng giờ là một khối vuông ở giữa, không còn tràn màn hình.**
+    /// Bản trước cao 59% chiều cao thẻ và rộng bằng cả thẻ, nên `scaledToFill`
+    /// cắt mất ~22% bề ngang — và quan trọng hơn, tỉ lệ khung đổi suốt cú morph
+    /// nên bức ảnh vừa lớn lên vừa tự zoom bên trong khung của nó. Mắt đọc ra
+    /// là bị kéo giãn, không phải đang lớn lên.
     ///
-    /// Not pushed further: at the 0.67 that would put the background in the
-    /// bottom third exactly, the cover keeps only 69% — enough to cut a face or
-    /// the artist's name off both sides of a typical sleeve.
-    private static let artworkHeightFraction: CGFloat = 0.59
+    /// Vuông thì cú morph là một phép phóng to đều từ đầu tới cuối: thumbnail
+    /// 36pt trượt lên giữa màn hình, nở ra thành khối vuông, bo góc tăng dần.
+    /// Không có gì bị cắt, không có chuyển động thứ hai chồng lên.
+    private static let expandedArtworkInset: CGFloat = 24
 
-    /// The artwork's height. Its width is always the card's full width.
+    /// Khoảng hở trên và dưới khối vuông: dưới grabber, và trên khối điều khiển.
+    private static let expandedArtworkTopGap: CGFloat = 24
+    private static let expandedArtworkBottomGap: CGFloat = 24
+
+    /// Bo góc của bìa khi mở hết. Thumbnail dùng 12% bề rộng của chính nó
+    /// (36 → ~4.3), nên bán kính **tăng dần** suốt cú mở.
+    private static let expandedArtworkCorner: CGFloat = 18
+
+
+    // `artworkHeightFraction` và `artworkHeight(fullSize:)` từng ở đây, hồi bìa
+    // tràn chỉ cao 59% thẻ. Bìa tràn giờ phủ cả chiều cao và `artworkFadeFraction`
+    // là thứ duy nhất quyết định nhìn thấy bao nhiêu, nên cả hai không còn ai
+    // gọi. Lịch sử ở git.
+
+
+    /// Cạnh của khối vuông khi mở hết.
     ///
-    /// Clamped so that something of the card is always left below it. The
-    /// fraction alone is safe in portrait but not in landscape, where the card
-    /// is short and 59% of it can be less than the dissolve needs to work with.
-    private static func artworkHeight(fullSize: CGSize) -> CGFloat {
-        min(
-            fullSize.height * Self.artworkHeightFraction,
-            max(fullSize.height - 120, 0)
-        )
+    /// Lấy cái nhỏ hơn giữa bề rộng còn lại sau lề, và chỗ trống thẳng đứng
+    /// giữa grabber với khối điều khiển. Chặn theo chiều cao là bắt buộc:
+    /// ngang máy, hoặc trên một màn hình thấp, bề rộng trừ lề vẫn còn lớn hơn
+    /// khoảng trống dọc — và một khối vuông cao hơn chỗ chứa nó sẽ đè lên
+    /// scrubber.
+    private static func artworkSide(fullSize: CGSize, topInset: CGFloat) -> CGFloat {
+        let vertical = Self.contentOffset(fullSize: fullSize)
+            - Self.artworkTop(topInset: topInset)
+            - Self.expandedArtworkBottomGap
+        return max(min(fullSize.width - Self.expandedArtworkInset * 2, vertical), 0)
+    }
+
+    /// Mép trên của khối vuông, đo từ đỉnh thẻ: dưới safe area và grabber.
+    private static func artworkTop(topInset: CGFloat) -> CGFloat {
+        topInset + Self.grabberTopGap + Self.grabberHeight + Self.expandedArtworkTopGap
     }
 
     /// Where `NowPlayingContent` starts, measured from the card's top.
@@ -468,7 +637,17 @@ struct PlayerCard: View {
     /// queue was open. This constant is the boundary that keeps this change
     /// from reopening that defect — close to the scrubber is the
     /// requirement, touching it is the regression.
-    private static let queueListReclaimedHeight: CGFloat = 81 + 24
+    private static let queueListReclaimedHeight: CGFloat = 81 + 24 - queueListScrubberGap
+
+    /// Khe giữa hàng cuối của danh sách và thanh tiến trình.
+    ///
+    /// Trừ vào phần chiều cao mà danh sách được đòi thêm, không cộng vào một
+    /// padding riêng: hai cách cho cùng một kết quả nhìn, nhưng cách này giữ
+    /// đúng bất biến mà hằng số trên đang canh — mép dưới của panel *tiến sát*
+    /// dải chạm 28pt của thanh tua và không bao giờ chạm vào. Một padding ở
+    /// dưới panel sẽ đẩy nội dung lên mà vẫn để nguyên vùng nhận chạm, tức là
+    /// làm cho khe *trông* có mà không thật có.
+    private static let queueListScrubberGap: CGFloat = 14
 
     /// What has to change for the card to reload its artwork.
     ///
@@ -674,6 +853,47 @@ struct PlayerCard: View {
             withAnimation(BottomBarStyle.queue) {
                 queueFactor = newValue ? 1 : 0
             }
+            // **Nối bằng `completion`, không bằng hai con số cộng lại.**
+            //
+            // Hai khối chữ không được phép cùng đọc được. Diễn đạt điều đó bằng
+            // `delay` là diễn đạt gián tiếp: nó đúng chỉ khi
+            // `delay₂ ≥ delay₁ + duration₁`, một bất đẳng thức không nằm ở đâu
+            // trong mã và vỡ ngay lần đầu ai đó chỉnh một trong ba số. Nó đã vỡ
+            // vài lần ở đây.
+            //
+            // `completion` nói thẳng thứ tự: cái sau bắt đầu khi cái trước
+            // **chạy xong**, kể cả phần `delay` của nó. Không còn phép trừ nào
+            // để sai, và mỗi animation tự do đổi độ dài mà thứ tự vẫn đứng.
+            //
+            // Chiều mở và chiều đóng là nghịch đảo của nhau, không phải cùng
+            // một cặp chạy ngược: mở thì chữ lớn nhường chỗ cho panel, đóng thì
+            // panel nhường chỗ cho chữ lớn.
+            if newValue {
+                withAnimation(BottomBarStyle.queueTitleOut) {
+                    queueTitleHidden = 1
+                } completion: {
+                    // Bấm đóng lại trước khi cú tan xong thì closure này vẫn
+                    // nổ. Hỏi lại ý định hiện tại thay vì tin vào ý định lúc
+                    // đăng ký.
+                    guard showingQueue else { return }
+                    withAnimation(BottomBarStyle.queueContentIn) {
+                        queueContentReveal = 1
+                    }
+                    withAnimation(BottomBarStyle.queueContentSlide) {
+                        queueContentSlide = 1
+                    }
+                }
+            } else {
+                withAnimation(BottomBarStyle.queueContentOut) {
+                    queueContentReveal = 0
+                    queueContentSlide = 0
+                } completion: {
+                    guard !showingQueue else { return }
+                    withAnimation(BottomBarStyle.queueTitleIn) {
+                        queueTitleHidden = 0
+                    }
+                }
+            }
         }
         // Picking a track from a list opens the full player.
         //
@@ -755,7 +975,7 @@ struct PlayerCard: View {
         // morph, and `loadArtwork` computes its decode target by calling
         // `artworkHeight(fullSize:)` from its own geometry — the two must
         // agree or the decoded image no longer matches what is drawn.
-        let artworkHeight = Self.artworkHeight(fullSize: fullSize)
+        let artworkSide = Self.artworkSide(fullSize: fullSize, topInset: insets.top)
         // Distinct from `travel` above: that one sizes the frame so it
         // still reaches exactly `fullHeight` at progress 1. This one is
         // only the pixel-to-progress divisor for the gesture below. The
@@ -835,9 +1055,13 @@ struct PlayerCard: View {
             // above `contentOffset`, where the content stack begins, so the
             // two do not overlap and nothing needs to be painted over
             // anything.
-            artworkView(size: cardSize, artworkHeight: artworkHeight, topInset: insets.top)
+            artworkView(size: cardSize, artworkSide: artworkSide, topInset: insets.top)
             miniChrome(width: cardWidth)
-            expandedContent(size: cardSize)
+            // Tối chỉ trong phạm vi này. `\.colorScheme` là environment nên nó
+            // đi **xuống**, khác `preferredColorScheme` vốn đi ngược lên cửa sổ
+            // và kéo theo cả app — xem ghi chú ở `RootView`.
+            expandedContent(size: cardSize, topInset: insets.top)
+                .environment(\.colorScheme, .dark)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
@@ -962,7 +1186,13 @@ struct PlayerCard: View {
                 trailingInset: isDragging || progress > 0 ? 0 : collapsedTrailingMargin
             )
         )
-        .gesture(drag(travel: dragTravel, threshold: Self.dragThreshold(progress: progress)))
+        // `.subviews` chứ không phải tắt hẳn: cử chỉ của chính thẻ ngừng nhận,
+        // nhưng mọi thứ bên trong — kể cả hai recogniser của danh sách hàng đợi
+        // — vẫn chạy. Tắt hẳn sẽ giết luôn cú kéo đang diễn ra.
+        .gesture(
+            drag(travel: dragTravel, threshold: Self.dragThreshold(progress: progress)),
+            including: queueIsReordering ? .subviews : .all
+        )
         .onTapGesture { if progress < 0.5 { expand() } }
         // At progress 0 this holds the card's bottom `collapsedBottomOffset`
         // above the **physical** bottom edge, so the pill floats clear of the
@@ -1076,7 +1306,33 @@ struct PlayerCard: View {
             // instead: seven smoothstepped stops, so there is no corner in the
             // gradient for the eye to find.
             LinearGradient(
-                colors: [tintColour, Color(.systemGroupedBackground)],
+                // **Bám theo vệt tan của bìa, không phải trải đều cả thẻ.**
+                //
+                // Dải này giữ nguyên màu trội cho tới hết chỗ tấm bìa tan —
+                // `1 − artworkFadeFraction` tính từ đỉnh thẻ — nên ở chỗ nối, màu dưới bìa đúng bằng màu của
+                // chính bìa và không có bậc nào để mắt bắt. Từ đó mới tối dần
+                // xuống đáy.
+                //
+                // Trước đây nó nội suy thẳng từ đỉnh xuống đáy, nên ngay dưới
+                // tấm bìa màu đã nhạt đi đáng kể và chỗ nối lộ ra thành một
+                // đường ngang.
+                stops: Self.tintStops(
+                    tint: Self.queueBackdrop(tintColour, queueFactor: queueFactor),
+                    base: Self.queueBackdrop(hasArtwork ? Color(.systemGroupedBackground)
+                                                        : Self.artworklessBase,
+                                             queueFactor: queueFactor),
+                    // Chỗ giữ màu chỉ có nghĩa khi tấm bìa tràn đang nằm trên
+                    // nó. Mở hàng đợi thì bìa co về ô 44pt trong header, dải
+                    // này thành nền chính — và giữ nguyên màu trội tới 75% chỗ
+                    // ấy biến cả màn thành một mảng nâu, chữ trong danh sách
+                    // chìm hẳn. `queueFactor` kéo chỗ giữ về 0 để nó trở lại
+                    // một dốc màu bình thường.
+                    hold: Self.tintHoldLocation * (1 - queueFactor),
+                    // Không bìa thì không có gì để hoà vào: `tintColour` lúc
+                    // đó là màu nền hệ thống, và giữ nó rồi lại tối dần chỉ
+                    // tạo ra một dải xám vô nghĩa.
+                    fullBleed: hasArtwork
+                ),
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -1086,7 +1342,8 @@ struct PlayerCard: View {
             //
             // Needed now that the background is the cover rather than a colour
             // this view chose: a pale cover would otherwise put white text — the
-            // card forces dark styling, see `PlayerChromeScheme` — on a pale
+            // card's own chrome is forced dark (`expandedContent` đặt
+            // `\.colorScheme`) — on a pale
             // field. The first build anchored this at `.center`, which measured
             // wrong: the title sits *above* the card's midpoint, so it got no
             // darkening at all and sat white on bright green.
@@ -1125,8 +1382,38 @@ struct PlayerCard: View {
     /// Only reached when there is no cover at all; with one, the background is
     /// the blurred cover itself and no averaged colour is involved.
     private var tintColour: Color {
-        tint ?? Color(.systemGroupedBackground)
+        tint ?? Self.artworklessTint
     }
+
+    /// Nền cho bài **không có bìa**, và nó là một màu cố định chứ không phải
+    /// `systemGroupedBackground`.
+    ///
+    /// Chrome của thẻ mở bị ép `\.colorScheme = .dark` — chữ trắng, glyph
+    /// trắng. `systemGroupedBackground` thì phân giải theo chế độ của *hệ
+    /// thống*: ở chế độ sáng nó gần trắng, nên cả màn hình thành chữ trắng trên
+    /// nền trắng. Đó là thứ nhìn thấy trong ảnh chụp gửi tới trước đó, và là
+    /// khác biệt lớn nhất so với Apple Music — player không-bìa của họ là một
+    /// mảng xám tối đều, ở cả hai chế độ.
+    ///
+    /// Hai màu chứ không một: đỉnh sáng hơn đáy một chút, nên dải nền vẫn có
+    /// chiều sâu thay vì là một mảng phẳng.
+    private static let artworklessTint = Color(white: 0.26)
+
+    /// Ô placeholder của tấm bìa: cùng sắc màu với nền, sáng hơn một bậc.
+    ///
+    /// Một bậc nhỏ hơn `queueSurface` (0.38 so với 0.50): đây là một mảng lớn
+    /// chiếm gần cả bề ngang thẻ, không phải một tấm giấy nhỏ đặt lên. Cùng
+    /// một độ chênh, mảng càng lớn càng kêu.
+    static func placeholderTile(_ tint: Color) -> Color {
+        guard let hsb = Self.hsb(tint) else { return tint }
+        return Color(UIColor(hue: hsb.hue,
+                             saturation: hsb.saturation,
+                             brightness: Self.placeholderTileBrightness,
+                             alpha: 1))
+    }
+
+    private static let placeholderTileBrightness: CGFloat = 0.38
+    private static let artworklessBase = Color(white: 0.13)
 
     /// Between the safe area and the grabber capsule's own top edge.
     ///
@@ -1205,8 +1492,55 @@ struct PlayerCard: View {
             .allowsHitTesting(progress < 0.1)
     }
 
-    private func expandedContent(size: CGSize) -> some View {
-        NowPlayingContent(playback: playback, showingQueue: $showingQueue)
+    /// Tên bài và nghệ sĩ bám theo **mép dưới tấm bìa** trên đường bìa co về
+    /// header, rồi tan đi ở đoạn cuối.
+    ///
+    /// Mép dưới, không phải tâm: ở trạng thái nghỉ khối chữ nằm ngay dưới tấm
+    /// bìa, nên bám mép dưới giữ đúng khoảng cách người ta đang nhìn thấy. Bám
+    /// tâm thì chữ tụt lại phía sau một nửa chiều cao bìa và cặp đôi ấy rời ra
+    /// giữa chừng.
+    ///
+    /// Hiệu số của hai lần gọi cùng một hàm hình học, khác nhau đúng một tham
+    /// số — nên nó không thể lệch khỏi đường bay của tấm bìa dù đường ấy có đổi.
+    private func queueTitleTravel(size: CGSize, topInset: CGFloat) -> CGFloat {
+        guard queueFactor > 0 else { return 0 }
+        func bottom(_ factor: Double) -> CGFloat {
+            let geometry = Self.artworkGeometry(
+                progress: progress,
+                queueFactor: factor,
+                cardSize: size,
+                fullBleed: hasArtwork,
+                artworkSide: Self.artworkSide(fullSize: size, topInset: topInset),
+                artworkTop: Self.artworkTop(topInset: topInset),
+                queueThumbCentre: Self.queueThumbCentre(topInset: topInset),
+                queueThumbSide: QueuePanel.headerArtwork
+            )
+            return geometry.centre.y + geometry.height / 2
+        }
+        // **Chỉ đi một phần quãng đường ấy.**
+        //
+        // Đo ở Apple Music: khối chữ lớn của họ chạy 488 → 275 trong bốn khung,
+        // tức 57% quãng đường, trong khi tấm bìa đã đi 76%. Chữ **đi chậm hơn**
+        // tấm bìa, không bám cứng vào nó.
+        //
+        // Và đó không phải chi tiết trang trí. Bám cứng thì tới lúc tan, khối
+        // chữ đã lên gần sát chỗ chữ header sắp hiện — hai bóng chữ mờ ở cùng
+        // một chỗ, đọc ra là lệch pha ngay cả khi trên trục thời gian chúng
+        // không lấn nhau. Đi chậm hơn thì nó tan khi còn ở giữa màn hình, và
+        // chỗ ấy trống.
+        return (bottom(queueFactor) - bottom(0)) * Self.queueTitleTravelShare
+    }
+
+    /// Xem `queueTitleTravel`.
+    private static let queueTitleTravelShare: CGFloat = 0.7
+
+    private func expandedContent(size: CGSize, topInset: CGFloat) -> some View {
+        NowPlayingContent(
+            playback: playback,
+            showingQueue: $showingQueue,
+            titleTravel: queueTitleTravel(size: size, topInset: topInset),
+            titleOpacity: 1 - queueTitleHidden
+        )
             .padding(.horizontal, 24)
             .frame(width: size.width)
             // Measured from the card's bottom, not from the artwork — see
@@ -1231,7 +1565,7 @@ struct PlayerCard: View {
     ///   Used only to pad `QueuePanel` below; the artwork itself reads
     ///   neither this parameter nor any safe-area term, so its own framing
     ///   is untouched by queue mode.
-    private func artworkView(size: CGSize, artworkHeight: CGFloat, topInset: CGFloat) -> some View {
+    private func artworkView(size: CGSize, artworkSide: CGFloat, topInset: CGFloat) -> some View {
         // The queue panel's own horizontal inset, named because two things
         // depend on it: the panel's `.padding(.horizontal,)` below, and the
         // header slot's centre computed here. A literal in both places is two
@@ -1270,7 +1604,9 @@ struct PlayerCard: View {
             // It also makes the queue transition read the way it was asked to.
             // The whole screen shrinks into the header slot, because the whole
             // screen is now this one view.
-            artworkHeight: size.height,
+            fullBleed: hasArtwork,
+            artworkSide: artworkSide,
+            artworkTop: Self.artworkTop(topInset: topInset),
             // The header slot, derived from constants rather than measured: a
             // measurement would depend on a layout pass that has not run on
             // the first frame of the transition.
@@ -1291,7 +1627,25 @@ struct PlayerCard: View {
             // never tears down the layer underneath. The fill is what the cover
             // covers and what the glyph sits on; only the layer above it
             // changes, which is a content change rather than a structural one.
-            Rectangle().fill(Color(.tertiarySystemFill))
+            //
+            // **Một màu phẳng, đục hẳn.**
+            //
+            // Trước đây là `tertiarySystemFill` trộn dần sang màu mặt phẳng
+            // theo `queueFactor`. Cái trộn ấy tồn tại để cứu đúng một tình
+            // huống: hàng đợi đóng, bài không bìa, hệ thống ở chế độ sáng —
+            // lúc ấy nền là `systemGroupedBackground` gần trắng nên màu hệ
+            // thống mới đúng.
+            //
+            // Tình huống ấy không còn: nền của bài không bìa giờ là
+            // `artworklessTint`, tối ở cả hai chế độ. Nên không còn gì để trộn
+            // giữa, và một mảng `tertiarySystemFill` bán trong suốt ở đây chỉ
+            // còn là một lớp đục mờ cho thấy nền phía sau — đọc ra là bẩn, chứ
+            // không ra là một tấm bìa vắng mặt.
+            //
+            // Bám sắc màu của bài, không phải một màu xám gõ tay: với bài có
+            // bìa đang giải mã, lớp này là thứ nhìn thấy trong khoảnh khắc
+            // trước khi ảnh tới, và một mảng xám ở đó nhấp nháy sai màu.
+            Rectangle().fill(Self.placeholderTile(tintColour))
 
             if source == .image, let shown {
                 Image(uiImage: shown)
@@ -1308,7 +1662,12 @@ struct PlayerCard: View {
                 // ArtworkThumbnail's placeholder (size * 0.5). See F6.
                 Image(systemName: "music.note")
                     .font(.system(size: Self.placeholderGlyphBase * 0.5))
-                    .foregroundStyle(.secondary)
+                    // Trắng 0.62, không phải `.secondary`. Nốt nhạc nằm trên
+                    // một mảng có độ sáng đã biết (`placeholderTileBrightness`),
+                    // nên độ tương phản là thứ tính được chứ không phải thứ để
+                    // môi trường quyết — và `.secondary` ở chế độ sáng cho một
+                    // nốt xám đậm trên mảng ấy, gần như không thấy.
+                    .foregroundStyle(.white.opacity(0.62))
                     .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
             }
         }
@@ -1347,7 +1706,13 @@ struct PlayerCard: View {
                         endPoint: .bottom
                     )
                 )
-                .opacity(geometry.shapeProgress)
+                // Cùng lý do cú tan ở mép dưới đã được gác bằng `hasArtwork`:
+                // đây là cách xử lý cho một **bức ảnh** cỡ màn hình, không cho
+                // một mảng màu phẳng. Trên khối vuông placeholder nó chỉ là một
+                // dải sương chạy dọc — một gradient trên thứ đáng ra không có
+                // gradient nào, và là thứ duy nhất còn sót lại làm ô bìa mặc
+                // định trông không phẳng.
+                .opacity(hasArtwork ? geometry.shapeProgress : 0)
                 .allowsHitTesting(false)
         }
         // Dissolves the artwork's bottom edge into the background colour
@@ -1381,12 +1746,21 @@ struct PlayerCard: View {
         // Every stop collapses to location 1 at progress 0, making the whole
         // mask opaque white — so the collapsed pill's thumbnail is untouched,
         // with no view inserted or removed mid-morph to pop.
+        // Cú tan chỉ thuộc về đường tràn màn hình: nó tồn tại để hoà mép dưới
+        // vào nền. Khối vuông có mép rõ, không có gì để hoà, và một cú tan
+        // trên nó chỉ làm bìa trông như bị mờ.
         .mask(
-            LinearGradient(
-                stops: Self.dissolveStops(progress: geometry.shapeProgress),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            Group {
+                if hasArtwork {
+                    LinearGradient(
+                        stops: Self.dissolveStops(progress: geometry.shapeProgress),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                } else {
+                    Color.white
+                }
+            }
         )
         // Interpolates to a square corner as it opens: the expanded artwork is
         // full-bleed, and a rounded corner floating against the screen's own
@@ -1397,7 +1771,18 @@ struct PlayerCard: View {
         // open this is 0 even at full expansion, so the artwork stays rounded
         // like the 44pt thumbnail it has become instead of squaring off like
         // a full-bleed cover.
-        .clipShape(RoundedRectangle(cornerRadius: width * 0.12 * (1 - geometry.shapeProgress)))
+        // Tràn màn hình thì góc phải về 0 — một góc bo lơ lửng cạnh góc bo của
+        // chính màn hình đọc ra như lỗi. Khối vuông thì ngược lại: bán kính
+        // **tăng** theo cú mở, đúng như một tấm bìa lớn dần.
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: hasArtwork
+                    ? width * 0.12 * (1 - geometry.shapeProgress)
+                    : width * 0.12
+                        + (Self.expandedArtworkCorner - width * 0.12) * geometry.shapeProgress,
+                style: .continuous
+            )
+        )
         // Constant, for the same reason the card's own shadow is constant —
         // see the note at `.floatingBarShadow()` above. This was
         // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
@@ -1457,7 +1842,21 @@ struct PlayerCard: View {
         // `contentOffset` and top-aligned here ends exactly where that
         // stack begins, with nothing between them to fight over.
         .overlay(alignment: .top) {
-            if showingQueue {
+            // **Gắn theo `queueFactor`, không theo `showingQueue`.**
+            //
+            // `showingQueue` là ý định, `queueFactor` là vị trí. Gắn theo ý
+            // định thì panel bị gỡ khỏi cây ngay khung sau cú chạm đóng, trong
+            // khi chính nó còn đang phải chạy nốt cú trượt xuống — và khi bấm
+            // đóng rồi mở lại thật nhanh, nó được gắn lại ở giữa hành trình
+            // với `factor` đang ở đâu đó quãng giữa. Ba khối bên trong đọc
+            // `factor` qua các cửa sổ `smoothstep`, nên chúng hiện ra ngay ở
+            // 70–80% và cú trượt biến mất, đúng triệu chứng: bìa với chữ vẫn
+            // bay vì chúng không nằm sau cái `if` này.
+            //
+            // Theo vị trí thì panel sống đúng bằng thời gian nó còn nhìn thấy
+            // được, và mọi cú bấm liên tiếp chỉ đổi đích của một lò xo đang
+            // chạy — không có lần gắn lại nào để mất trạng thái.
+            if showingQueue || queueFactor > 0 {
                 // The artwork above is deliberately flush with the card's
                 // top edge — full-bleed art under the status bar is the
                 // design (see `expandedCentre`'s comment). `QueuePanel`'s
@@ -1468,7 +1867,28 @@ struct PlayerCard: View {
                 // artwork's own frame and `.position(centre)` above are
                 // untouched by queue mode — only the panel's content starts
                 // lower.
-                QueuePanel(playback: playback, factor: queueFactor)
+                QueuePanel(
+                    playback: playback,
+                    factor: queueFactor,
+                    reveal: queueContentReveal,
+                    slide: queueContentSlide,
+                    // **Luôn có màu, kể cả khi bài không có bìa.**
+                    //
+                    // Trước đây chỗ này truyền `nil` cho bài không bìa, với lý
+                    // do "lúc ấy nền là màu hệ thống và màu hệ thống là đúng".
+                    // Lý do ấy hết đúng từ khi `queueBackdrop` kéo nền về một
+                    // trường tối cố định: `tertiarySystemFill` phân giải theo
+                    // chế độ sáng/tối của *hệ thống*, không theo cái nền thật
+                    // sự nằm dưới nó, nên ở chế độ sáng nó ra một mảng gần như
+                    // vô hình trên nền tối — đúng những viên thuốc mờ tịt trong
+                    // ảnh chụp.
+                    //
+                    // `queueSurface` của chính màu nền hệ thống cho một màu xám
+                    // trung tính sáng hơn trường một bậc, và bậc ấy là bậc đã
+                    // biết chứ không phải bậc mà môi trường quyết định hộ.
+                    tint: Self.queueSurface(tint ?? Color(.systemGroupedBackground)),
+                    isReordering: $queueIsReordering
+                )
                     .padding(.horizontal, sideMargin)
                     .padding(.top, panelTop)
                     // Bounded to where `NowPlayingContent` starts, not to
@@ -1558,6 +1978,24 @@ struct PlayerCard: View {
                     .allowsHitTesting(progress > 0.9)
             }
         }
+        // **Một chỗ đặt cho cả tấm bìa và panel, thay cho hai chỗ lồng bên
+        // trong.**
+        //
+        // Trước đây `\.colorScheme` được đặt ở hai nơi sâu hơn: một ở lớp phủ
+        // sương, một ở `QueuePanel`. Cả hai nằm trong thân view dựng lại **mỗi
+        // khung** suốt cú kéo, và mỗi lần dựng lại là một lượt đẩy environment
+        // xuống cây con — thứ SwiftUI phải phân giải lại thành `UITraitCollection`
+        // cho mọi view do UIKit dựng bên dưới.
+        //
+        // Đo được trong trace: `_UIHostingView.updateEnvironment`,
+        // `UITraitCollection.resolvedEnvironment`, `-[UIView
+        // _traitCollectionDidChangeInternal:]` và `PropertyList.subscript` là
+        // nhóm ký hiệu dày nhất trong 17 lần main thread bị chặn còn lại.
+        //
+        // Đặt ở đây thì cả tấm bìa lẫn panel cùng thừa hưởng một lượt đẩy, và
+        // nó nằm ngoài phần thân chạy lại theo từng khung. Không đổi gì về
+        // hình: hai cây con vốn đã tối, chỉ là trước đây mỗi cây tự nói.
+        .environment(\.colorScheme, .dark)
     }
 
     // MARK: - Gesture
@@ -1675,21 +2113,49 @@ struct PlayerCard: View {
         progress: Double,
         queueFactor: Double,
         cardSize: CGSize,
-        artworkHeight: CGFloat,
+        /// Bài có ảnh bìa thật hay không, và nó chọn hẳn một trong hai hình
+        /// dáng: tràn cả thẻ, hay khối vuông ở giữa.
+        fullBleed: Bool,
+        artworkSide: CGFloat,
+        artworkTop: CGFloat,
         queueThumbCentre: CGPoint,
         queueThumbSide: CGFloat
     ) -> ArtworkGeometry {
         // Where the artwork ends up once the card is fully open — full bleed,
         // or the header slot if the queue is showing.
-        let openWidth = cardSize.width + (queueThumbSide - cardSize.width) * queueFactor
-        let openHeight = artworkHeight + (queueThumbSide - artworkHeight) * queueFactor
+        // **Hai hình dáng, chọn theo bài đang phát.**
+        //
+        // Có ảnh bìa thật → tràn màn hình: bìa rộng bằng thẻ, cao 59%, mép dưới
+        // tan vào nền. Đó là dáng vẻ ảnh bìa xứng đáng có.
+        //
+        // Không có → khối vuông ở giữa: một glyph placeholder kéo tràn màn hình
+        // chỉ là một nốt nhạc khổng lồ. Vuông thì nó đọc như một tấm bìa vắng
+        // mặt, đúng bản chất.
+        //
+        // Vuông cũng là hình duy nhất morph mà không méo — cả ba đích đều
+        // vuông nên tỉ lệ khung không đổi. Đường tràn màn hình chấp nhận việc
+        // tỉ lệ đổi, và trả bằng cú tan ở mép dưới để không ai thấy mép.
+        // Tràn màn hình thì bìa phủ **cả chiều cao thẻ**, không phải một phần
+        // của nó. Vệt tan mới là thứ quyết định nhìn thấy bao nhiêu: ở
+        // `artworkFadeFraction` 0.25, ảnh sắc nét 75% trên và mềm dần trong 25%
+        // dưới. Cho bìa chỉ cao 59% rồi tan 25% của *phần đó* thì ảnh sắc nét
+        // chỉ còn 44% màn hình — hai cách hiểu khác hẳn nhau về cùng con số.
+        let openBase = fullBleed ? cardSize.width : artworkSide
+        let openTall = fullBleed ? cardSize.height : artworkSide
+        let openWidth = openBase + (queueThumbSide - openBase) * queueFactor
+        let openHeight = openTall + (queueThumbSide - openTall) * queueFactor
         // Flush with the card's top edge: the artwork's centre sits exactly
         // half its own height down, with no safe-area term. The status bar is
-        // drawn over it, in white — see `PlayerChromeScheme`, which forces the
+        // drawn over it, in white — the expanded chrome forces its own
         // whole window dark while the card is open. Two comments elsewhere in
         // `PlayerCard` (`artworkView` and the `QueuePanel` overlay) point back
         // here for that reasoning.
-        let expandedCentre = CGPoint(x: cardSize.width / 2, y: artworkHeight / 2)
+        // Tràn màn hình thì tì vào mép trên thẻ; khối vuông thì nằm dưới
+        // grabber, giữa khoảng trống phía trên khối điều khiển.
+        let expandedCentre = CGPoint(
+            x: cardSize.width / 2,
+            y: fullBleed ? openTall / 2 : artworkTop + artworkSide / 2
+        )
         let openCentre = CGPoint(
             x: expandedCentre.x + (queueThumbCentre.x - expandedCentre.x) * queueFactor,
             y: expandedCentre.y + (queueThumbCentre.y - expandedCentre.y) * queueFactor
@@ -1701,9 +2167,12 @@ struct PlayerCard: View {
             y: Self.collapsedHeight / 2
         )
 
+        let width = Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * progress
+        let height = Self.collapsedArtwork + (openHeight - Self.collapsedArtwork) * progress
+
         return ArtworkGeometry(
-            width: Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * progress,
-            height: Self.collapsedArtwork + (openHeight - Self.collapsedArtwork) * progress,
+            width: width,
+            height: height,
             centre: CGPoint(
                 x: collapsedCentre.x + (openCentre.x - collapsedCentre.x) * progress,
                 y: collapsedCentre.y + (openCentre.y - collapsedCentre.y) * progress
@@ -1755,7 +2224,10 @@ struct PlayerCard: View {
                 if !isDragging { isDragging = true }
                 // Written here rather than from an `onChange` on `progress` —
                 // see the note on `expansion`.
-                defer { expansion.progress = progress }
+                // `animation: nil` — trong lúc kéo, mỗi khung là một giá trị
+                // mới và một lò xo ở đây chỉ là một khoảng trễ giữa ngón tay
+                // và màn hình.
+                defer { expansion.set(progress: progress, animation: nil) }
                 // No rubber-band past either end: `progress` (settled +
                 // dragDelta, clamped) is rigid at 0 and 1. An earlier version
                 // of this method shaved the excess off `delta` here to fake
@@ -1785,19 +2257,22 @@ struct PlayerCard: View {
                     threshold: threshold
                 ) / travel
                 let target: Double = predicted > 0.5 ? 1 : 0
-                withAnimation(
-                    BottomBarStyle.settle(
-                        initialVelocity: Self.settleVelocity(
-                            verticalVelocity: value.velocity.height,
-                            travel: travel,
-                            from: progress,
-                            to: target
-                        )
+                // Đặt tên cho nó, vì cùng một đường cong phải tới hai nơi: thẻ
+                // tự animate bằng `@State` của mình, còn cú thu nhỏ nội dung
+                // nhận nó qua `expansion`. Hai bản khác nhau ở đây là hai vật
+                // rời nhau trên màn hình.
+                let curve = BottomBarStyle.settle(
+                    initialVelocity: Self.settleVelocity(
+                        verticalVelocity: value.velocity.height,
+                        travel: travel,
+                        from: progress,
+                        to: target
                     )
-                ) {
+                )
+                withAnimation(curve) {
                     settled = target
                     dragDelta = 0
-                    expansion.progress = target
+                    expansion.set(progress: target, animation: curve)
                 }
             }
     }
@@ -1806,7 +2281,7 @@ struct PlayerCard: View {
         withAnimation(BottomBarStyle.expand) {
             settled = 1
             dragDelta = 0
-            expansion.progress = 1
+            expansion.set(progress: 1, animation: BottomBarStyle.expand)
         }
     }
 
@@ -1814,7 +2289,7 @@ struct PlayerCard: View {
         withAnimation(BottomBarStyle.expand) {
             settled = 0
             dragDelta = 0
-            expansion.progress = 0
+            expansion.set(progress: 0, animation: BottomBarStyle.expand)
         }
     }
 
@@ -1834,12 +2309,14 @@ struct PlayerCard: View {
             width: safeAreaSize.width + insets.leading + insets.trailing,
             height: safeAreaSize.height + insets.top + insets.bottom
         )
-        let artworkHeight = Self.artworkHeight(fullSize: fullSize)
+        let artworkSide = Self.artworkSide(fullSize: fullSize, topInset: insets.top)
 
         let path = playback.currentTrack?.artworkRelativePath
         async let image = ArtworkStore.image(
             for: path,
-            maxPixel: max(fullSize.width, artworkHeight) * UIScreen.main.scale
+            // Cạnh khối vuông, không phải bề rộng thẻ: bìa không còn tràn
+            // ngang màn hình nên giải mã theo bề rộng thẻ là thừa pixel.
+            maxPixel: artworkSide * UIScreen.main.scale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         // Concurrently with the others, not after them: all read the same

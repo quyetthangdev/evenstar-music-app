@@ -17,71 +17,57 @@ import SwiftUI
 /// does not read it and so does not re-run, and the tab hierarchy is built once.
 @Observable
 final class PlayerExpansion {
-    var progress: Double = 0 {
-        didSet {
-            let wanted = progress > Self.darkChromeThreshold
-            // Compared before assigning. `@Observable` notifies on every write,
-            // equal or not, so an unguarded assignment here would invalidate
-            // whoever reads `prefersDarkChrome` on every frame of a drag —
-            // which is the exact cost `progress` was made a reference type to
-            // avoid, reintroduced one property along.
-            if wanted != prefersDarkChrome { prefersDarkChrome = wanted }
-        }
-    }
-
-    /// Whether the card covers enough of the screen that the whole window
-    /// should be styled dark.
+    /// Không còn `didSet`, và đó là kết luận của cả một buổi đo.
     ///
-    /// A separate stored flag rather than a computed `progress > 0.5`, and the
-    /// difference is not stylistic: a computed property would make its reader
-    /// observe `progress` itself, and `progress` changes every frame.
-    private(set) var prefersDarkChrome = false
-
-    /// 0.5, and not the point the card actually reaches the status bar (~0.92).
+    /// Ở đây từng có một cờ `prefersDarkChrome` lật ở 0.5, nuôi một
+    /// `preferredColorScheme` ở gốc để ép cả cửa sổ sang tối trong lúc player
+    /// mở. Nó hỏng theo hai cách:
     ///
-    /// Later is where the status bar wants it, but the card's own colours change
-    /// with the same switch, and at 0.92 the title and artist are at 83% opacity
-    /// — the text would visibly change colour just before the card settled. At
-    /// 0.5 `expandedContent`'s opacity is exactly 0, so nothing of the card's is
-    /// on screen to be seen changing. The cost is the reverse: for the back half
-    /// of the animation the white clock sits over the still-visible library. In
-    /// dark mode that is invisible; in light mode it is about two tenths of a
-    /// second, against a text colour change landing on a settled screen. The
-    /// brief one wins.
-    private static let darkChromeThreshold: Double = 0.5
-}
+    ///   - **Thấy được:** ở chế độ sáng, mở player làm cả phần UI còn lại đen
+    ///     theo — trong lúc morph và cả sau khi đã thu.
+    ///   - **Đo được:** đổi color scheme ở gốc bắt mọi view trong cửa sổ tính
+    ///     lại màu và vẽ lại. Quay màn hình 30fps trên máy thật rồi phân tích
+    ///     từng khung: hai khung ĐỨNG IM (66ms) rồi độ sáng trung bình toàn màn
+    ///     nhảy 21 → 197 trong một khung, đúng lúc ngón tay rời màn hình.
+    ///
+    /// Cách chữa không phải dời cú lật đi chỗ khác mà là **bỏ hẳn**: chrome mở
+    /// rộng tự tô tối bằng `\.colorScheme` trong environment, thứ đi xuôi
+    /// xuống và không chạm tới cửa sổ. Xem `expandedContent` trong `PlayerCard`.
+    var progress: Double = 0
 
-/// Forces the whole window dark while the player is open, and applies the
-/// user's own appearance choice the rest of the time.
-///
-/// **Both halves have to live in the same modifier, because
-/// `preferredColorScheme` does not compose.** The first attempt set the app's
-/// theme on `RootView` and the player's dark override inside `PlayerCard`,
-/// assuming the deeper view would win. It does not: with an override at the
-/// root, the expanded player rendered in light mode — black title and black
-/// transport glyphs over the artwork, with the darkening gradient behind them.
-/// Checked on screen, which is the only way that was ever going to be settled.
-///
-/// A `ViewModifier` rather than the modifier applied at the call site, for the
-/// same reason `RecedeBehindPlayer` is one: only this body re-runs when the flag
-/// flips, so `RootView` does not rebuild the `TabView` and its five tabs in the
-/// middle of the expand animation.
-private struct PlayerChromeScheme: ViewModifier {
-    let expansion: PlayerExpansion
-    let theme: AppTheme
+    /// Đường cong cho **lần đổi `progress` kế tiếp**. `nil` nghĩa là bám ngón
+    /// tay, không nội suy.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO KHÔNG DỰA VÀO `withAnimation` Ở CHỖ GÁN
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `PlayerCard` gán `progress` bên trong `withAnimation`, và với một
+    /// `@Observable` thì transaction ấy *thường* đi theo tới view đọc nó. Ở đây
+    /// nó không tới: view duy nhất đọc `progress` là `RecedeBehindPlayer`, và
+    /// nó bọc một `TabView` — thứ do UIKit dựng bên dưới.
+    ///
+    /// Đo trên máy thật, 30fps, một cú vuốt thu nhỏ: mép dưới nội dung đứng ở
+    /// y 797 suốt **chín khung** rồi nhảy xuống 828 trong một khung. Đúng 31
+    /// điểm, và `(1 − recedeScale) × chiều cao / 2 = 33.8`. Tức cú thu nhỏ giữ
+    /// nguyên mức đầy suốt cú đáp của thẻ rồi tắt phụt — trong khi chính cái
+    /// thẻ đã về hình viên thuốc từ trước đó.
+    ///
+    /// Trong lúc kéo thì không lộ, vì mỗi khung là một giá trị mới và không cần
+    /// nội suy gì cả. Chỉ đúng cú nội suy một-lần lúc thả là mất.
+    ///
+    /// Nên đường cong được nói ra ở đây, và `RecedeBehindPlayer` tự
+    /// `.animation(_:value:)` lấy — một đường đi không phụ thuộc transaction
+    /// nào băng qua ranh giới UIKit.
+    ///
+    /// `@ObservationIgnored`: đặt nó không được phép tự kích hoạt vẽ lại. Người
+    /// gán luôn đặt nó **trước** `progress`, nên khi thân view chạy lại vì
+    /// `progress` đổi thì giá trị ở đây đã đúng.
+    @ObservationIgnored var animation: Animation?
 
-    func body(content: Content) -> some View {
-        content.preferredColorScheme(
-            expansion.prefersDarkChrome ? .dark : theme.colorScheme
-        )
-    }
-}
-
-extension View {
-    /// See `PlayerChromeScheme`. Applied once, at the root — a second
-    /// `preferredColorScheme` anywhere inside will be ignored.
-    func playerChromeScheme(_ expansion: PlayerExpansion, theme: AppTheme) -> some View {
-        modifier(PlayerChromeScheme(expansion: expansion, theme: theme))
+    /// Đặt đường cong rồi đặt đích, đúng thứ tự ấy.
+    func set(progress newValue: Double, animation: Animation?) {
+        self.animation = animation
+        self.progress = newValue
     }
 }
 
@@ -99,9 +85,13 @@ private struct RecedeBehindPlayer: ViewModifier {
     let expansion: PlayerExpansion
 
     func body(content: Content) -> some View {
-        content.scaleEffect(
-            1 - (1 - BottomBarStyle.recedeScale) * expansion.progress
-        )
+        content
+            .scaleEffect(
+                1 - (1 - BottomBarStyle.recedeScale) * expansion.progress
+            )
+            // Đường cong tới từ `expansion`, không từ transaction bao ngoài —
+            // xem `PlayerExpansion.animation` về lý do và về con số đo được.
+            .animation(expansion.animation, value: expansion.progress)
     }
 }
 

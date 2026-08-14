@@ -3,15 +3,16 @@ import XCTest
 
 /// The artwork's geometry across three states, as one pure function.
 ///
-/// The two that already shipped — the collapsed pill and the full-bleed cover —
-/// matter more here than the new one. This change works by feeding an existing
+/// Bìa mở rộng giờ là **khối vuông ở giữa**, không còn tràn màn hình: cả ba
+/// đích đều vuông, nên cú morph là một phép phóng to đều. Đó là thứ các
+/// assertion dưới đây ghim. This change works by feeding an existing
 /// expression a different number, and the whole claim is that the number is
 /// unchanged at both ends. These assertions are what turn that claim into
 /// something that fails out loud if it stops being true.
 final class ArtworkGeometryTests: XCTestCase {
 
-    /// An iPhone 17 at full expansion. `artworkHeight` is the real formula's
-    /// output — `min(0.59 * 874, 874 - 120)`. `thumbCentre` is a *fixture*, not
+    /// An iPhone 17 at full expansion. `artworkSide` và `artworkTop` là fixture
+    /// đứng thay đầu ra của công thức thật. `thumbCentre` is a *fixture*, not
     /// a measurement: it stands for wherever the header slot happens to be, and
     /// every assertion below is written against the value passed in rather than
     /// against a number this test claims to know. That is deliberate — pinning
@@ -19,16 +20,21 @@ final class ArtworkGeometryTests: XCTestCase {
     /// panel's padding changed, for a reason that has nothing to do with what
     /// they check.
     private let cardSize = CGSize(width: 402, height: 874)
-    private let artworkHeight: CGFloat = 515.66
+    private let artworkSide: CGFloat = 354
+    private let artworkTop: CGFloat = 96
     private let thumbCentre = CGPoint(x: 46, y: 81)
     private let thumbSide: CGFloat = 44
 
-    private func geometry(progress: Double, queueFactor: Double) -> PlayerCard.ArtworkGeometry {
+
+    private func geometry(progress: Double, queueFactor: Double,
+                          fullBleed: Bool = false) -> PlayerCard.ArtworkGeometry {
         PlayerCard.artworkGeometry(
             progress: progress,
             queueFactor: queueFactor,
             cardSize: cardSize,
-            artworkHeight: artworkHeight,
+            fullBleed: fullBleed,
+            artworkSide: artworkSide,
+            artworkTop: artworkTop,
             queueThumbCentre: thumbCentre,
             queueThumbSide: thumbSide
         )
@@ -60,14 +66,64 @@ final class ArtworkGeometryTests: XCTestCase {
         XCTAssertEqual(g.shapeProgress, 0, accuracy: 0.001, "rounded, no dissolve")
     }
 
-    func testTheExpandedCoverIsFullBleedAndSquareCornered() {
+    func testTheExpandedCoverIsACentredSquare() {
         let g = geometry(progress: 1, queueFactor: 0)
 
-        XCTAssertEqual(g.width, cardSize.width, accuracy: 0.001)
-        XCTAssertEqual(g.height, artworkHeight, accuracy: 0.001)
+        XCTAssertEqual(g.width, artworkSide, accuracy: 0.001)
+        XCTAssertEqual(g.height, artworkSide, accuracy: 0.001, "vuông, không tràn")
         XCTAssertEqual(g.centre.x, cardSize.width / 2, accuracy: 0.001)
-        XCTAssertEqual(g.centre.y, artworkHeight / 2, accuracy: 0.001)
-        XCTAssertEqual(g.shapeProgress, 1, accuracy: 0.001, "square, dissolving")
+        XCTAssertEqual(g.centre.y, artworkTop + artworkSide / 2, accuracy: 0.001)
+        XCTAssertEqual(g.shapeProgress, 1, accuracy: 0.001)
+    }
+
+    // MARK: - The path between the two ends
+
+    /// **Vuông ở mọi điểm, và đó là toàn bộ bản sửa.**
+    ///
+    /// Bản trước nội suy bề rộng và chiều cao độc lập nhau, nên tỉ lệ khung
+    /// trượt từ 1:1 sang ~0.78:1 suốt hành trình. Với `scaledToFill`, đổi tỉ lệ
+    /// khung là đổi phần ảnh bị cắt — bức ảnh vừa lớn lên vừa tự zoom bên trong
+    /// khung của nó. Hai chuyển động chồng nhau, và mắt đọc ra là bị kéo giãn.
+    ///
+    /// Vuông suốt thì chỉ còn một chuyển động: phóng to đều.
+    func testTheCoverIsSquareAtEveryPointOfTheJourney() {
+        for progress in stride(from: 0.0, through: 1.0, by: 0.1) {
+            let g = geometry(progress: progress, queueFactor: 0)
+            XCTAssertEqual(g.height, g.width, accuracy: 0.001,
+                           "ở progress \(progress) bìa phải vuông")
+        }
+    }
+
+    /// Bài **có** ảnh bìa thì đi đường kia: tràn ngang thẻ, cao 59%, tì vào
+    /// mép trên. Hai chế độ, chọn theo `artworkRelativePath` của bài đang phát.
+    func testACoverBearingTrackGoesFullBleedInstead() {
+        let g = geometry(progress: 1, queueFactor: 0, fullBleed: true)
+
+        XCTAssertEqual(g.width, cardSize.width, accuracy: 0.001)
+        XCTAssertEqual(g.height, cardSize.height, accuracy: 0.001, "phủ cả chiều cao thẻ")
+        XCTAssertEqual(g.centre.y, cardSize.height / 2, accuracy: 0.001)
+    }
+
+    /// Hai chế độ chỉ khác nhau ở đầu **mở**. Viên thuốc thu gọn là 36pt vuông
+    /// ở cùng một chỗ, dù bài có bìa hay không — nếu không, đổi bài sẽ làm
+    /// thumbnail nhảy.
+    func testBothModesShareTheSameCollapsedThumbnail() {
+        let square = geometry(progress: 0, queueFactor: 0, fullBleed: false)
+        let bleed = geometry(progress: 0, queueFactor: 0, fullBleed: true)
+
+        XCTAssertEqual(square.width, bleed.width, accuracy: 0.001)
+        XCTAssertEqual(square.height, bleed.height, accuracy: 0.001)
+        XCTAssertEqual(square.centre.x, bleed.centre.x, accuracy: 0.001)
+        XCTAssertEqual(square.centre.y, bleed.centre.y, accuracy: 0.001)
+    }
+
+    /// Và vuông cả khi hàng đợi đang mở — ô trong header cũng là hình vuông.
+    func testTheCoverStaysSquareWhileTheQueueOpens() {
+        for factor in stride(from: 0.0, through: 1.0, by: 0.25) {
+            let g = geometry(progress: 1, queueFactor: factor)
+            XCTAssertEqual(g.height, g.width, accuracy: 0.001,
+                           "ở queueFactor \(factor) bìa phải vuông")
+        }
     }
 
     // MARK: - The new end

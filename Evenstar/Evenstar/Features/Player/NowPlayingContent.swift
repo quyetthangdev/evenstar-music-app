@@ -11,6 +11,17 @@ struct NowPlayingContent: View {
     /// changes lives there.
     @Binding var showingQueue: Bool
 
+    /// Khối tiêu đề dời lên bao nhiêu để bám theo mép dưới tấm bìa đang co về
+    /// header. Tính ở `PlayerCard.queueTitleTravel` — chỗ duy nhất biết đường
+    /// bay của tấm bìa.
+    var titleTravel: CGFloat = 0
+    /// Độ đục của khối tiêu đề, tan ở đoạn cuối hành trình ấy.
+    ///
+    /// Truyền vào chứ không suy ra từ `showingQueue`: một `Bool` chỉ cho hai
+    /// giá trị và cú tan phải xảy ra **muộn hơn** cú dời, không cùng lúc với
+    /// nó. Xem `PlayerCard.queueTitleFadeStart`.
+    var titleOpacity: Double = 1
+
     /// Counts taps on each transport control, exactly as `MiniPlayerChrome`
     /// does for Next and for the same
     /// reason — a `Bool` would fire once and then sit at `true`. Its own
@@ -22,6 +33,9 @@ struct NowPlayingContent: View {
     @State private var previousTaps = 0
     @State private var playPauseTaps = 0
     @State private var volumeTaps = 0
+    /// Ngón tay đang đè trên thanh âm lượng. Đọc ngược từ `MPVolumeView` vì
+    /// cú phồng được vẽ ở phía SwiftUI — xem chỗ dùng.
+    @State private var volumePressed = false
 
     /// The transport glyphs' square frame. `forward.fill` at `.title2` is
     /// 32.3pt wide and 20pt tall, so an unframed button would give the tap
@@ -64,8 +78,23 @@ struct NowPlayingContent: View {
             // `contentOffset`, and this block lives *below* `contentOffset` —
             // the panel could never have used the space. All the removal ever
             // did was move the controls.
+            // **Đi theo tấm bìa, rồi mới tan.**
+            //
+            // Trước đây chỉ là `opacity(showingQueue ? 0 : 1)`: khối chữ đứng
+            // yên và mờ đi tại chỗ, trong khi tấm bìa ngay trên nó bay lên
+            // header. Hai thứ vốn đọc thành một cặp bỗng làm hai việc khác
+            // nhau, và cặp ấy tan ra đúng lúc đáng ra nó phải di chuyển cùng
+            // nhau.
+            //
+            // `.offset` chứ không phải đổi bố cục: khối chữ giữ nguyên chỗ nó
+            // chiếm trong stack, nên thanh tua và khối điều khiển bên dưới
+            // không nhích một điểm nào suốt cú chuyển cảnh.
+            //
+            // `.clipped()` của vùng panel lo phần cắt: khối chữ đi lên cao thì
+            // bị xén ở mép trên vùng nội dung thay vì đè lên header.
             titleBlock
-                .opacity(showingQueue ? 0 : 1)
+                .offset(y: titleTravel)
+                .opacity(titleOpacity)
                 .allowsHitTesting(!showingQueue)
                 .accessibilityHidden(showingQueue)
             scrubber
@@ -372,20 +401,23 @@ struct NowPlayingContent: View {
                                            : AnyShapeStyle(.secondary)
                     )
                     .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)
-                    // Grows from its own centre rather than sliding or wiping:
-                    // the capsule belongs to the button, so it should look like
-                    // it came out of it.
+                    // Nền chỉ có khi hàng đợi đang mở, và **rất nhẹ**.
                     //
-                    // `.ultraThinMaterial` over the card's own frosted layer is
-                    // the risk the design names. If this reads as a flat grey
-                    // swatch rather than something the gradient shows through,
-                    // the answer is `.regularMaterial` or a solid tint at low
-                    // opacity — not more blur.
+                    // Bản đầu dùng `.ultraThinMaterial` đục hoàn toàn: nó đọc
+                    // ra như cái nút đang bị nhấn giữ, nên đã bỏ đi. Nhưng bỏ
+                    // hẳn thì mất luôn thứ Apple Music có ở đây — một mảng mờ
+                    // nói "chế độ này đang bật", cùng ngôn ngữ với hai viên
+                    // thuốc trong panel.
+                    //
+                    // Khác nhau ở độ đậm chứ không ở việc có hay không: 0.14
+                    // của `Color.primary` đủ để thấy là có nền, nhạt hơn hẳn
+                    // một viên thuốc đang bật, nên nó không tranh chỗ.
                     .background {
-                        Capsule()
-                            .fill(.ultraThinMaterial)
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.primary.opacity(0.14))
                             .opacity(showingQueue ? 1 : 0)
-                            .scaleEffect(showingQueue ? 1 : 0.6)
+                            .scaleEffect(showingQueue ? 1 : 0.7)
+                            .animation(BottomBarStyle.content, value: showingQueue)
                     }
                     .contentShape(Rectangle())
             }
@@ -414,7 +446,24 @@ struct NowPlayingContent: View {
         HStack(spacing: 10) {
             Image(systemName: "speaker.fill")
                 .frame(height: ScrubberBar.touchHeight)
-            SystemVolumeSlider(onTouchDown: { volumeTaps += 1 })
+            // **Cú phồng nằm ở đây, không ở trong `MPVolumeView`.**
+            //
+            // Bản trước vẽ lại ảnh track dày hơn khi chạm. Ảnh bitmap không nội
+            // suy được, nên nó nhảy một bậc — trong khi thanh tua ngay trên nó
+            // đổi chiều cao qua `.animation(BottomBarStyle.control)` và nở ra
+            // mượt. Hai thanh cùng dáng, cùng độ dày, khác hẳn nhau ở đúng cái
+            // khoảnh khắc ngón tay chạm vào.
+            //
+            // `scaleEffect(y:)` thì nội suy được, và tỉ lệ đúng bằng tỉ lệ hai
+            // chiều cao — nên kết quả trùng khít con số mà thanh tua đạt tới.
+            // Chỉ kéo theo trục dọc, nên vị trí và bề ngang không đổi.
+            SystemVolumeSlider(
+                onTouchDown: { volumeTaps += 1 },
+                onPressChanged: { volumePressed = $0 }
+            )
+            .scaleEffect(y: volumePressed
+                         ? ScrubberBar.activeHeight / ScrubberBar.restingHeight : 1)
+            .animation(BottomBarStyle.control, value: volumePressed)
             Image(systemName: "speaker.wave.3.fill")
                 .frame(height: ScrubberBar.touchHeight)
         }

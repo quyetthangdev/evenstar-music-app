@@ -21,6 +21,15 @@ struct SystemVolumeSlider: UIViewRepresentable {
     /// `UIImpactFeedbackGenerator` inside this representable would not.
     var onTouchDown: () -> Void = {}
 
+    /// Ngón tay đặt xuống hay nhấc lên.
+    ///
+    /// Cần vì **cú phồng được vẽ ở phía SwiftUI**, không ở đây — xem chỗ dùng
+    /// trong `NowPlayingContent`. Ảnh bitmap của `UISlider` không nội suy được,
+    /// nên vẽ lại nó dày hơn cho ra một cú nhảy một bậc, trong khi thanh tua
+    /// ngay trên nó nở ra mượt. Hai thanh cùng dáng mà khác nhau đúng ở khoảnh
+    /// khắc ngón tay chạm vào là chỗ dễ thấy nhất.
+    var onPressChanged: (Bool) -> Void = { _ in }
+
     /// `showsRouteButton` was deprecated by iOS 13 in favour of
     /// `AVRoutePickerView`, but it is still the only way to hide this
     /// button: `AVRoutePickerView` is a *separate control*, not a switch for
@@ -50,11 +59,13 @@ struct SystemVolumeSlider: UIViewRepresentable {
         view.setVolumeThumbImage(Self.invisibleThumb, for: .highlighted)
         view.tintColor = .label
         view.onTouchDown = onTouchDown
+        view.onPressChanged = onPressChanged
         return view
     }
 
     func updateUIView(_ uiView: MPVolumeView, context: Context) {
         (uiView as? TintedVolumeView)?.onTouchDown = onTouchDown
+        (uiView as? TintedVolumeView)?.onPressChanged = onPressChanged
     }
 
     /// Takes the intrinsic size out of the width decision entirely.
@@ -186,18 +197,15 @@ final class TintedVolumeView: MPVolumeView {
     /// The appearance the current track images were drawn for, so they are
     /// rebuilt when it changes and not on every layout pass.
     private var renderedStyle: UIUserInterfaceStyle?
-    /// Whether the images last drawn were the pressed (swelled) ones — kept
-    /// separately from `isPressed` so a press/release toggle also triggers a
-    /// rebuild even when the appearance has not changed.
-    private var renderedPressed = false
-    /// True while a finger is down on the slider — mirrors
-    /// `ScrubberBar.isDragging` and drives the same swell, from
-    /// `restingHeight` to `ScrubberBar.activeHeight`.
+    /// True while a finger is down on the slider. Chỉ để khử rung hai mép của
+    /// `onPressChanged`; cú phồng không còn vẽ ở đây.
     private var isPressed = false
     private var isObservingSliderTouches = false
 
     /// Fired once per touch-down — see its doc comment on `SystemVolumeSlider`.
     var onTouchDown: (() -> Void)?
+    /// Fired on both edges — xem `SystemVolumeSlider.onPressChanged`.
+    var onPressChanged: ((Bool) -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -215,17 +223,18 @@ final class TintedVolumeView: MPVolumeView {
         // first and had no visible effect on device — which the simulator
         // could not have shown either way, since `MPVolumeView` draws nothing
         // there. `UISlider`'s own setters do land.
-        if renderedStyle != traitCollection.userInterfaceStyle || renderedPressed != isPressed {
+        // Chỉ vẽ lại khi **màu** đổi. Chiều dày luôn là `restingHeight`; phần
+        // dày lên khi chạm do `scaleEffect` ở phía SwiftUI lo, vì một ảnh
+        // bitmap không nội suy được và cú đổi ảnh cho ra một bậc nhảy.
+        if renderedStyle != traitCollection.userInterfaceStyle {
             renderedStyle = traitCollection.userInterfaceStyle
-            renderedPressed = isPressed
             let filled = UIColor.label.resolvedColor(with: traitCollection)
-            let height = isPressed ? ScrubberBar.activeHeight : ScrubberBar.restingHeight
             slider.setMinimumTrackImage(
-                SystemVolumeSlider.trackImage(color: filled, height: height),
+                SystemVolumeSlider.trackImage(color: filled),
                 for: .normal
             )
             slider.setMaximumTrackImage(
-                SystemVolumeSlider.trackImage(color: filled.withAlphaComponent(0.25), height: height),
+                SystemVolumeSlider.trackImage(color: filled.withAlphaComponent(0.25)),
                 for: .normal
             )
         }
@@ -243,13 +252,13 @@ final class TintedVolumeView: MPVolumeView {
         guard !isPressed else { return }
         isPressed = true
         onTouchDown?()
-        setNeedsLayout()
+        onPressChanged?(true)
     }
 
     @objc private func handleTouchUp() {
         guard isPressed else { return }
         isPressed = false
-        setNeedsLayout()
+        onPressChanged?(false)
     }
 
     /// Searches the whole subtree, not just the direct children.

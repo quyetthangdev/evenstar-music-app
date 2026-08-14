@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The circular bloom under a transport button when it is pressed.
+/// The bloom under a transport button when it is pressed.
 ///
 /// Separate from `TransportButtonStyle`, its only caller, because the style has
 /// to apply it *outside* its own squash and stretch. Inside, the deformation
@@ -11,6 +11,14 @@ private struct TapHalo: ViewModifier {
     /// during the first retriggers instead of being swallowed.
     let trigger: Int
 
+    /// Hình của vệt sáng, và nó phải là hình của **chính cái nút**.
+    ///
+    /// Mặc định là hình tròn, đúng cho các nút transport vốn là glyph trong
+    /// khung vuông. Nhưng viên thuốc shuffle/repeat rộng gấp đôi chiều cao của
+    /// nó: một vệt tròn nở ra trong đó hoặc thò ra hai đầu, hoặc không chạm
+    /// tới hai đầu — cả hai đều đọc ra như vệt sáng thuộc về một nút khác.
+    let shape: AnyShape
+
     private struct Pulse {
         var opacity: Double = 0
         var scale: Double = 0.5
@@ -19,7 +27,7 @@ private struct TapHalo: ViewModifier {
     func body(content: Content) -> some View {
         content.keyframeAnimator(initialValue: Pulse(), trigger: trigger) { view, pulse in
             view.background {
-                Circle()
+                shape
                     .fill(Color.primary.opacity(0.12))
                     .scaleEffect(pulse.scale)
                     .opacity(pulse.opacity)
@@ -30,9 +38,9 @@ private struct TapHalo: ViewModifier {
                 LinearKeyframe(1, duration: 0.14)
                 LinearKeyframe(0, duration: 0.30)
             }
-            // Eased open, not sprung. A spring makes the circle overshoot its
-            // size and rebound, which on a plain disc reads as a wobble rather
-            // than as elasticity — there is no shape for the eye to read the
+            // Eased open, not sprung. A spring makes the shape overshoot its
+            // size and rebound, which on a plain fill reads as a wobble rather
+            // than as elasticity — there is no edge for the eye to read the
             // bounce against. It just grows and fades.
             KeyframeTrack(\.scale) {
                 CubicKeyframe(1.0, duration: 0.22)
@@ -43,8 +51,8 @@ private struct TapHalo: ViewModifier {
 }
 
 extension View {
-    /// Acknowledges a press with a bloom.
-    func tapHalo(trigger: Int) -> some View {
-        modifier(TapHalo(trigger: trigger))
+    /// Acknowledges a press with a bloom, in the shape of the control itself.
+    func tapHalo(trigger: Int, in shape: AnyShape = AnyShape(Circle())) -> some View {
+        modifier(TapHalo(trigger: trigger, shape: shape))
     }
 }

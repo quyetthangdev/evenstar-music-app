@@ -183,7 +183,107 @@ enum BottomBarStyle {
     /// harder to read. If a slow collapse-drag with the queue open ever looks
     /// like two objects moving separately rather than one thing folding away,
     /// the answer is to point this at `settle` and let both share it.
-    static let queue = Animation.spring(Spring(mass: 1, stiffness: 180, damping: 22))
+    /// Đo từ Apple Music, không phải chọn.
+    ///
+    /// Ảnh quay 30fps cú mở và cú đóng hàng đợi, lấy cạnh tấm bìa theo từng
+    /// khung rồi chuẩn hoá về 0…1: 0.14 ở 33ms, 0.40 ở 67ms, 0.61 ở 100ms,
+    /// 0.86 ở 167ms, 0.92 ở 200ms, đứng yên quanh 350ms. Dãy ấy khớp
+    /// `1 − (1 + ωt)·e^(−ωt)` với ω ≈ 20 rad/s trong hai phần trăm — tức một lò
+    /// xo **tắt dần tới hạn**, và `response = 2π/ω = 0.31`.
+    ///
+    /// Không vọt lố ở bất kỳ khung nào, cả hai chiều. Bản trước là
+    /// `Spring(stiffness: 180, damping: 22)`: ω 13.4 và hệ số tắt dần 0.82 —
+    /// chậm hơn một phần ba, và có nảy.
+    ///
+    /// `bounce: 0` chính là hệ số tắt dần 1.0; `duration` ở dạng khởi tạo này
+    /// là `response`, không phải thời gian chạy.
+    static let queue = Animation.spring(Spring(duration: 0.31, bounce: 0))
+
+    /// Ba khối trong `QueuePanel` — chữ header, hai viên thuốc, danh sách —
+    /// hiện ra và trượt lên theo **nhịp riêng**, không theo `queueFactor`.
+    ///
+    /// Đo từ Apple Music: cú hiện bắt đầu ở khung thứ 6 của cú morph (~190ms)
+    /// và xong ở khung thứ 11 (~360ms). Quy ra `queueFactor` thì đó là quãng
+    /// 0.92 → 1.0 — tức **cái đuôi** của lò xo.
+    ///
+    /// **0.17 giây, không phải 0.26.** Con số cũ tôi tự đặt; 0.17 là đo được —
+    /// năm khung. Chênh lệch ấy là cả một lỗi về pha: với 0.26 thì panel trượt
+    /// xong ở 0.41 giây, trong khi tấm bìa đã đứng yên từ khoảng 0.30
+    /// (`p = 0.99` ở `t = 0.28`). Panel về đích *sau khi* cú morph đã hết, và
+    /// hai sự kiện rời nhau đúng ở chỗ chúng phải liền.
+    ///
+    /// `delay(0.02)` chồng lên `completion` của `queueTitleOut`, vốn kết thúc ở
+    /// 0.17 — nên cú hiện chạy 0.19 → 0.36, khớp số đo. Ăn khớp về pha không có
+    /// nghĩa là dán sát: hai phần trăm giây ở đây là chỗ Apple để trống, và mắt
+    /// không đọc nó ra là trống vì tấm bìa vẫn đang đi (`p` 0.90 → 0.99).
+    ///
+    /// Và cái đuôi ấy là chỗ không diễn đạt được bằng một phép ánh xạ trên
+    /// `queueFactor`: SwiftUI cắt lò xo khi sai số đủ nhỏ, đúng vào giữa quãng
+    /// đó, nên thứ còn lại là một cú nảy ra chứ không phải một cú hiện dần.
+    /// Nới cửa sổ cho thấy được thì lại đi xa Apple. Một nhịp riêng có `delay`
+    /// nói đúng điều Apple làm, và nói được.
+    ///
+    /// `bounce: 0`: các bước đo được giảm dần đều — 15, 8, 4, 4, 1 điểm mỗi
+    /// khung — không có khung nào vượt qua đích. Đây không phải chỗ đàn hồi.
+    static let queueContentIn = Animation.easeOut(duration: 0.13)
+
+    /// Cùng ba khối ấy **trượt** về chỗ, và nó dài hơn cú hiện ở trên.
+    ///
+    /// Đây là chỗ tôi gộp sai suốt mấy vòng vừa rồi. Đo lượng mực của khối chữ
+    /// "There's no music in the queue" qua từng khung: 52% → 74% → 90% → 98%
+    /// trong bốn khung (~0.13s). Còn *vị trí* của chính khối ấy thì đi tiếp tới
+    /// khung thứ chín (~0.27s). Apple cho khối chữ **đọc được nhanh rồi mới
+    /// thong thả về chỗ**.
+    ///
+    /// Buộc hai thứ vào một giá trị thì khối chữ còn nửa trong suốt khi còn
+    /// cách đích khá xa — mắt thấy một vật vừa mờ vừa trôi, và đó là cái không
+    /// ăn khớp.
+    ///
+    /// `response = 0.20` khớp dãy tiến độ đo được (0, .373, .655, .791, .882,
+    /// .927, .964, .982, .991, 1) với sai số trung bình 2.8%.
+    static let queueContentSlide = Animation.spring(Spring(duration: 0.20, bounce: 0))
+
+    /// Chiều ngược lại **không trễ, và nhanh hơn**.
+    ///
+    /// Cũng đo được: đóng hàng đợi thì ba khối biến mất trong hai tới ba khung,
+    /// ngay từ đầu. Đối xứng ở đây là sai — thứ đang đi khỏi màn hình không có
+    /// lý do gì để chờ, và giữ nó lại là giữ một tấm bảng chắn trước tấm bìa
+    /// đang lớn dần.
+    static let queueContentOut = Animation.easeIn(duration: 0.10)
+
+    /// Khối chữ lớn của `NowPlayingContent` tan đi khi hàng đợi mở.
+    ///
+    /// Trễ 0.07s và dài 0.07s, đo bằng lượng mực của khối chữ qua từng khung:
+    /// 963 → 957 → 925 → 872 → 633 → 0. Tức nó đứng gần như nguyên vẹn hai
+    /// khung đầu, mất một phần ba ở khung thứ tư, và hết ở khung thứ năm.
+    ///
+    /// Mốc cũ 0.10 → 0.17 là ước lượng đọc bằng mắt trên một tấm ghép khung, và
+    /// nó muộn hơn thật một khung rưỡi.
+    ///
+    /// `easeOut` chứ không `easeIn`, và đó là chuyện của **mối nối**. `easeIn`
+    /// kết thúc ở vận tốc lớn nhất: chữ đứng gần như đủ sáng rồi tắt phụt. Cú
+    /// hiện tiếp sau là một lò xo, khởi động từ vận tốc 0. Nối một cái đang lao
+    /// vào một cái đang đứng yên là một chỗ gãy. `easeOut` về 0 với vận tốc
+    /// cũng gần 0, nên hai đầu khớp nhau về đạo hàm chứ không chỉ về thời điểm.
+    ///
+    /// **Viết thành thời gian chứ không phải cửa sổ trên `queueFactor`, và đó
+    /// là điều bắt buộc.** Một cửa sổ trên `factor` chạy ngược khi đóng, nên nó
+    /// đặt cú hiện lại của khối chữ vào quãng 0.032s – 0.102s — nằm gọn bên
+    /// trong quãng `queueContentOut` đang tan. Hai khối chữ lấn nhau, và không
+    /// có cặp số nào trên một trục duy nhất tách được chúng ở cả hai chiều.
+    static let queueTitleOut = Animation.easeIn(duration: 0.06).delay(0.04)
+
+    /// Chiều ngược lại, và nó **đợi `queueContentOut` xong hẳn**.
+    ///
+    /// `delay(0.13)` chồng lên `completion` của `queueContentOut` (kết thúc ở
+    /// 0.10), nên cú hiện chạy 0.23 → 0.33 — số đo của Apple ở chiều đóng.
+    ///
+    /// Khe ở đây rộng hơn hẳn chiều mở, và có lý do: lúc ấy tấm bìa đang lớn
+    /// dần từ `p` 0.10 xuống 0.05 theo cách đọc ngược — vẫn là phần *thấy rõ*
+    /// nhất của cú morph. Nhét khối chữ vào giữa đó là hai thứ tranh nhau. Thứ tự khi đóng vì thế là
+    /// nghịch đảo đúng của thứ tự khi mở: ba khối panel đi trước, khối chữ lớn
+    /// quay lại sau, không lúc nào cả hai cùng đọc được.
+    static let queueTitleIn = Animation.easeOut(duration: 0.10).delay(0.13)
 
     // MARK: - Surface
 

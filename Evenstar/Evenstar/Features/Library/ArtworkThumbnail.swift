@@ -3,6 +3,12 @@ import SwiftUI
 struct ArtworkThumbnail: View {
     let relativePath: String?
     let size: CGFloat
+    /// Màu nền cho ô placeholder, khi có một màu chủ đạo để bám vào.
+    ///
+    /// `nil` ở mọi màn hình thường: ở đó nền là màu hệ thống và một ô xám hệ
+    /// thống là đúng. Trên thẻ player thì nền là chính tấm bìa đang phát, và
+    /// một ô xám hệ thống nằm giữa đó đọc ra như một mảng vá.
+    let tint: Color?
 
     /// Seeded synchronously from `ArtworkStore`'s cache, so a row whose artwork
     /// is already decoded draws it on its **first** frame instead of showing
@@ -14,9 +20,10 @@ struct ArtworkThumbnail: View {
     /// scrolling into view flashed grey regardless of what was in memory.
     @State private var image: UIImage?
 
-    init(relativePath: String?, size: CGFloat) {
+    init(relativePath: String?, size: CGFloat, tint: Color? = nil) {
         self.relativePath = relativePath
         self.size = size
+        self.tint = tint
         _image = State(
             initialValue: ArtworkStore.cachedImage(
                 for: relativePath,
@@ -69,7 +76,16 @@ struct ArtworkThumbnail: View {
     private var placeholder: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.12)
-                .fill(Color(.tertiarySystemFill))
+                // Pha loãng, để ô placeholder đọc như một chỗ trống *thuộc về*
+                // nền này chứ không phải một khối màu tranh chỗ với tấm bìa
+                // thật bên cạnh — nhưng 0.6 chứ không phải 0.35.
+                //
+                // Con số cũ hợp với màu trội thô, vốn sáng sẵn. Người gọi duy
+                // nhất truyền `tint` là thẻ player, và nó giờ truyền xuống màu
+                // *mặt phẳng* đã kéo về 0.50 độ sáng — pha loãng thêm ba lần
+                // nữa là kéo ô này về đúng màu nền, tức là xoá nó.
+                .fill(tint.map { AnyShapeStyle($0.opacity(0.6)) }
+                      ?? AnyShapeStyle(Color(.tertiarySystemFill)))
             Image(systemName: "music.note")
                 .font(.system(size: size * 0.5))
                 .foregroundStyle(.secondary)
