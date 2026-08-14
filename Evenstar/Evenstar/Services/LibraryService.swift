@@ -25,6 +25,34 @@ final class LibraryService {
     let context: ModelContext
     private let fileManager: FileManager
 
+    /// Announced a track that is about to be deleted, so playback can drop it
+    /// from the queue while its row is still readable.
+    ///
+    /// The local twin of `DriveLibraryService.onTrackWillBeDeleted` and
+    /// `JamendoLibraryService.onTrackWillBeDeleted`, and it exists for exactly
+    /// the reason those two do: after `context.delete(_:)` and the save that
+    /// flushes it, reading any property off the row — `queue.map(\.id)` on the
+    /// next persist tick is enough — raises `NSObjectInaccessibleException`, an
+    /// Objective-C exception that is uncatchable in Swift and unhelped by
+    /// `try?`. It presents as intermittent because a row whose attributes are
+    /// still materialised answers quietly for a while.
+    ///
+    /// This was the one source without the hook. The rule lived in
+    /// `SongsView.deleteTrack` instead — one call site remembering to call
+    /// `playback.handleTrackDeleted` first, by hand, in the right order — so the
+    /// second caller of `delete(_:)` (a batch delete, a "remove all local
+    /// files", an import reconciling duplicates) would have crashed with no
+    /// compiler warning and no failing test.
+    ///
+    /// Fired **before** `context.delete(_:)` and before the enclosing `save()`,
+    /// which is the whole contract: the handler reads `track.id`, and after the
+    /// save there is no id left to read.
+    /// `@MainActor` on the closure type itself, not merely inherited from the
+    /// class: a stored closure's type is independent of its container's
+    /// isolation, so without the annotation the handler would be non-isolated
+    /// and could not call `PlaybackService`'s main-actor API.
+    var onTrackWillBeDeleted: (@MainActor (any Playable) -> Void)?
+
     init(context: ModelContext, fileManager: FileManager = .default) {
         self.context = context
         self.fileManager = fileManager
@@ -39,6 +67,11 @@ final class LibraryService {
     }
 
     func delete(_ track: Track) throws {
+        // First, while the row is still live: see `onTrackWillBeDeleted`. Above
+        // the filesystem work as well as the database work, because the file
+        // removal below is what makes a queue still holding this track
+        // unplayable even before the row dies.
+        onTrackWillBeDeleted?(track)
         // Filesystem cleanup failures are deliberately ignored. The user's intent is to remove
         // the track from the library database, which must always succeed. If files are already
         // missing or inaccessible, the track record is still cleared; polished error reporting
@@ -193,11 +226,38 @@ final class LibraryService {
         return try context.fetch(descriptor).first
     }
 
+    /// Whether the library already holds this track, by the import's own
+    /// definition of "the same one": title and artist case-insensitively equal,
+    /// and durations that round to the same second.
+    ///
+    /// **The fetch is narrowed to a duration window, and that window is what
+    /// makes bulk import usable.** `ImportService` calls this once per file, on
+    /// the main actor. It used to fetch `FetchDescriptor<Track>()` with no
+    /// predicate and no limit — every row in the library, fully materialised —
+    /// and then do the comparison in Swift. Importing N files into a library of
+    /// M tracks was therefore N×M row materialisations on the main thread: a
+    /// progress bar that stalls, gets worse with every file already in the
+    /// batch, and worse again every time the library grows.
+    ///
+    /// The window is `(rounded - 1, rounded + 1)` rather than the rounding rule
+    /// itself, because `#Predicate` has no `rounded()` to offer. It is a strict
+    /// superset of it — every `x` with `x.rounded() == rounded` lies in
+    /// `[rounded - 0.5, rounded + 0.5)` — so the Swift-side comparison below
+    /// still decides, unchanged, and the answer is identical to what a full
+    /// scan would have given. `LibraryServiceTests` pins both sides of that
+    /// edge (180.4 and 180.6 against 181).
+    ///
+    /// The title/artist half stays in Swift: `#Predicate` has no
+    /// case-insensitive comparison that SwiftData can translate, and duration
+    /// alone already cuts the candidate set to the handful of tracks that share
+    /// a length.
     func findExistingTrack(title: String, artist: String, duration: Double) throws -> Track? {
-        // SwiftData #Predicate has limited string + math support; do the work in Swift
-        // after fetching candidates with the same rounded duration.
         let rounded = duration.rounded()
-        let descriptor = FetchDescriptor<Track>()
+        let lower = rounded - 1
+        let upper = rounded + 1
+        let descriptor = FetchDescriptor<Track>(
+            predicate: #Predicate { $0.durationSeconds > lower && $0.durationSeconds < upper }
+        )
         let candidates = try context.fetch(descriptor)
         let titleLower = title.lowercased()
         let artistLower = artist.lowercased()

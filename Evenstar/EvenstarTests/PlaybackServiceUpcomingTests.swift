@@ -137,9 +137,19 @@ final class PlaybackServiceUpcomingTests: XCTestCase {
     }
 
     /// A reorder is a queue change like any other, so it has to reach the
-    /// store. `moveUpcoming` calls `persistImmediately()` for that reason;
-    /// without it the order would survive until the app was killed and no
-    /// longer.
+    /// store; without that the order would survive until the app was killed and
+    /// no longer.
+    ///
+    /// **`await Task.yield()` là phần load-bearing của test này.**
+    /// `moveUpcoming` hoãn lượt ghi sang vòng chạy main actor kế tiếp thay vì
+    /// ghi ngay: lượt ghi là `ModelContext.save()` đồng bộ, và ghi nó tại chỗ
+    /// đặt I/O đĩa vào đúng khung hình `List` đang chạy animation đưa hàng vừa
+    /// thả về chỗ mới. Cùng lý do mọi đường đi từ một cú chạm đều hoãn — xem
+    /// `deferPersist`.
+    ///
+    /// Nên phép kiểm không đổi, chỉ có thời điểm: nhường một vòng, rồi mới hỏi
+    /// cửa hàng. Bỏ dòng `yield` đi thì test này lại đỏ, và đó là điều đúng —
+    /// nó vẫn đang ghim "thứ tự phải tới được đĩa".
     func testAReorderSurvivesASaveAndRestore() async throws {
         let library = try InMemoryLibrary.make()
         let first = PlaybackService(
@@ -151,6 +161,7 @@ final class PlaybackServiceUpcomingTests: XCTestCase {
         first.play(all[0], in: all)
         first.moveUpcoming(from: IndexSet(integer: 0), to: 3)
         let reordered = first.queue.map(\.id)
+        await Task.yield()
 
         let second = PlaybackService(
             player: MockAudioPlayer(),

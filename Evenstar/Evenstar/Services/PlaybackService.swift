@@ -19,6 +19,14 @@ final class PlaybackService {
     private(set) var queue: [any Playable] = []
     private(set) var queueIndex: Int = 0
     private(set) var repeatMode: RepeatMode = .off
+
+    /// Hết hàng đợi thì nối thêm từ thư viện thay vì dừng.
+    ///
+    /// Tương đương Autoplay của Apple Music, và chỉ có nghĩa ở đúng một chỗ:
+    /// `handleFinish` khi `repeatMode == .off` và không còn bài kế. Không đụng
+    /// tới nút Next — bấm Next ở bài cuối vẫn là "hết rồi", vì đó là một câu
+    /// hỏi người dùng vừa đặt chứ không phải một lượt phát không ai trông.
+    private(set) var isAutoplay = false
     /// Whether everything after the playing track is in random order.
     ///
     /// Only the *tail* — see `toggleShuffle()`. Read by the pill in
@@ -100,6 +108,34 @@ final class PlaybackService {
     // MARK: - Internal state
     private var hasLoaded: Bool = false
     private var sessionActivated: Bool = false
+    /// Where interruption and route-change notifications are listened for.
+    ///
+    /// Injected so a test can post into a centre of its own. Posting an
+    /// `AVAudioSession` notification into `NotificationCenter.default` from a
+    /// test would be heard by every other live service in the process — and by
+    /// the real audio session's own observers.
+    private let notificationCentre: NotificationCenter
+    /// The observer tokens, held only so `deinit` can hand them back.
+    ///
+    /// `nonisolated(unsafe)` because `deinit` is not on the main actor and
+    /// cannot read a main-actor property. Safe by construction rather than by
+    /// assertion: it is written exactly once, from `init`, and read exactly
+    /// once, from `deinit` — two points that cannot overlap with each other or
+    /// with anything else.
+    ///
+    /// `@ObservationIgnored` is what makes that annotation mean anything.
+    /// Without it `@Observable` rewrites this into a computed property over
+    /// `_$observationRegistrar`, the annotation lands on the wrapper rather
+    /// than on any storage, and the compiler says so ("has no effect").
+    /// Nothing observes a list of observer tokens anyway.
+    @ObservationIgnored private nonisolated(unsafe) var sessionObservers: [NSObjectProtocol] = []
+    /// Whether the interruption currently in progress took playback away from
+    /// the user, as opposed to arriving while they already had it paused.
+    ///
+    /// `.ended` carries `.shouldResume` whenever the *session* may be taken
+    /// back, which is not the same question. Without this, a call that arrived
+    /// during a pause would end with the app starting to play on its own.
+    private var shouldResumeAfterInterruption: Bool = false
     private var positionTimer: Timer?
     private var playCountedForCurrent: Bool = false
     private var lastPersistAt: Date = .distantPast
@@ -179,11 +215,13 @@ final class PlaybackService {
     init(player: AudioPlayerProtocol,
          nowPlaying: NowPlayingPublisher,
          library: LibraryService,
+         notificationCentre: NotificationCenter = .default,
          persistInterval: TimeInterval = 5,
          shuffleTail: @escaping ([any Playable]) -> [any Playable] = { $0.shuffled() }) {
         self.player = player
         self.nowPlaying = nowPlaying
         self.library = library
+        self.notificationCentre = notificationCentre
         self.persistInterval = persistInterval
         self.shuffleTail = shuffleTail
         self.player.didFinishCallback = { [weak self] in
@@ -191,6 +229,13 @@ final class PlaybackService {
         }
         self.player.didFailCallback = { [weak self] error, url in
             Task { @MainActor in self?.handleFailure(error, url: url) }
+        }
+        observeAudioSession()
+    }
+
+    deinit {
+        for observer in sessionObservers {
+            notificationCentre.removeObserver(observer)
         }
     }
 
@@ -364,7 +409,17 @@ final class PlaybackService {
         guard (0...tail.count).contains(destination) else { return }
         tail.move(fromOffsets: source, toOffset: destination)
         queue.replaceSubrange(start..<queue.count, with: tail)
-        persistImmediately()
+        // **Hoãn, không ghi ngay.** `persistImmediately` là một
+        // `ModelContext.save()` đồng bộ — I/O đĩa, trên main actor — và ở đây
+        // nó rơi đúng khung hình `List` đang chạy animation đưa hàng về chỗ
+        // mới. Người dùng thả tay ra và thấy hàng khựng lại một nhịp trước khi
+        // trượt vào vị trí.
+        //
+        // Cùng lý do mọi đường đi từ một cú chạm đều hoãn — xem `deferPersist`:
+        // người dùng đang đợi thấy thứ gì đó chuyển động, và một lượt ghi đĩa
+        // xen vào giữa là thứ họ cảm nhận được. Hoãn một vòng chạy main actor
+        // là đủ để animation bắt đầu trước.
+        deferPersist()
     }
 
     /// Jumps to an upcoming track, leaving the queue's order as it stands.
@@ -471,6 +526,16 @@ final class PlaybackService {
         } else {
             seek(to: 0)
         }
+    }
+
+    /// Bật/tắt autoplay.
+    ///
+    /// `persistImmediately` chứ không hoãn, cùng lý do `cycleRepeatMode` làm
+    /// thế: đây là một công tắc, và một công tắc không sống sót qua lần mở app
+    /// sau là một công tắc hỏng.
+    func toggleAutoplay() {
+        isAutoplay.toggle()
+        persistImmediately()
     }
 
     func next() {
@@ -597,6 +662,7 @@ final class PlaybackService {
         // there: this is a setting rather than part of the queue, so a launch
         // with nothing to restore must still bring it back.
         isShuffled = state.isShuffled
+        isAutoplay = state.isAutoplay
         unshuffledQueue = state.unshuffledQueueTrackIDs.compactMap { resolveTrack(byID: $0) }
         guard !state.queueTrackIDs.isEmpty else { return }
         let resolved: [any Playable] = state.queueTrackIDs.compactMap { resolveTrack(byID: $0) }
@@ -880,10 +946,40 @@ final class PlaybackService {
         case .off:
             if queueIndex + 1 < queue.count {
                 advance(to: queueIndex + 1)
+            } else if isAutoplay, appendAutoplayTracks() {
+                advance(to: queueIndex + 1)
             } else {
                 stopPlayback()
             }
         }
+    }
+
+    /// Nối vào cuối hàng đợi những bài trong thư viện chưa có trong đó.
+    ///
+    /// Trả `false` khi không nối được gì — thư viện rỗng, hoặc mọi bài đã nằm
+    /// trong hàng đợi — và lúc ấy `handleFinish` dừng như thường. Đó là điều
+    /// đúng: autoplay là "còn nhạc thì phát tiếp", không phải "phát lại".
+    ///
+    /// Trộn ngẫu nhiên bất kể `isShuffled`. Phần nối thêm không phải thứ người
+    /// dùng chọn thứ tự, nên thứ tự bảng chữ cái ở đó chỉ là một sự tình cờ của
+    /// cách thư viện được đọc ra; ngẫu nhiên nói đúng bản chất "gợi ý tiếp".
+    ///
+    /// `unshuffledQueue` cũng được nối, nếu đang shuffle: tắt shuffle sau đó
+    /// không được phép làm biến mất những bài vừa thêm.
+    @discardableResult
+    private func appendAutoplayTracks() -> Bool {
+        let known = Set(queue.map(\.id))
+        // Chỉ thư viện cục bộ. Drive và Jamendo cần mạng và cần một lượt tải
+        // trước khi phát được; nối chúng vào một cách âm thầm là biến một cú
+        // "phát tiếp" thành một cú chờ không ai xin.
+        let extras = ((try? library.fetchAllTracks()) ?? [])
+            .filter { !known.contains($0.id) }
+            .shuffled()
+        guard !extras.isEmpty else { return false }
+        queue.append(contentsOf: extras)
+        if isShuffled { unshuffledQueue.append(contentsOf: extras) }
+        persistImmediately()
+        return true
     }
 
     /// Clamps a position into the track, skipping the upper bound while the
@@ -1060,15 +1156,38 @@ final class PlaybackService {
         }
     }
 
+    /// **Hai mảng chỉ gán khi thật sự đổi, và đó là số đo chứ không phải sự
+    /// gọn gàng.**
+    ///
+    /// SwiftData đánh dấu một thuộc tính là bẩn khi *gán*, không phải khi giá
+    /// trị khác đi. Gán vô điều kiện nghĩa là mọi cú ghi — kể cả cú ghi
+    /// `persistThrottled` bắn nửa giây một lần chỉ để cập nhật `positionSeconds`
+    /// — đều mã hoá lại toàn bộ hai mảng UUID thành blob rồi viết xuống SQLite.
+    /// Chi phí ấy tỉ lệ với chiều dài hàng đợi, và autoplay có thể kéo hàng đợi
+    /// dài bằng cả thư viện.
+    ///
+    /// Đo trên máy thật bằng Instruments, template Animation Hitches, 45 giây
+    /// dùng bình thường: **73 ms hitch mỗi giây** (ngưỡng "tệ" của Apple là 10),
+    /// 23 lần main thread bị chặn, và cú dài nhất là **441ms** với stack
+    /// `persistImmediately() → _executeSaveChangesRequest → NSSQLCore → SQLite`.
+    ///
+    /// So sánh trước khi gán là phép so hai mảng UUID trong bộ nhớ — vài
+    /// micro-giây — đổi lấy việc bỏ hẳn một lượt mã hoá và ghi đĩa. Thứ tự phát
+    /// đổi thì vẫn ghi, vì lúc ấy phép so trả về khác.
     private func persistImmediately() {
         let state = library.playbackState
-        state.queueTrackIDs = queue.map(\.id)
+        let ids = queue.map(\.id)
+        if state.queueTrackIDs != ids { state.queueTrackIDs = ids }
+        let unshuffled = unshuffledQueue.map(\.id)
+        if state.unshuffledQueueTrackIDs != unshuffled {
+            state.unshuffledQueueTrackIDs = unshuffled
+        }
         state.queueIndex = queueIndex
         state.currentTrackID = currentTrack?.id
         state.positionSeconds = position
         state.repeatModeRaw = repeatMode.rawValue
         state.isShuffled = isShuffled
-        state.unshuffledQueueTrackIDs = unshuffledQueue.map(\.id)
+        state.isAutoplay = isAutoplay
         try? library.save()
         lastPersistAt = .now
     }
@@ -1101,6 +1220,13 @@ final class PlaybackService {
     /// tap) would turn a harmless duplicate write into a resurrection of a
     /// queue the user has already left — this project's worst bug to date came
     /// from exactly that shape. Change the behaviour only with that in mind.
+    /// **Vẫn trên main thread**, và cái tên không hứa gì khác: nó hoãn sang
+    /// vòng chạy kế tiếp của main actor để SwiftUI kịp vẽ khung hình đang chờ,
+    /// chứ không đưa cú ghi ra khỏi luồng ấy.
+    ///
+    /// Nếu con số 441ms ở `persistImmediately` còn sau khi đã chặn hai mảng
+    /// UUID, thì bước tiếp theo là một `@ModelActor` nền với `ModelContext`
+    /// riêng — không phải hoãn thêm một vòng nữa.
     private func deferPersist() {
         Task { @MainActor in persistImmediately() }
     }
@@ -1212,5 +1338,93 @@ final class PlaybackService {
         } catch {
             print("Failed to activate audio session: \(error)")
         }
+    }
+
+    // MARK: - When the system takes the audio away
+
+    /// Subscribes to the two things that stop playback without the app being
+    /// asked: an interruption, and the current output device disappearing.
+    ///
+    /// A `.playback` app has to handle both itself. iOS pauses the hardware and
+    /// tells nobody, so without this the app's own state drifts from reality —
+    /// `isPlaying`, the pause glyph and the lock screen all keep claiming
+    /// playback is live while the room is silent — and when the call ends iOS
+    /// does not resume for you either.
+    ///
+    /// Both handlers hop to the main actor rather than assuming the posting
+    /// thread. `AVAudioSession` promises nothing about which thread it delivers
+    /// on, and `MainActor.assumeIsolated` would turn a wrong guess into a crash
+    /// instead of a hop. The values are read out of `userInfo` here, inside the
+    /// non-isolated closure, because a `[AnyHashable: Any]` cannot cross into a
+    /// `Task` — the raw `UInt`s can.
+    private func observeAudioSession() {
+        let interruption = notificationCentre.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+            // Unwrapped before the hop, not inside it: `[weak self]` binds a
+            // `var`, and referencing that from the nested concurrent closure is
+            // an error under the Swift 6 language mode.
+            guard let self else { return }
+            Task { @MainActor in self.handleInterruption(type: type, options: options) }
+        }
+        let routeChange = notificationCentre.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard let self else { return }
+            Task { @MainActor in self.handleRouteChange(reason: reason) }
+        }
+        sessionObservers = [interruption, routeChange]
+    }
+
+    /// A phone call, an alarm, Siri — anything that takes the session for a
+    /// while and may hand it back.
+    private func handleInterruption(type rawType: UInt?, options rawOptions: UInt?) {
+        guard let rawType, let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+            return
+        }
+        switch type {
+        case .began:
+            // iOS deactivated the session on its way in. `sessionActivated` is
+            // the flag `activateSessionIfNeeded()` guards on, and it used to be
+            // set once and never cleared — so after any interruption every
+            // later `resume()` would skip reactivation and hand `play()` to a
+            // session that is no longer active. That is the silent-play bug
+            // behind "it stopped working after a phone call, until I restarted
+            // the app".
+            sessionActivated = false
+            shouldResumeAfterInterruption = isPlaying
+            pause()
+        case .ended:
+            // Only give playback back if this interruption is what took it —
+            // see `shouldResumeAfterInterruption`.
+            guard shouldResumeAfterInterruption else { return }
+            shouldResumeAfterInterruption = false
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions ?? 0)
+            // Without `.shouldResume` the interrupting app is still holding the
+            // session — Siri left something playing, or another audio app took
+            // over. Starting anyway would be two apps fighting over the speaker.
+            guard options.contains(.shouldResume) else { return }
+            resume()
+        @unknown default:
+            break
+        }
+    }
+
+    /// Headphones pulled out, or a Bluetooth speaker walked away from.
+    ///
+    /// Only `.oldDeviceUnavailable` pauses. Every other reason — a device
+    /// arriving, a category change, the route reconfiguring itself — must leave
+    /// playback alone, or plugging headphones *in* would stop the music.
+    private func handleRouteChange(reason rawReason: UInt?) {
+        guard let rawReason,
+              AVAudioSession.RouteChangeReason(rawValue: rawReason) == .oldDeviceUnavailable
+        else { return }
+        // Nothing is coming back from an unplug, so a later `.ended` from some
+        // unrelated interruption must not treat this as something to resume.
+        shouldResumeAfterInterruption = false
+        pause()
     }
 }

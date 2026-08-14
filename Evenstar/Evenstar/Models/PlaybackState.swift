@@ -34,13 +34,21 @@ final class PlaybackState {
     /// otherwise be lost, because a shuffle cannot be inverted.
     var unshuffledQueueTrackIDs: [UUID] = []
 
+    /// Hàng đợi hết bài thì có tự nối thêm từ thư viện không.
+    ///
+    /// Literal default, cùng lý do `repeatModeRaw` và `isShuffled` mang một
+    /// cái: nó là thứ cho SwiftData đọc được những hàng đã ghi trước khi thuộc
+    /// tính này tồn tại, không cần migration plan.
+    var isAutoplay: Bool = false
+
     init(currentTrackID: UUID? = nil,
          positionSeconds: Double = 0,
          queueTrackIDs: [UUID] = [],
          queueIndex: Int = 0,
          repeatModeRaw: String = "off",
          isShuffled: Bool = false,
-         unshuffledQueueTrackIDs: [UUID] = []) {
+         unshuffledQueueTrackIDs: [UUID] = [],
+         isAutoplay: Bool = false) {
         self.currentTrackID = currentTrackID
         self.positionSeconds = positionSeconds
         self.queueTrackIDs = queueTrackIDs
@@ -48,5 +56,6 @@ final class PlaybackState {
         self.repeatModeRaw = repeatModeRaw
         self.isShuffled = isShuffled
         self.unshuffledQueueTrackIDs = unshuffledQueueTrackIDs
+        self.isAutoplay = isAutoplay
     }
 }
