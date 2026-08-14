@@ -37,6 +37,28 @@ struct EvenstarApp: App {
         // of each engine and picks by URL — see `RoutingAudioPlayer`.
         let player = RoutingAudioPlayer()
         let play = PlaybackService(player: player, nowPlaying: now, library: libService)
+        // Seeded here, synchronously, so the first frame renders the real
+        // library instead of the empty state — see `LibraryStore.init`. The
+        // same sort the query uses, because the two have to agree.
+        //
+        // The cost, said plainly: one extra fetch and one extra localized sort
+        // on the launch path, which `LibraryQueryBridge` repeats the moment it
+        // first updates. That is a real cost on the very path this change exists
+        // to make cheaper, and it is kept only because the alternative is a
+        // possible frame of `EmptyLibraryView` in front of a user whose library
+        // is full. It stays one fetch where this screenful used to cost five.
+        //
+        // A failed seed is survivable and so is not fatal: the bridge fills the
+        // store on the first update pass regardless.
+        let store: LibraryStore
+        do {
+            store = LibraryStore(tracks: try libService.fetchAllTracks())
+        } catch {
+            // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
+            // path for the library not opening at all belongs to 2d.
+            print("Initial library fetch failed: \(error)")
+            store = LibraryStore()
+        }
         // The local library's half of the same wiring the two remote sources get
         // below. `SongsView.deleteTrack` used to make this call by hand, which
         // held only for as long as it stayed the single caller of
@@ -47,7 +69,19 @@ struct EvenstarApp: App {
         // writes `PlaybackState` through it), so a strong capture here would
         // close the loop — play → library → this closure → play. It holds no
         // reference to either remote service, so those two need no such care.
-        libService.onTrackWillBeDeleted = { [weak play] in play?.handleTrackDeleted($0) }
+        //
+        // `store.remove` rides this same hook, and it has to be this hook rather
+        // than a refresh afterwards: it must land while the row is still
+        // readable. See `LibraryStore.remove(_:)` for the crash it closes.
+        // `store` is captured strongly on purpose — it holds no reference back
+        // to `libService`, so there is no loop to break here.
+        libService.onTrackWillBeDeleted = { [weak play] playable in
+            play?.handleTrackDeleted(playable)
+            // Always a `Track`: this hook belongs to `LibraryService.delete`,
+            // whose parameter is one. The two remote services fire their own
+            // hooks for their own tables, and no row of theirs is in this store.
+            if let track = playable as? Track { store.remove(track) }
+        }
         let driveLib = DriveLibraryService(library: libService)
         // The only wiring that keeps a deleted `DriveTrack` out of the playing
         // queue. Unlinking a folder, and a rescan that finds a file gone from
@@ -67,22 +101,6 @@ struct EvenstarApp: App {
         // anything reads a property off it. See
         // `JamendoLibraryService.onTrackWillBeDeleted`.
         jamendoLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
-        // Seeded here, synchronously, so the first frame renders the real
-        // library instead of the empty state — see `LibraryStore.init`. The
-        // same sort the query uses, because the two have to agree.
-        //
-        // A failed seed is survivable and so is not fatal: `LibraryQueryBridge`
-        // fills the store on the first update pass regardless, and the only
-        // cost is the empty state showing for that one pass.
-        let store: LibraryStore
-        do {
-            store = LibraryStore(tracks: try libService.fetchAllTracks())
-        } catch {
-            // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
-            // path for the library not opening at all belongs to 2d.
-            print("Initial library fetch failed: \(error)")
-            store = LibraryStore()
-        }
         _libraryStore = State(initialValue: store)
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)

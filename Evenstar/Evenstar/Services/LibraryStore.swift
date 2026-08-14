@@ -57,6 +57,45 @@ final class LibraryStore {
         guard fetched != tracks else { return }
         tracks = fetched
     }
+
+    /// Drops a row that is about to be deleted, **before** it is deleted.
+    ///
+    /// `replace(with:)` cannot cover this one, and the difference is a crash.
+    /// It is driven by `LibraryQueryBridge`'s `onChange`, and an `onChange`
+    /// action runs *after* the update pass that triggered it — so between the
+    /// `context.delete` and that action, this array still holds the dead row.
+    /// Any body that runs inside that window and reads a stored property off it
+    /// raises `NSObjectInaccessibleException`, an Objective-C exception that is
+    /// uncatchable in Swift. `SongsView`'s `List` reads `track.id`, and
+    /// `SongRow` reads `track.title`; `SearchView` does the same while a query
+    /// is typed.
+    ///
+    /// That window is reachable, not theoretical. Deleting a track that is in
+    /// the queue makes `PlaybackService.handleTrackDeleted` change
+    /// `currentTrack`, which `RootView`'s body reads (`hasTrack:`), so `RootView`
+    /// is invalidated *before* the row is deleted and the resulting pass rebuilds
+    /// the tabs. `handleTrackDeleted` returns early for a track that is not in
+    /// the queue, which is why the plain case looks fine and the "delete the song
+    /// that is playing" case is the one that crashes.
+    ///
+    /// The five screens used to be safe from this for free: each held its own
+    /// `@Query`, and `Query` is a `DynamicProperty` whose `update()` runs
+    /// *before* the body of the view holding it, so a body could never read a
+    /// pre-delete array. Moving the query out is what lost that, and this is
+    /// what buys it back.
+    ///
+    /// Called from `LibraryService.delete` through `onTrackWillBeDeleted` —
+    /// the same hook, with the same "before the delete, while the row is still
+    /// readable" contract, that already exists so `PlaybackService` can drop the
+    /// row from its queue.
+    func remove(_ track: Track) {
+        let remaining = tracks.filter { $0 != track }
+        // A row that was not in the array is not a mistake — the store can be
+        // one update behind an insert — and must not wake five screens for a
+        // change that did not happen.
+        guard remaining.count != tracks.count else { return }
+        tracks = remaining
+    }
 }
 
 /// The single `@Query` on `Track` in the app. It draws nothing.
@@ -67,13 +106,15 @@ final class LibraryStore {
 /// instead of on `RootView`'s, which rebuilds the `TabView` and five tabs.
 ///
 /// Why this rather than `store.refresh()` called from the places that change
-/// data: the writers are `LibraryService.insert`/`delete`/`setArtwork`/
-/// `updateMetadata`, `ImportService`, `DriveLibraryService` and
-/// `JamendoLibraryService` — and whichever one is added next. A refresh call is
-/// something a future writer has to remember, with no compiler error and no
-/// failing test when they do not; the symptom would be a library that quietly
-/// stops updating. SwiftData already notices every one of those writes, so the
-/// trigger stays where it cannot be forgotten.
+/// data: what changes the set of rows today is `LibraryService.insert` and
+/// `delete` — `ImportService` reaches the table through the first of those —
+/// plus whoever writes `Track` next. (`DriveLibraryService` and
+/// `JamendoLibraryService` are deliberately not on that list: they insert into
+/// `DriveTrack` and `JamendoTrack`, different tables this query never sees.) A
+/// refresh call is something a future writer has to remember, with no compiler
+/// error and no failing test when they do not; the symptom would be a library
+/// that quietly stops updating. SwiftData already notices every one of those
+/// writes, so the trigger stays where it cannot be forgotten.
 ///
 /// What this does NOT report is a property edited in place: the array holds the
 /// same rows in the same order after a rename, so `onChange` does not fire.
