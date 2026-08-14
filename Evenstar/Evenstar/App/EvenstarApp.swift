@@ -34,12 +34,22 @@ struct EvenstarApp: App {
         // of each engine and picks by URL — see `RoutingAudioPlayer`.
         let player = RoutingAudioPlayer()
         let play = PlaybackService(player: player, nowPlaying: now, library: libService)
+        // The local library's half of the same wiring the two remote sources get
+        // below. `SongsView.deleteTrack` used to make this call by hand, which
+        // held only for as long as it stayed the single caller of
+        // `library.delete(_:)`. See `LibraryService.onTrackWillBeDeleted`.
+        //
+        // `[weak play]`, unlike the two below, and the difference is real rather
+        // than defensive: `PlaybackService` holds `LibraryService` (it reads and
+        // writes `PlaybackState` through it), so a strong capture here would
+        // close the loop — play → library → this closure → play. It holds no
+        // reference to either remote service, so those two need no such care.
+        libService.onTrackWillBeDeleted = { [weak play] in play?.handleTrackDeleted($0) }
         let driveLib = DriveLibraryService(library: libService)
         // The only wiring that keeps a deleted `DriveTrack` out of the playing
         // queue. Unlinking a folder, and a rescan that finds a file gone from
-        // Drive, both delete rows the queue may be holding; `SongsView` does the
-        // same call by hand for the local library. Without it the queue reads
-        // properties off deleted-and-saved rows and raises an uncatchable
+        // Drive, both delete rows the queue may be holding. Without it the queue
+        // reads properties off deleted-and-saved rows and raises an uncatchable
         // Objective-C exception. See `DriveLibraryService.onTrackWillBeDeleted`.
         //
         // No retain cycle: `PlaybackService` holds no reference to

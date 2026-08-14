@@ -76,13 +76,14 @@ struct JamendoSongsList: View {
         return "\(track.artistName) · \(licence)"
     }
 
-    /// Mirrors `SongsView.deleteTrack`: tell playback while the row is still
-    /// live, then remove it. `jamendo.unsave` does its own
-    /// `onTrackWillBeDeleted` call too (it must, for the delete paths that
-    /// don't go through this view), so this one is redundant in practice —
-    /// but kept anyway to match `deleteTrack`'s shape exactly and because a
-    /// redundant call to a pure "remove from queue if present" method is
-    /// harmless, unlike a missing one.
+    /// Tells playback while the row is still live, then removes it.
+    ///
+    /// `jamendo.unsave` does its own `onTrackWillBeDeleted` call (it must, for
+    /// the delete paths that don't go through this view), so this one is
+    /// redundant in practice — a repeat call to a "remove from queue if
+    /// present" method is harmless, unlike a missing one. `SongsView.deleteTrack`
+    /// no longer has its counterpart: `LibraryService.delete(_:)` gained the
+    /// same hook, so the local path stopped needing a view to remember.
     private func deleteJamendoTrack(_ track: JamendoTrack) {
         playback.handleTrackDeleted(track)
         do {

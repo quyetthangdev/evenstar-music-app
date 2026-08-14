@@ -24,6 +24,11 @@ struct SettingsView: View {
     @AppStorage(JamendoLicencePolicy.storageKey) private var commercialOnly =
         JamendoLicencePolicy.defaultCommercialOnly
 
+    @State private var showingMorphDemo = false
+    @State private var showingUIKitDemo = false
+    @State private var showingZoomDemo = false
+    @State private var showingReorderDemo = false
+
     var body: some View {
         List {
             Section {
@@ -99,9 +104,61 @@ struct SettingsView: View {
                 // not behind a tap into "more info".
                 Text("Nhiều bài trên Jamendo mang giấy phép NC: nghe cá nhân thì thoải mái, nhưng cấm dùng trong sản phẩm có thu tiền. Bật để giấu chúng khỏi màn Khám phá. Tắt thì có nhiều nhạc hơn để chọn, và bạn tự chịu trách nhiệm về giấy phép.")
             }
+
+            Section {
+                // `verbatim` khắp mục này, khác với mọi mục khác trong màn
+                // hình: đây là bản thử sẽ bị xoá, và `Text("…")` là
+                // `LocalizedStringKey` nên ba chuỗi này sẽ được trích thẳng
+                // vào `Localizable.xcstrings` rồi nằm lại đó thành khoá chết
+                // sau khi bản thử đi. Hôm nay chúng hiện y hệt nhau vì nguồn
+                // của catalogue vốn là tiếng Việt.
+                Button { showingMorphDemo = true } label: {
+                    Text(verbatim: "Chuyển cảnh player — SwiftUI")
+                }
+                Button { showingUIKitDemo = true } label: {
+                    Text(verbatim: "Chuyển cảnh player — UIKit")
+                }
+                Button { showingZoomDemo = true } label: {
+                    Text(verbatim: "Chuyển cảnh player — hệ thống (.zoom)")
+                }
+                Button { showingReorderDemo = true } label: {
+                    Text(verbatim: "Kéo thả playlist — tự dựng cử chỉ")
+                }
+            } header: {
+                Text(verbatim: "Bản thử")
+            } footer: {
+                // Nói thẳng đây là bản thử, vì nó *trông* như một player thật
+                // và không phải player của app này: dữ liệu giả, không phát
+                // được gì. Một màn hình lạ không có lời giải thích là một lỗi
+                // đối với người dùng, kể cả khi nó nằm sâu trong Cài đặt.
+                Text(verbatim: "Hai player rời, dữ liệu giả, cùng hình dáng nhưng khác động cơ chuyển động: một bằng SwiftUI, một bằng UIViewPropertyAnimator. Không ảnh hưởng gì tới nhạc đang phát.")
+            }
         }
         .navigationTitle("Cài đặt")
         .navigationBarTitleDisplayMode(.inline)
+        // `fullScreenCover`, không phải `NavigationLink`: bản thử tự dựng cả
+        // thanh tab và mini player của riêng nó, nên nó cần cả màn hình. Đẩy
+        // nó vào navigation stack thì hai thanh tab chồng lên nhau.
+        .fullScreenCover(isPresented: $showingMorphDemo) {
+            PlayerMorphDemoView { showingMorphDemo = false }
+        }
+        // Bản UIKit, để so cạnh nhau: cùng số đo, cùng hình dáng, khác động cơ.
+        // Xem `PlayerMorphUIKitView` để biết nó trả lời câu hỏi gì.
+        .fullScreenCover(isPresented: $showingUIKitDemo) {
+            PlayerMorphUIKitView { showingUIKitDemo = false }
+                .ignoresSafeArea()
+        }
+        // Bản thứ ba: không một dòng animation nào tự viết. Xem
+        // `PlayerZoomDemoView` — chạm để mở, vuốt để đóng, hệ thống lo hết.
+        .fullScreenCover(isPresented: $showingZoomDemo) {
+            PlayerZoomDemoView { showingZoomDemo = false }
+        }
+        // Kéo thả tự dựng: `List` không cho chạm vào hàng đang nhấc, nên nền
+        // lúc nhấn giữ và cú đáp đàn hồi lúc thả chỉ có được khi tự sở hữu cử
+        // chỉ. Xem `PlaylistReorderDemo`.
+        .fullScreenCover(isPresented: $showingReorderDemo) {
+            PlaylistReorderDemo { showingReorderDemo = false }
+        }
     }
 }
 

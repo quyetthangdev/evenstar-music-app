@@ -340,11 +340,16 @@ struct SongsView: View {
     }
 
     private func deleteTrack(_ track: Track) {
-        // Queue adjustment is persisted before the DB delete below runs (identity
-        // must be read off `track` while it's still live). If `library.delete`
-        // then throws, the row can survive pointing at already-adjusted playback
-        // state and possibly-removed files. Recovering from that is Phase 2d's job.
-        playback.handleTrackDeleted(track)
+        // No `playback.handleTrackDeleted(track)` here any more, and its absence
+        // is the fix rather than an omission: `LibraryService.delete(_:)` now
+        // announces the row itself, so the ordering this view used to be
+        // responsible for cannot be got wrong by the next caller. See
+        // `LibraryService.onTrackWillBeDeleted`.
+        //
+        // Unchanged: queue adjustment still lands before the DB delete, so if
+        // `library.delete` throws, the row can survive pointing at
+        // already-adjusted playback state and possibly-removed files.
+        // Recovering from that is Phase 2d's job.
         do {
             try library.delete(track)
         } catch {
