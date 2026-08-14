@@ -584,14 +584,24 @@ final class PlaybackService {
     /// `DriveLibraryService`'s two delete paths all order it that way.
     func handleTrackDeleted(_ track: any Playable) {
         let wasPlaying = isPlaying
+        // Above the guard on purpose. The same row lives in both arrays while
+        // shuffle is on, and a deleted row left in either is a crash waiting
+        // for whoever reads it next.
+        //
+        // It used to sit below, on the reasoning that `unshuffledQueue` is a
+        // permutation of `queue`, so a track absent from one is absent from
+        // both. That holds today and it is not worth depending on: the
+        // invariant is spread over five places that write the two arrays, and
+        // `restoreFromPersistedState` already has a shape that can break it —
+        // it fills `unshuffledQueue` *above* its own `queueTrackIDs.isEmpty`
+        // guard, and its stale-state branch clears `state.queueTrackIDs`
+        // without clearing `state.unshuffledQueueTrackIDs`. Pruning before the
+        // guard costs a `removeAll` over an array that is usually empty, and
+        // buys the whole dependency away.
+        unshuffledQueue.removeAll { $0.id == track.id }
         guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
         let wasCurrent = (removalIndex == queueIndex)
         queue.remove(at: removalIndex)
-        // The same row lives in both arrays while shuffle is on, and a deleted
-        // row left in either is a crash waiting for whoever reads it next. Safe
-        // below the guard above: `unshuffledQueue` is a permutation of `queue`,
-        // so a track absent from one is absent from both.
-        unshuffledQueue.removeAll { $0.id == track.id }
 
         if wasCurrent {
             if queueIndex >= queue.count {
