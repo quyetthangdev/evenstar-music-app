@@ -67,8 +67,15 @@ final class LibraryStore {
     /// Any body that runs inside that window and reads a stored property off it
     /// raises `NSObjectInaccessibleException`, an Objective-C exception that is
     /// uncatchable in Swift. `SongsView`'s `List` reads `track.id`, and
-    /// `SongRow` reads `track.title`; `SearchView` does the same while a query
-    /// is typed.
+    /// `SongRow` reads `track.title`.
+    ///
+    /// What this does **not** cover: a screen that keeps its own array of rows
+    /// rather than reading `tracks`. `SearchView` does exactly that — it draws
+    /// the same `SongRow` over its own filtered list, and this method never
+    /// touched it. That list has its own guard, `SearchResultsStore.remove(_:)`,
+    /// called from the same hook for the same reason; `AlbumsView` and
+    /// `ArtistsView` are covered differently again, by holding no rows at all
+    /// (see `AlbumGroup`).
     ///
     /// That window is reachable, not theoretical. Deleting a track that is in
     /// the queue makes `PlaybackService.handleTrackDeleted` change

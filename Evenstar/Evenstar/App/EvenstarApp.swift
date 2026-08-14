@@ -17,6 +17,9 @@ struct EvenstarApp: App {
     /// The local library, fetched once and read by five screens. See
     /// `LibraryStore` for why it is not five `@Query`s any more.
     @State private var libraryStore: LibraryStore
+    /// Tìm kiếm's result list, owned here rather than by the screen so the
+    /// delete hook below can prune it. See `SearchResultsStore`.
+    @State private var searchResults: SearchResultsStore
     private let remoteCommands: RemoteCommandsBridge
 
     init() {
@@ -73,14 +76,22 @@ struct EvenstarApp: App {
         // `store.remove` rides this same hook, and it has to be this hook rather
         // than a refresh afterwards: it must land while the row is still
         // readable. See `LibraryStore.remove(_:)` for the crash it closes.
-        // `store` is captured strongly on purpose — it holds no reference back
-        // to `libService`, so there is no loop to break here.
+        // `search.remove` rides it for the same reason and against the same
+        // crash, over Tìm kiếm's own filtered list — the one array
+        // `store.remove` cannot reach. See `SearchResultsStore`.
+        // Both are captured strongly on purpose — neither holds a reference
+        // back to `libService`, so there is no loop to break here.
+        let search = SearchResultsStore()
         libService.onTrackWillBeDeleted = { [weak play] playable in
             play?.handleTrackDeleted(playable)
             // Always a `Track`: this hook belongs to `LibraryService.delete`,
             // whose parameter is one. The two remote services fire their own
-            // hooks for their own tables, and no row of theirs is in this store.
-            if let track = playable as? Track { store.remove(track) }
+            // hooks for their own tables, and no row of theirs is in either of
+            // these.
+            if let track = playable as? Track {
+                store.remove(track)
+                search.remove(track)
+            }
         }
         let driveLib = DriveLibraryService(library: libService)
         // The only wiring that keeps a deleted `DriveTrack` out of the playing
@@ -102,6 +113,7 @@ struct EvenstarApp: App {
         // `JamendoLibraryService.onTrackWillBeDeleted`.
         jamendoLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
         _libraryStore = State(initialValue: store)
+        _searchResults = State(initialValue: search)
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
@@ -120,6 +132,7 @@ struct EvenstarApp: App {
                 .environment(driveLibrary)
                 .environment(jamendoLibrary)
                 .environment(libraryStore)
+                .environment(searchResults)
         }
         .modelContainer(modelContainer)
     }

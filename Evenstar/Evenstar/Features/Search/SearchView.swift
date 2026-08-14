@@ -15,30 +15,26 @@ struct SearchView: View {
     /// pass and into the task does not reopen that cost.
     @Environment(LibraryStore.self) private var store
 
+    /// What this screen is showing, and the query it answers.
+    ///
+    /// Both were `@State` here. They are an object in the environment now for
+    /// one reason: deleting a track has to be able to drop it from this list
+    /// *before* the row dies, and nothing outside a view can write that view's
+    /// `@State` — so the list a delete has to reach cannot live in one. See
+    /// `SearchResultsStore` for the crash that forced the move, and for why an
+    /// `onChange` here would not have closed it.
+    ///
+    /// Nothing about how the list is filled changed with it: the debounce, the
+    /// keep-or-drop rule and the wiped-query case below are the same three
+    /// decisions in the same order, made through the store's methods instead of
+    /// through two `@State` assignments.
+    @Environment(SearchResultsStore.self) private var searchResults
+
     /// Read-only, and owned by `RootView`. The field that edits it lives in the
     /// floating tab bar, which is a sibling of the `TabView` this screen sits
     /// in — so this screen cannot own it, and must not add a second search
     /// field of its own.
     let query: String
-
-    /// The outcome of filtering `store.tracks` against `query`, or `nil`
-    /// while that filter has not produced an answer yet — either the 150ms
-    /// debounce below is still waiting, or a keystroke cancelled the wait and
-    /// a fresh one just started. `nil` is a distinct state from "filtered and
-    /// found nothing": collapsing the two would show "Không tìm thấy kết quả"
-    /// for a query the app has not actually finished checking, which is
-    /// wrong for as long as the debounce is in flight.
-    @State private var results: [Track]?
-
-    /// The exact `query` string that produced `results`, or `nil` alongside
-    /// `results == nil`.
-    ///
-    /// Needed because by the time the task below runs again, `query` already
-    /// holds the *new* value — there is no other way left to ask "what was
-    /// the old list an answer to?" That question is what decides whether the
-    /// old list is safe to keep on screen while the new one is computed: see
-    /// the task's comment below.
-    @State private var resultsQuery: String?
 
     var body: some View {
         NavigationStack {
@@ -62,38 +58,25 @@ struct SearchView: View {
                 .task(id: query) {
                     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else {
-                        // The query was wiped, not just changed — this is
-                        // the one case that must NOT keep a stale list on
-                        // screen: `content` needs to fall back to the
-                        // "type something" prompt, not the last answer to a
-                        // question that no longer exists.
-                        results = nil
-                        resultsQuery = nil
+                        // The query was wiped, not just changed — the one
+                        // case that must NOT keep a stale list on screen:
+                        // `content` needs to fall back to the "type something"
+                        // prompt, not to the last answer to a question that no
+                        // longer exists. See `SearchResultsStore.clear()`.
+                        searchResults.clear()
                         return
                     }
-                    // Whether the old `results` stays on screen while this
-                    // wait runs depends on what produced it, not on whether
-                    // it merely exists. Keep it only when the new `query`
-                    // extends `resultsQuery` — the user typed further past a
-                    // result set that is still a superset of whatever the
-                    // new, longer query will match, e.g. "queen" → "queena".
-                    // Clear it for anything else: a character deleted
-                    // ("queenx" → "queen", where the old list is now a
-                    // *subset* and missing rows), or a different word typed
-                    // over a selection ("queen" → "abba", where the old list
-                    // has no relationship to the new query at all). Showing
-                    // Queen's songs while "abba" sits in the field, with no
-                    // sign anything is stale, is a worse lie than a spinner —
-                    // that was the actual bug this replaced. Showing a
-                    // shrunk-but-still-Queen list for one deleted character
-                    // is a smaller one, but still a lie, and cheap enough to
-                    // avoid: fall through to the "still working" placeholder
-                    // instead.
-                    if let resultsQuery, query.hasPrefix(resultsQuery) {
-                        // Keep `results` as is.
-                    } else {
-                        results = nil
-                    }
+                    // Whether the old list stays on screen while this wait
+                    // runs depends on what produced it, not on whether it
+                    // merely exists: it is kept only when this `query` extends
+                    // the one it answers ("queen" → "queena"), and dropped for
+                    // a deleted character or a different word. The rule and
+                    // the reasoning behind it live on
+                    // `SearchResultsStore.dropStaleResults(for:)`; what
+                    // matters here is that it is decided *before* the wait,
+                    // so a stale list is never on screen while a new query
+                    // is being answered.
+                    searchResults.dropStaleResults(for: query)
                     // `Task.sleep` throws `CancellationError` when this task
                     // is cancelled — which happens the moment `query` changes
                     // again, per the note on `.task(id:)` above. `.task(id:)`
@@ -114,8 +97,10 @@ struct SearchView: View {
                     // `LibraryGrouping.search` owns matching — case- and
                     // diacritic-insensitive — so this view never
                     // re-implements it, and never runs it from `body`.
-                    results = LibraryGrouping.search(query, in: store.tracks)
-                    resultsQuery = query
+                    searchResults.record(
+                        LibraryGrouping.search(query, in: store.tracks),
+                        for: query
+                    )
                 }
         }
     }
@@ -128,7 +113,7 @@ struct SearchView: View {
                 systemImage: "magnifyingglass",
                 description: Text("Tìm theo tên bài hát, nghệ sĩ hoặc album.")
             )
-        } else if let results {
+        } else if let results = searchResults.results {
             if results.isEmpty {
                 // Hand-written rather than `ContentUnavailableView.search(text:)`.
                 // That convenience draws its title and description from the
@@ -220,5 +205,9 @@ struct SearchView: View {
         .environment(library)
         .environment(playback)
         .environment(LibraryStore(tracks: tracksToInsert))
+        // Empty here, and filled by the screen's own task the way it is in the
+        // app — in `EvenstarApp` this object is also what the delete hook
+        // prunes, which a preview has no delete to exercise.
+        .environment(SearchResultsStore())
         .modelContainer(container)
 }
