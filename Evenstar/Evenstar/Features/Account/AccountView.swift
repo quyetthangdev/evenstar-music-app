@@ -23,30 +23,36 @@ struct AccountView: View {
     /// no files.
     @State private var bytesOnDisk: Int64?
 
+    /// `nil` until the first count finishes, same distinction `bytesOnDisk`
+    /// draws above: a library with hundreds of albums showing `0` while the
+    /// first `.task` is still running would be a lie, not a loading state.
+    ///
     /// Counts only, not the grouped arrays `AlbumsView`/`ArtistsView` keep —
     /// this screen never renders an album or artist, just their tally, so
     /// there's no reason to hold the groups themselves in state.
     ///
     /// Recomputed in the same `.task(id: tracks.count)` below that already
-    /// drives `bytesOnDisk`, not in `body`: `LibraryGrouping.albums`/
-    /// `.artists` are each a `Dictionary(grouping:)` over the whole library
-    /// plus a localized sort, and `body` reruns on every `@Query` change —
-    /// one inserted track was paying for two full regroupings just to show
-    /// two integers. Keyed on `tracks.count` rather than `tracks` itself for
-    /// the same reason `bytesOnDisk` is: cheap, but blind to an edit that
-    /// changes an album or artist name without changing how many tracks
-    /// there are — these two numbers can be briefly stale after a rename,
-    /// same as the byte count already tolerates for the file set.
-    @State private var albumCount = 0
-    @State private var artistCount = 0
+    /// drives `bytesOnDisk`, not in `body`: `LibraryGrouping.albums` is a
+    /// `Dictionary(grouping:)` over the whole library plus a localized sort,
+    /// and `body` reruns on every `@Query` change — one inserted track was
+    /// paying for a full regrouping just to show an integer. Keyed on
+    /// `tracks.count` rather than `tracks` itself for the same reason
+    /// `bytesOnDisk` is: cheap, but blind to an edit that changes an album
+    /// name without changing how many tracks there are — this count can be
+    /// briefly stale after a rename, same as the byte count already
+    /// tolerates for the file set.
+    @State private var albumCount: Int?
+
+    /// Same reasoning as `albumCount`, for `LibraryGrouping.artists`.
+    @State private var artistCount: Int?
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Thư viện") {
                     row("Bài hát", value: "\(tracks.count)")
-                    row("Album", value: "\(albumCount)")
-                    row("Nghệ sĩ", value: "\(artistCount)")
+                    row("Album", value: albumCountText)
+                    row("Nghệ sĩ", value: artistCountText)
                     row("Dung lượng", value: storageText)
                 }
 
@@ -121,6 +127,16 @@ struct AccountView: View {
     private var storageText: String {
         guard let bytesOnDisk else { return "…" }
         return bytesOnDisk.formatted(.byteCount(style: .file))
+    }
+
+    private var albumCountText: String {
+        guard let albumCount else { return "…" }
+        return "\(albumCount)"
+    }
+
+    private var artistCountText: String {
+        guard let artistCount else { return "…" }
+        return "\(artistCount)"
     }
 
     /// Audio and artwork both count — artwork is copied into the app's
