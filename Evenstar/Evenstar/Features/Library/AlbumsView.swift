@@ -21,6 +21,16 @@ struct AlbumsView: View {
 
     /// The grouped library, recomputed only when `tracks` actually changes.
     ///
+    /// **This array is allowed to be one update stale, and that is only safe
+    /// because an `AlbumGroup` holds no `Track`.** The staleness is structural:
+    /// `onChange`'s action runs *after* the update pass that triggered it, so
+    /// between a `context.delete` + `save()` and the regroup below, this holds
+    /// groups built before the delete. When those groups held rows, `AlbumCell`
+    /// read a stored property off a dead one and raised
+    /// `NSObjectInaccessibleException`. Now the worst a stale group can do is
+    /// draw a title for an album that no longer exists, for one pass. See
+    /// `AlbumGroup`.
+    ///
     /// `LibraryGrouping.albums` is a `Dictionary(grouping:)` plus a sort of
     /// every group plus a sort of the groups. Computed inline in `content` — a
     /// computed property — it ran on **every** body pass, and this view's body
@@ -128,13 +138,14 @@ struct AlbumsView: View {
               albums.count < Self.scrollTestAlbumCount else { return albums }
 
         let filler = (albums.count..<Self.scrollTestAlbumCount).map { index in
-            // Empty `tracks`: tapping one opens a detail screen with no rows,
-            // which is honest — there is no album behind it.
+            // No cover, and no album behind the title either: tapping one
+            // opens a detail screen with no rows, because nothing in the
+            // library matches this title and artist. That is honest.
             AlbumGroup(
                 id: "scroll-test-\(index)",
                 title: "Album thử \(index + 1)",
                 artist: "Nghệ sĩ thử",
-                tracks: []
+                artworkRelativePath: nil
             )
         }
         return albums + filler
@@ -150,7 +161,11 @@ private struct AlbumCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geometry in
-                ArtworkThumbnail(relativePath: album.tracks.first?.artworkRelativePath, size: geometry.size.width)
+                // A `String?` copied out of the library when the grouping was
+                // built, not a property read off a row this cell holds. That
+                // difference is the fix in `AlbumGroup` — read it before
+                // reaching for a `Track` here again.
+                ArtworkThumbnail(relativePath: album.artworkRelativePath, size: geometry.size.width)
             }
             // Square cell: width comes from the grid column, height matches it.
             .aspectRatio(1, contentMode: .fit)

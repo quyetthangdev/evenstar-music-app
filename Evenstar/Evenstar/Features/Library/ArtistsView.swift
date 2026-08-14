@@ -20,7 +20,9 @@ struct ArtistsView: View {
 
     /// The grouped library, recomputed only when `tracks` actually changes.
     /// See `AlbumsView.albums` for why this is state rather than a computed
-    /// property, and for the in-place-edit limitation it carries.
+    /// property, for the in-place-edit limitation it carries, and for why an
+    /// `ArtistGroup` holding no `Track` is what makes the one stale pass
+    /// between a delete and the regroup below survivable.
     @State private var artists: [ArtistGroup] = []
 
     private let columns = [
@@ -90,7 +92,9 @@ private struct ArtistCell: View {
     var body: some View {
         VStack(spacing: 4) {
             GeometryReader { geometry in
-                ArtworkThumbnail(relativePath: artist.tracks.first?.artworkRelativePath, size: geometry.size.width)
+                // A copied `String?`, not a row this cell holds — see the same
+                // line in `AlbumCell` and the doc on `AlbumGroup`.
+                ArtworkThumbnail(relativePath: artist.artworkRelativePath, size: geometry.size.width)
                     .clipShape(Circle())
             }
             // Square cell: width comes from the grid column, height matches it.

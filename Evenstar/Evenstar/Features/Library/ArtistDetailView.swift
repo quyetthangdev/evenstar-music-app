@@ -12,22 +12,24 @@ struct ArtistDetailView: View {
     @Binding var isMinimised: Bool
 
     @Environment(PlaybackService.self) private var playback
-
-    // The artist's tracks, grouped into albums and flattened: album order
-    // comes from `albums(from:)`, running order within each album comes
-    // from `sortedAlbumTracks` inside it. No second sort here — writing one
-    // would risk disagreeing with the grouping and drifting out of step.
-    private var orderedTracks: [Track] {
-        LibraryGrouping.albums(from: artist.tracks).flatMap(\.tracks)
-    }
+    /// Where this screen's rows come from. See the same property on
+    /// `AlbumDetailView` for why they are resolved here rather than carried
+    /// inside `ArtistGroup`.
+    @Environment(LibraryStore.self) private var store
 
     var body: some View {
-        List {
-            ForEach(orderedTracks) { track in
+        // The artist's tracks, grouped into albums and flattened: album order
+        // and running order both come from
+        // `LibraryGrouping.tracks(byArtist:from:)`, which shares its grouping
+        // with `albums(from:)`. No second sort here — writing one would risk
+        // disagreeing with the grouping and drifting out of step.
+        let tracks = LibraryGrouping.tracks(byArtist: artist, from: store.tracks)
+        return List {
+            ForEach(tracks) { track in
                 SongRow(track: track)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        playback.play(track, in: orderedTracks)
+                        playback.play(track, in: tracks)
                     }
             }
         }
@@ -69,9 +71,15 @@ struct ArtistDetailView: View {
               trackNumber: 1, discNumber: 1, durationSeconds: 210,
               relativePath: "c.mp3", format: "mp3")
     ]
-    let artist = ArtistGroup(id: "Alpha", name: "Alpha", tracks: tracks)
+    for track in tracks {
+        container.mainContext.insert(track)
+    }
+    let artist = ArtistGroup(id: "Alpha", name: "Alpha", artworkRelativePath: nil)
     return NavigationStack {
         ArtistDetailView(artist: artist, isMinimised: .constant(false))
     }
     .environment(playback)
+    // Seeded by hand — see the same note in `AlbumDetailView`'s preview.
+    .environment(LibraryStore(tracks: tracks))
+    .modelContainer(container)
 }

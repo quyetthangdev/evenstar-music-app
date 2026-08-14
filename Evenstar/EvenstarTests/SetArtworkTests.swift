@@ -94,6 +94,21 @@ final class SetArtworkTests: XCTestCase {
         XCTAssertTrue(path.hasPrefix("Artwork/"), "must land where delete(_:) looks for it")
     }
 
+    /// Album and Nghệ sĩ copy the cover path into `AlbumGroup`/`ArtistGroup`
+    /// when they group, so a copied string cannot notice the row behind it
+    /// changing. `metadataRevision` is the only thing that tells those two
+    /// screens to regroup, and without this bump a newly picked cover stays
+    /// invisible on both grids until something unrelated changes the library.
+    func testPickingACoverAsksTheGroupedScreensToRegroup() throws {
+        let (library, track) = try makeStack()
+        let before = library.metadataRevision
+
+        let path = try library.setArtwork(try jpeg(side: 40, color: .red), for: track)
+        written.append(path)
+
+        XCTAssertGreaterThan(library.metadataRevision, before)
+    }
+
     /// The write has to survive being read back through the same path the UI
     /// uses, not merely exist on disk.
     func testTheWrittenFileIsReadableByArtworkStore() async throws {

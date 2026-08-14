@@ -132,10 +132,18 @@ final class LibraryService {
             let oldURL = FileLocation.absoluteURL(forRelative: previous, fileManager: fileManager)
             try? fileManager.removeItem(at: oldURL)
         }
+        // After the save, for the same reason `updateMetadata` bumps it there
+        // and not earlier. Album and Nghệ sĩ used to need no announcement for a
+        // cover: their cells reached through the group into the `Track` and
+        // read `artworkRelativePath` live, so an edit redrew them for free.
+        // That reach is exactly what `AlbumGroup` no longer allows — the path
+        // is copied into the group at grouping time — so a new cover is now a
+        // change only a regroup can see, and this is what asks for one.
+        metadataRevision += 1
         return relative
     }
 
-    /// Bumped every time a track's tags change in place.
+    /// Bumped every time a track's tags **or cover** change in place.
     ///
     /// **This exists because SwiftData gives no other signal for it.** A
     /// `@Query` publishes inserts, deletes and reorders; editing a property of a
@@ -149,6 +157,12 @@ final class LibraryService {
     /// That gap was written down before it could be hit: the doc on
     /// `AlbumsView.albums` says "whoever adds metadata editing must revisit
     /// this". This is that revisit.
+    ///
+    /// `setArtwork` bumps it too, and only had to start once `AlbumGroup`
+    /// stopped carrying `Track` rows — see the comment at that call site. The
+    /// rule to keep: **anything a grouping copies out of a row must announce
+    /// itself here when it changes**, because a copied value cannot observe
+    /// the row it came from.
     private(set) var metadataRevision: Int = 0
 
     /// Replaces a track's tags.
