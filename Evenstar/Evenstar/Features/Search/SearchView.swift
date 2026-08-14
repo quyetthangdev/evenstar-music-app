@@ -30,6 +30,16 @@ struct SearchView: View {
     /// wrong for as long as the debounce is in flight.
     @State private var results: [Track]?
 
+    /// The exact `query` string that produced `results`, or `nil` alongside
+    /// `results == nil`.
+    ///
+    /// Needed because by the time the task below runs again, `query` already
+    /// holds the *new* value — there is no other way left to ask "what was
+    /// the old list an answer to?" That question is what decides whether the
+    /// old list is safe to keep on screen while the new one is computed: see
+    /// the task's comment below.
+    @State private var resultsQuery: String?
+
     var body: some View {
         NavigationStack {
             content
@@ -58,20 +68,32 @@ struct SearchView: View {
                         // "type something" prompt, not the last answer to a
                         // question that no longer exists.
                         results = nil
+                        resultsQuery = nil
                         return
                     }
-                    // Deliberately does NOT reset `results` to `nil` here.
-                    // The first search of a session has nothing to show yet,
-                    // so `content` falls into the "still working" placeholder
-                    // on its own — `results` is already `nil` at that point.
-                    // But every search after that already has a previous
-                    // answer on screen, and clearing it here would erase a
-                    // correct, still-relevant list for the length of every
-                    // wait whose keystrokes are more than 150ms apart — which
-                    // is most natural typing on a touch keyboard, not an edge
-                    // case. A list that is briefly one keystroke stale is a
-                    // smaller lie than a spinner replacing a right answer
-                    // several times over the course of one search.
+                    // Whether the old `results` stays on screen while this
+                    // wait runs depends on what produced it, not on whether
+                    // it merely exists. Keep it only when the new `query`
+                    // extends `resultsQuery` — the user typed further past a
+                    // result set that is still a superset of whatever the
+                    // new, longer query will match, e.g. "queen" → "queena".
+                    // Clear it for anything else: a character deleted
+                    // ("queenx" → "queen", where the old list is now a
+                    // *subset* and missing rows), or a different word typed
+                    // over a selection ("queen" → "abba", where the old list
+                    // has no relationship to the new query at all). Showing
+                    // Queen's songs while "abba" sits in the field, with no
+                    // sign anything is stale, is a worse lie than a spinner —
+                    // that was the actual bug this replaced. Showing a
+                    // shrunk-but-still-Queen list for one deleted character
+                    // is a smaller one, but still a lie, and cheap enough to
+                    // avoid: fall through to the "still working" placeholder
+                    // instead.
+                    if let resultsQuery, query.hasPrefix(resultsQuery) {
+                        // Keep `results` as is.
+                    } else {
+                        results = nil
+                    }
                     // `Task.sleep` throws `CancellationError` when this task
                     // is cancelled — which happens the moment `query` changes
                     // again, per the note on `.task(id:)` above. `.task(id:)`
@@ -93,6 +115,7 @@ struct SearchView: View {
                     // diacritic-insensitive — so this view never
                     // re-implements it, and never runs it from `body`.
                     results = LibraryGrouping.search(query, in: store.tracks)
+                    resultsQuery = query
                 }
         }
     }
@@ -150,14 +173,15 @@ struct SearchView: View {
                 // review (2026-08-03).
             }
         } else {
-            // Only reached on the first search of a session: `query` just
-            // became non-empty and the task above has not produced an
-            // answer yet, so there is no previous list to keep showing.
-            // Every search after the first keeps its predecessor's `results`
-            // on screen instead of landing here — see the task's comment on
-            // why. Neither "type something" nor "no results" is true in
-            // this gap, so a spinner is shown rather than either; a spinner
-            // says nothing false, "Không tìm thấy kết quả" here would.
+            // Reached whenever there is no `results` list safe to keep
+            // showing while the task above computes the next one: the first
+            // search of a session (nothing has ever been found yet), or any
+            // search whose query is not a continuation of the one that
+            // produced the previous list — see the task's comment above for
+            // which is which. Neither "type something" nor "no results" is
+            // true in this gap, so a spinner is shown rather than either; a
+            // spinner says nothing false, "Không tìm thấy kết quả" here
+            // would.
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
