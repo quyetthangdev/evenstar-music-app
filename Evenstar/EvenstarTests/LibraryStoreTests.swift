@@ -4,7 +4,8 @@ import SwiftData
 
 /// `LibraryStore` — the one copy of the local library the five screens read.
 ///
-/// The test that matters here is `testDeleteThroughTheHookDropsTheRowBeforeItDies`.
+/// The test that matters here is
+/// `testDeleteThroughTheHookLeavesTheStoreCleanWhenItReturns`.
 /// Five screens used to hold their own `@Query`, and `Query` is a
 /// `DynamicProperty`: its `update()` runs *before* the body of the view holding
 /// it, so no body could ever read an array still containing a row that had just
@@ -112,6 +113,8 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(store.tracks.count, 2)
     }
 
+    /// The rows are identical and only their order moved — the case
+    /// `replace(with:)`'s equality guard is most likely to swallow by mistake.
     func testReplaceNotifiesOnAReorderAlone() throws {
         let library = try InMemoryLibrary.make()
         let first = InMemoryLibrary.makeTrack(title: "Một", relativePath: "Music/a.mp3")
@@ -120,25 +123,43 @@ final class LibraryStoreTests: XCTestCase {
         try library.insert(second)
         let store = LibraryStore(tracks: [first, second])
 
+        let flag = ChangeFlag()
+        withObservationTracking {
+            _ = store.tracks
+        } onChange: {
+            flag.didChange = true
+        }
+
         // Renaming a track can move it in a title sort without changing which
         // rows exist. The store has to publish that, or the songs list stays in
         // an order the database no longer agrees with.
         store.replace(with: [second, first])
 
+        // Both halves, because the name promises the first one: waking the
+        // readers is the part that gets the new order on screen, and asserting
+        // only the array contents would test `filter` and call it notification.
+        XCTAssertTrue(flag.didChange)
         XCTAssertEqual(store.tracks.map(\.title), ["Hai", "Một"])
     }
 
     // MARK: - The crash window
 
-    /// Wires the delete hook exactly the way `EvenstarApp` does, then deletes.
+    /// Wires the delete hook the way `EvenstarApp` does, then deletes.
     ///
-    /// The assertion is that the store no longer holds the row **after
-    /// `delete(_:)` returns** — not after some later update pass. In the app it
-    /// is `RootView` reading `playback.currentTrack` that gets invalidated
-    /// mid-delete and drags the five tabs into a pass before the bridge's
-    /// `onChange` has run; here the point is simply that nothing has to run
-    /// afterwards for the store to be honest.
-    func testDeleteThroughTheHookDropsTheRowBeforeItDies() throws {
+    /// What this pins: by the time `delete(_:)` returns, the store is already
+    /// clean — no later update pass, no `onChange`, has to run for it to be
+    /// honest. That is the property the five screens depend on, because in the
+    /// app `RootView` reads `playback.currentTrack` and so gets invalidated
+    /// mid-delete, dragging the tabs into a pass before the bridge's `onChange`.
+    ///
+    /// What this does NOT pin, despite being about the same bug: that `remove`
+    /// runs *before* `context.delete`. Moving the hook below the delete would
+    /// leave this test green, since it only looks at the end state. The ordering
+    /// itself is pinned by `LibraryServiceTests`
+    /// `testDeleteAnnouncesTheTrackWhileItIsStillLive`, which reads the row
+    /// count from inside the handler and requires it to still be 1 — hence the
+    /// name here says what it checks and no more.
+    func testDeleteThroughTheHookLeavesTheStoreCleanWhenItReturns() throws {
         let library = try InMemoryLibrary.make()
         let keep = InMemoryLibrary.makeTrack(title: "Giữ", relativePath: "Music/a.mp3")
         let doomed = InMemoryLibrary.makeTrack(title: "Xoá", relativePath: "Music/b.mp3")
@@ -160,23 +181,17 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(store.tracks.map(\.title), ["Giữ"])
     }
 
-    /// The hook must not fire `remove` for rows belonging to the other two
-    /// tables: `DriveTrack` and `JamendoTrack` are not in this store, and the
-    /// cast in `EvenstarApp` is what keeps them out.
-    func testDeletingADriveRowLeavesTheLocalStoreAlone() throws {
-        let library = try InMemoryLibrary.make()
-        let local = InMemoryLibrary.makeTrack(title: "Giữ", relativePath: "Music/a.mp3")
-        try library.insert(local)
-        let store = LibraryStore(tracks: [local])
-        let drive = DriveTrack(fileID: "f1", folderID: "folder", fileName: "remote.mp3")
-        library.context.insert(drive)
-
-        // The same closure body `EvenstarApp` installs, handed a non-`Track`.
-        let hook: @MainActor (any Playable) -> Void = { playable in
-            if let track = playable as? Track { store.remove(track) }
-        }
-        hook(drive)
-
-        XCTAssertEqual(store.tracks.map(\.title), ["Giữ"])
-    }
+    // No test here for "a `DriveTrack` handed to the hook leaves this store
+    // alone", and its absence is deliberate.
+    //
+    // The version that existed rebuilt the closure from `EvenstarApp` inside the
+    // test and then exercised the copy — so deleting the `as? Track` cast from
+    // the real one, in the `onTrackWillBeDeleted` assignment in
+    // `EvenstarApp.init`, left this green. It also asserted something the type
+    // system already guarantees: `remove(_:)` takes a `Track`, so handing it a
+    // `DriveTrack` does not compile.
+    //
+    // The real closure is built inside `EvenstarApp.init` and is not reachable
+    // from a test, and the honest answer to that is no test rather than a copy
+    // that always agrees with itself.
 }
