@@ -358,6 +358,19 @@ struct PlayerCard: View {
     /// previous track left behind, and every read of `artwork` has to assume the
     /// worst. See `displayedArtwork`.
     @State private var artworkOwner: ArtworkIdentity?
+    /// Bản giải mã sẵn có trong cache cho đường dẫn bìa hiện tại, tra **một
+    /// lần** mỗi khi `artworkIdentity` đổi thay vì mỗi khung.
+    ///
+    /// `ArtworkStore.anyCachedImage` chỉ là một lần khoá và một lần băm trên
+    /// `NSCache` — rẻ, nhưng `displayedArtwork` từng gọi nó từ một computed
+    /// property, nên nó chạy mỗi lần `body` chạy: mỗi khung suốt cú kéo thẻ,
+    /// cho một kết quả không đổi trong cả cú kéo ấy.
+    ///
+    /// Giá trị ở đây luôn thuộc về đường dẫn hiện tại, vì nó chỉ được ghi ở hai
+    /// chỗ và cả hai đều biết mình vừa tra đường dẫn nào: `.onChange` trên
+    /// `artworkIdentity` trong `body`, và cuối `loadArtwork`. Xem chú thích ở
+    /// hai chỗ ấy để biết vì sao chừng ấy mốc là đủ.
+    @State private var cachedCover: UIImage?
     @State private var tint: Color?
 
 
@@ -740,13 +753,15 @@ struct PlayerCard: View {
     ///
     /// Order matters. The full-strength image wins only when it belongs to
     /// *this* track; otherwise a correct small cover beats a stale large one.
+    ///
+    /// Bản trong cache đọc từ `cachedCover` chứ không tra thẳng
+    /// `ArtworkStore.anyCachedImage` nữa: quy tắc thì không đổi, chỉ *khi nào*
+    /// tra mới đổi. Xem `cachedCover`.
     private var displayedArtwork: UIImage? {
         Self.preferredCover(
             hasArtwork: hasArtwork,
             loadedForThisTrack: artworkOwner == artworkIdentity ? artwork : nil,
-            cachedForThisPath: ArtworkStore.anyCachedImage(
-                for: playback.currentTrack?.artworkRelativePath
-            )
+            cachedForThisPath: cachedCover
         )
     }
 
@@ -791,6 +806,27 @@ struct PlayerCard: View {
         }
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
+        // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
+        // ấy đổi. `artworkIdentity` bắt được cả hai — `setArtwork` luôn ghi ra
+        // một tên file mới, nên thay bìa cho bài đang phát cũng đổi định danh.
+        //
+        // `onChange` chứ không phải trong thân `.task` bên dưới: `onChange`
+        // chạy sau `body` nhưng vẫn nằm trong cùng một lượt cập nhật, nên lần
+        // ghi này kịp vào chính khung đang dựng — trả giá bằng một lượt `body`
+        // thừa đúng vào lúc bài đổi, chứ không phải mỗi khung. Thân `.task` thì
+        // là một `Task` trên main actor, chạy sau khi khung đã commit; đặt ở đó
+        // thì bìa dự phòng tới trễ đúng một nhịp, mà tránh đúng một nhịp ấy là
+        // toàn bộ lý do `anyCachedImage` có mặt trong màn hình này.
+        //
+        // `initial: true` cho lần đầu thẻ xuất hiện đã có sẵn bài đang phát
+        // (khôi phục phiên trước). Ở đúng lúc ấy cache thường rỗng vì tiến
+        // trình vừa khởi động, nhưng một lần tra rẻ hơn là phải suy luận xem
+        // trường hợp nào thì rỗng.
+        .onChange(of: artworkIdentity, initial: true) {
+            cachedCover = ArtworkStore.anyCachedImage(
+                for: playback.currentTrack?.artworkRelativePath
+            )
+        }
         .onChange(of: progress) { _, newValue in
             // Collapsed, or nearly. Not `== 0`: a drag that ends just short of
             // closed still means the player is gone from the user's view, and
@@ -2327,6 +2363,19 @@ struct PlayerCard: View {
         guard playback.currentTrack?.artworkRelativePath == path else { return }
         artworkOwner = artworkIdentity
         artwork = loadedImage
+        // Mốc thứ hai, và chỉ cho đúng nhánh này. Khi bản giải mã của chính thẻ
+        // về nil thì `cachedCover` là thứ duy nhất còn vẽ được, mà cache có thể
+        // đã có thêm ảnh cho đúng đường dẫn này kể từ lúc bài đổi — một hàng
+        // danh sách vừa cuộn tới chẳng hạn. Khi `loadedImage` khác nil thì tra
+        // lại là thừa: `preferredCover` cho bản đầy đủ thắng, và ảnh trong cache
+        // không được nhìn tới nữa.
+        //
+        // `path` ở đây là đường dẫn hiện tại — dòng `guard` ngay trên vừa đối
+        // chiếu nó với bài đang phát — nên không có đường nào để một ảnh của
+        // bài khác lọt vào.
+        if loadedImage == nil {
+            cachedCover = ArtworkStore.anyCachedImage(for: path)
+        }
         tint = loadedColour
     }
 }
