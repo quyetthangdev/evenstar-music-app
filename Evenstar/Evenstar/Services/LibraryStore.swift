@@ -1,0 +1,103 @@
+import SwiftUI
+import SwiftData
+
+/// The one copy of the local library every screen reads.
+///
+/// Five screens used to declare the same `@Query` over the whole `Track` table
+/// — Bài hát, Album, Nghệ sĩ, Tài khoản and Tìm kiếm. `TabView` keeps a tab it
+/// has built, so all five stayed alive at once and every insert, delete or save
+/// cost five fetches and five localized sorts before a single pixel changed.
+/// Importing forty files paid that forty times, on the main actor, during the
+/// one flow that has to feel smooth.
+///
+/// So the fetch happens once, here, and the five screens read the result. What
+/// they read is the same `Track` objects the query returns, not copies: a row
+/// is `@Observable`, so a `SongRow` still redraws when the title behind it
+/// changes without this array being touched at all.
+///
+/// Why a store rather than one `@Query` in `RootView` handed down through the
+/// environment: `RootView.body` must not read anything that changes as often as
+/// the library does. Its body builds the `TabView` and all five tabs for
+/// SwiftUI to diff, and `PlayerExpansion.swift` documents in detail what that
+/// cost looked like on screen the last time something frequently-changing was
+/// read up there. A `@Query` only lives in a `View`, and a `View` that holds
+/// one is invalidated by it — so the query goes in a view of its own that
+/// renders nothing (`LibraryQueryBridge` below) and `RootView` stays ignorant.
+@Observable
+@MainActor
+final class LibraryStore {
+    /// Sorted by title with `.localizedStandard`, matching the query that fills
+    /// it — the order Bài hát renders in, so no screen re-sorts on the way out.
+    ///
+    /// `private(set)`: `LibraryQueryBridge` is the only writer, through
+    /// `replace(with:)`. A screen that could assign here would be publishing a
+    /// library state the database does not agree with.
+    private(set) var tracks: [Track]
+
+    /// Seeded at launch from a plain fetch rather than left empty for the
+    /// bridge to fill on the first update pass.
+    ///
+    /// Empty is not a neutral starting value on these screens: it is the empty
+    /// state. Bài hát renders `EmptyLibraryView`, Album and Nghệ sĩ render
+    /// "Chưa có album"/"Chưa có nghệ sĩ". Leaving the first frame to guess
+    /// wrong risks showing a user with a full library the screen that says they
+    /// have no music, for however long the first pass takes.
+    init(tracks: [Track] = []) {
+        self.tracks = tracks
+    }
+
+    /// Takes a fresh fetch, and ignores one that says nothing new.
+    ///
+    /// The guard matters because every assignment to an `@Observable` property
+    /// wakes its readers whether or not the value moved, and the readers here
+    /// are five screens. The comparison is by persistent identity — SwiftData
+    /// rows are `Equatable` that way — so it answers "same rows, same order",
+    /// which is exactly the question the screens care about.
+    func replace(with fetched: [Track]) {
+        guard fetched != tracks else { return }
+        tracks = fetched
+    }
+}
+
+/// The single `@Query` on `Track` in the app. It draws nothing.
+///
+/// A `@Query` needs a `View` to live in, and it invalidates that view on every
+/// change to the table. This is that view, deliberately reduced to nothing so
+/// the invalidation lands on a body that costs one `Color.clear` to rebuild
+/// instead of on `RootView`'s, which rebuilds the `TabView` and five tabs.
+///
+/// Why this rather than `store.refresh()` called from the places that change
+/// data: the writers are `LibraryService.insert`/`delete`/`setArtwork`/
+/// `updateMetadata`, `ImportService`, `DriveLibraryService` and
+/// `JamendoLibraryService` — and whichever one is added next. A refresh call is
+/// something a future writer has to remember, with no compiler error and no
+/// failing test when they do not; the symptom would be a library that quietly
+/// stops updating. SwiftData already notices every one of those writes, so the
+/// trigger stays where it cannot be forgotten.
+///
+/// What this does NOT report is a property edited in place: the array holds the
+/// same rows in the same order after a rename, so `onChange` does not fire.
+/// That is unchanged from before — `LibraryService.metadataRevision` is the
+/// signal for that case, and Album and Nghệ sĩ still listen to it.
+struct LibraryQueryBridge: View {
+    @Environment(LibraryStore.self) private var store
+    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)])
+    private var tracks: [Track]
+
+    var body: some View {
+        // Zero-sized rather than `EmptyView`: an `EmptyView` is not guaranteed
+        // to be materialised as a view at all, and a `@Query` that is never
+        // updated fetches nothing.
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            // `initial: true` covers the case the launch seed cannot: a
+            // container that gains rows before this view is first updated, and
+            // every remount — `RootView` carries `.id(language)`, so switching
+            // language rebuilds this view from scratch.
+            .onChange(of: tracks, initial: true) { _, updated in
+                store.replace(with: updated)
+            }
+    }
+}

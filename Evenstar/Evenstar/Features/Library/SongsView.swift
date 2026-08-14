@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import PhotosUI
 import UniformTypeIdentifiers
 
@@ -7,10 +6,17 @@ struct SongsView: View {
     @Environment(LibraryService.self) private var library
     @Environment(ImportService.self) private var importer
     @Environment(PlaybackService.self) private var playback
-    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    /// The local library, fetched once for the whole app — see `LibraryStore`.
+    /// The rows are the same `Track` objects a `@Query` here would have
+    /// returned, so `SongRow` still redraws on an in-place edit.
+    @Environment(LibraryStore.self) private var store
     // No `@Query private var jamendoTracks` here — see `JamendoSongsList`'s
     // doc comment for why that query moved into its own view instead of
     // living on this one, always active regardless of the selected chip.
+
+    /// Read only from `localContent`, so picking the Drive or Jamendo chip
+    /// leaves this screen with no dependency on the local library at all.
+    private var tracks: [Track] { store.tracks }
 
     /// Owned by `RootView`, which drives both the tab bar and the player from
     /// it. Written here only by `minimisesBottomBar` on this screen's list.

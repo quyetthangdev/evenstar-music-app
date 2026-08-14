@@ -6,7 +6,10 @@ struct ArtistsView: View {
     // for was choosing between the two bottom clearances, and `clearsBottomBar`
     // now owns that decision along with the arithmetic behind it.
     @Environment(LibraryService.self) private var library
-    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    /// The local library, fetched once for the whole app. See `LibraryStore`,
+    /// and `AlbumsView`'s copy of this property for why the regrouping trigger
+    /// is unaffected by where the array comes from.
+    @Environment(LibraryStore.self) private var store
 
     /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
     /// grid, and **passed on to `ArtistDetailView`** — that screen is a pushed
@@ -28,14 +31,14 @@ struct ArtistsView: View {
     var body: some View {
         NavigationStack {
             content
-                .onChange(of: tracks, initial: true) { _, updated in
+                .onChange(of: store.tracks, initial: true) { _, updated in
                     artists = LibraryGrouping.artists(from: updated)
                 }
                 // See `AlbumsView` and `LibraryService.metadataRevision`: a
-                // rename changes no element of `tracks`, so the trigger above
-                // cannot see it.
+                // rename changes no element of `store.tracks`, so the trigger
+                // above cannot see it.
                 .onChange(of: library.metadataRevision) { _, _ in
-                    artists = LibraryGrouping.artists(from: tracks)
+                    artists = LibraryGrouping.artists(from: store.tracks)
                 }
                 .navigationTitle("Nghệ sĩ")
                 // Hoisted above the empty/non-empty branch in `content` so it
@@ -129,8 +132,10 @@ private struct ArtistCell: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
+    // Seeded by hand — see the same note in `AlbumsView`'s preview.
     return ArtistsView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
+        .environment(LibraryStore(tracks: tracksToInsert))
         .modelContainer(container)
 }

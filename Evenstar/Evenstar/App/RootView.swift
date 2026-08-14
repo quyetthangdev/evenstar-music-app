@@ -117,6 +117,15 @@ struct RootView: View {
                     bottomSafeAreaInset = inset
                 }
 
+            // The app's one `@Query` on `Track`, in a view that draws nothing.
+            //
+            // It sits here rather than being declared on this struct on
+            // purpose: a `@Query` invalidates the view that holds it, and this
+            // body rebuilds the `TabView` and all five tabs. Same rule
+            // `expansion` above follows, same reason — see `LibraryStore` and
+            // `PlayerExpansion.swift`. Nothing in this body reads the library.
+            LibraryQueryBridge()
+
             TabView(selection: $tab) {
                 SongsView(isMinimised: $isMinimised).tag(LibraryTab.songs)
                 AlbumsView(isMinimised: $isMinimised).tag(LibraryTab.albums)
@@ -174,11 +183,13 @@ struct RootView: View {
                     // The bar morphs first; the tab switches on the next turn.
                     //
                     // `TabView` builds a tab's content lazily, so the first
-                    // switch to `.search` constructs `SearchView` and runs its
-                    // `@Query` over the whole library. Done in the same turn as
+                    // switch to `.search` constructs `SearchView` and its
+                    // `NavigationStack` from nothing. Done in the same turn as
                     // `isSearching`, that work lands between the tap and the
                     // frame that would have shown the morph starting — so the
-                    // bar visibly stalls, once per launch.
+                    // bar visibly stalls, once per launch. The screen's own
+                    // fetch is no longer part of that bill (it reads
+                    // `LibraryStore` now), but the construction still is.
                     //
                     // Every tab pays that cost on its first open. Search is
                     // simply the only one with an animation attached, which is

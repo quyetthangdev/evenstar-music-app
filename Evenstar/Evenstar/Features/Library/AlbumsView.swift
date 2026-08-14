@@ -6,7 +6,11 @@ struct AlbumsView: View {
     // for was choosing between the two bottom clearances, and `clearsBottomBar`
     // now owns that decision along with the arithmetic behind it.
     @Environment(LibraryService.self) private var library
-    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    /// The local library, fetched once for the whole app — see `LibraryStore`.
+    /// This screen never held the query for the rows themselves, only to know
+    /// when to regroup, and that trigger is unchanged: the store publishes the
+    /// same array, from the same fetch, in the same order.
+    @Environment(LibraryStore.self) private var store
 
     /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
     /// grid, and **passed on to `AlbumDetailView`** — that screen is a pushed
@@ -26,8 +30,8 @@ struct AlbumsView: View {
     /// cost scales with library size, which is exactly the direction Drive
     /// streaming pushes it.
     ///
-    /// **`onChange(of: tracks)` alone is not enough, and that is why there are
-    /// two triggers below.** It compares `Track` by identity (SwiftData models
+    /// **`onChange(of: store.tracks)` alone is not enough, and that is why
+    /// there are two triggers below.** It compares `Track` by identity (models
     /// are `Hashable` by persistent identity), so it fires on insert, delete and
     /// reorder but NOT on a property edited in place — the array holds the same
     /// objects in the same order after a rename.
@@ -48,16 +52,16 @@ struct AlbumsView: View {
                 // `initial: true` because the first body pass runs before any
                 // change: without it the grid renders empty once and the empty
                 // state flashes on every launch.
-                .onChange(of: tracks, initial: true) { _, updated in
+                .onChange(of: store.tracks, initial: true) { _, updated in
                     albums = paddedForScrollTesting(LibraryGrouping.albums(from: updated))
                 }
-                // A second trigger, because `tracks` cannot report the first
-                // one. Editing a track's album changes no element of that
+                // A second trigger, because `store.tracks` cannot report the
+                // first one. Editing a track's album changes no element of that
                 // array — same objects, same order — so `onChange` above never
                 // fires and this screen would keep showing the album the track
                 // used to be in. See `LibraryService.metadataRevision`.
                 .onChange(of: library.metadataRevision) { _, _ in
-                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: tracks))
+                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: store.tracks))
                 }
                 .navigationTitle("Album")
                 // Hoisted above the empty/non-empty branch in `content` so it
@@ -192,8 +196,11 @@ private struct AlbumCell: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
+    // Seeded by hand: `LibraryQueryBridge` lives in `RootView`, so a preview of
+    // one screen has no query keeping the store in step with the container.
     return AlbumsView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
+        .environment(LibraryStore(tracks: tracksToInsert))
         .modelContainer(container)
 }

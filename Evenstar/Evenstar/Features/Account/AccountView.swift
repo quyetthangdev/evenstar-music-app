@@ -11,7 +11,12 @@ struct AccountView: View {
     // No `PlaybackService` here any more: the only thing this screen read it
     // for was choosing between the two bottom clearances, and `clearsBottomBar`
     // now owns that decision along with the arithmetic behind it.
-    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    /// The local library, fetched once for the whole app — see `LibraryStore`.
+    /// This screen renders no track of its own; it reads the array for a count
+    /// and for the file paths behind the storage figure.
+    @Environment(LibraryStore.self) private var store
+
+    private var tracks: [Track] { store.tracks }
 
     /// Owned by `RootView`, which drives both the tab bar and the player from
     /// it. Written here only by `minimisesBottomBar` on this screen's list.
@@ -34,7 +39,7 @@ struct AccountView: View {
     /// Recomputed in the same `.task(id: tracks.count)` below that already
     /// drives `bytesOnDisk`, not in `body`: `LibraryGrouping.albums` is a
     /// `Dictionary(grouping:)` over the whole library plus a localized sort,
-    /// and `body` reruns on every `@Query` change — one inserted track was
+    /// and `body` reruns on every change to the library — one inserted track was
     /// paying for a full regrouping just to show an integer. Keyed on
     /// `tracks.count` rather than `tracks` itself for the same reason
     /// `bytesOnDisk` is: cheap, but blind to an edit that changes an album
@@ -219,9 +224,11 @@ struct AccountView: View {
     // reads `DriveLibraryService` out of the environment, so without this the
     // Nguồn nhạc row crashes the preview rather than showing the screen.
     let driveLibrary = DriveLibraryService(library: library)
+    // Seeded by hand — see the same note in `AlbumsView`'s preview.
     return AccountView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
         .environment(driveLibrary)
+        .environment(LibraryStore(tracks: tracksToInsert))
         .modelContainer(container)
 }

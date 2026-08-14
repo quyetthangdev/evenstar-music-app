@@ -3,7 +3,13 @@ import SwiftData
 
 struct SearchView: View {
     @Environment(PlaybackService.self) private var playback
-    @Query(sort: [SortDescriptor(\Track.title, comparator: .localizedStandard)]) private var tracks: [Track]
+    /// The local library, fetched once for the whole app — see `LibraryStore`.
+    ///
+    /// Read only from the branch below that actually searches, so while the
+    /// query is empty — which is most of this screen's life, including every
+    /// moment it is not on screen and holding its last state — this screen has
+    /// no dependency on the library and is not rebuilt when it changes.
+    @Environment(LibraryStore.self) private var store
 
     /// Read-only, and owned by `RootView`. The field that edits it lives in the
     /// floating tab bar, which is a sibling of the `TabView` this screen sits
@@ -36,7 +42,7 @@ struct SearchView: View {
         } else {
             // `LibraryGrouping.search` owns matching — case- and
             // diacritic-insensitive — so this view never re-implements it.
-            let results = LibraryGrouping.search(query, in: tracks)
+            let results = LibraryGrouping.search(query, in: store.tracks)
             if results.isEmpty {
                 // Hand-written rather than `ContentUnavailableView.search(text:)`.
                 // That convenience draws its title and description from the
@@ -111,8 +117,10 @@ struct SearchView: View {
     for track in tracksToInsert {
         container.mainContext.insert(track)
     }
+    // Seeded by hand — see the same note in `AlbumsView`'s preview.
     return SearchView(query: "biển")
         .environment(library)
         .environment(playback)
+        .environment(LibraryStore(tracks: tracksToInsert))
         .modelContainer(container)
 }

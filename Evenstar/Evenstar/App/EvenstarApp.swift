@@ -14,6 +14,9 @@ struct EvenstarApp: App {
     @State private var playback: PlaybackService
     @State private var driveLibrary: DriveLibraryService
     @State private var jamendoLibrary: JamendoLibraryService
+    /// The local library, fetched once and read by five screens. See
+    /// `LibraryStore` for why it is not five `@Query`s any more.
+    @State private var libraryStore: LibraryStore
     private let remoteCommands: RemoteCommandsBridge
 
     init() {
@@ -64,6 +67,23 @@ struct EvenstarApp: App {
         // anything reads a property off it. See
         // `JamendoLibraryService.onTrackWillBeDeleted`.
         jamendoLib.onTrackWillBeDeleted = { play.handleTrackDeleted($0) }
+        // Seeded here, synchronously, so the first frame renders the real
+        // library instead of the empty state — see `LibraryStore.init`. The
+        // same sort the query uses, because the two have to agree.
+        //
+        // A failed seed is survivable and so is not fatal: `LibraryQueryBridge`
+        // fills the store on the first update pass regardless, and the only
+        // cost is the empty state showing for that one pass.
+        let store: LibraryStore
+        do {
+            store = LibraryStore(tracks: try libService.fetchAllTracks())
+        } catch {
+            // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
+            // path for the library not opening at all belongs to 2d.
+            print("Initial library fetch failed: \(error)")
+            store = LibraryStore()
+        }
+        _libraryStore = State(initialValue: store)
         _library = State(initialValue: libService)
         _importService = State(initialValue: imp)
         _playback = State(initialValue: play)
@@ -81,6 +101,7 @@ struct EvenstarApp: App {
                 .environment(playback)
                 .environment(driveLibrary)
                 .environment(jamendoLibrary)
+                .environment(libraryStore)
         }
         .modelContainer(modelContainer)
     }
