@@ -314,11 +314,7 @@ struct NowPlayingContent: View {
     }
 
     private var scrubber: some View {
-        ScrubberBar(
-            position: playback.position,
-            duration: playback.duration,
-            onSeek: { playback.seek(to: $0) }
-        )
+        PlaybackScrubber(playback: playback)
     }
 
     private var transport: some View {
@@ -470,5 +466,33 @@ struct NowPlayingContent: View {
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
         .sensoryFeedback(.impact(weight: .light), trigger: volumeTaps)
+    }
+}
+
+/// Đọc `position`/`duration` trong thân riêng của nó, tách khỏi
+/// `NowPlayingContent`.
+///
+/// Với `@Observable`, theo dõi xảy ra theo lượt gọi *thân view* — đọc hai
+/// thuộc tính này ngay trong thân `NowPlayingContent` thì cả cây bên dưới nó
+/// (tiêu đề, ba nút transport, thanh âm lượng, hàng nút hàng đợi) dựng lại mỗi
+/// khi `PlaybackService` ghi vị trí, tức 0.5 giây một lần lúc đang phát — kể
+/// cả khi player đang đóng. Đẩy phần đọc xuống view con này thì lượt ghi ấy
+/// chỉ khiến thân của riêng nó dựng lại. Cùng nguyên lý với `Slot` trong
+/// `ReorderableStack.swift`.
+///
+/// Nhận cả `playback`, không chỉ hai con số, vì `onSeek` phải gọi
+/// `playback.seek(to:)`. Điều đó không tự kéo theo việc theo dõi cả đối
+/// tượng: `@Observable` theo dõi khi thuộc tính bị *đọc trong thân*, không
+/// phải khi tham chiếu được giữ trong scope. Thân dưới đây chỉ đọc `position`
+/// và `duration`, nên chỉ hai thuộc tính đó bị theo dõi ở view này.
+private struct PlaybackScrubber: View {
+    let playback: PlaybackService
+
+    var body: some View {
+        ScrubberBar(
+            position: playback.position,
+            duration: playback.duration,
+            onSeek: { playback.seek(to: $0) }
+        )
     }
 }
