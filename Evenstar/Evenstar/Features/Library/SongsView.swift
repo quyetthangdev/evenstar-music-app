@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import SwiftData
 import UniformTypeIdentifiers
 
 struct SongsView: View {
@@ -28,14 +29,26 @@ struct SongsView: View {
     @State private var showImportSheet = false
     @State private var pickerErrorMessage: String?
 
-    /// The track whose cover the photo picker is about to replace.
+    /// Identifies the track whose cover the photo picker is about to replace.
     ///
     /// Held separately from the picker's own selection because the two are
     /// answered at different moments: the row is known when the menu item is
-    /// tapped, the image only when the picker returns. Keeping the track here
+    /// tapped, the image only when the picker returns. Naming the row here
     /// rather than deriving it later is what stops a slow picker from writing
     /// its result onto whatever row happens to be current afterwards.
-    @State private var artworkTarget: Track?
+    ///
+    /// An id rather than the `Track` itself, and that is the whole point. This
+    /// property is never written back to `nil` on the cancel path — the picker
+    /// uses `isPresented:`, so a dismissal with no selection tells this view
+    /// nothing — which means whatever is stored here outlives the interaction:
+    /// past the sheet closing, past a tab switch, past the row being deleted.
+    /// A `Track` kept that way is a strong reference to a `PersistentModel`
+    /// that may already be `delete`d and `save`d, and reading any property off
+    /// one raises `NSObjectInaccessibleException`, an Objective-C exception
+    /// Swift cannot catch. A `PersistentIdentifier` is a value: stale, it is
+    /// merely an id that resolves to nothing. See `applyArtwork`, which
+    /// resolves it against the live library at the moment of the write.
+    @State private var artworkTarget: PersistentIdentifier?
     @State private var showArtworkPicker = false
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var artworkErrorMessage: String?
@@ -170,6 +183,10 @@ struct SongsView: View {
         // change — the user tapping Cancel — must do nothing at all.
         .onChange(of: pickedPhoto) { _, item in
             guard let item, let target = artworkTarget else { return }
+            // Cleared here rather than left standing: this is the one moment
+            // the view learns the interaction is over. The cancel path never
+            // arrives, which is why `artworkTarget` holds an id and not a row.
+            artworkTarget = nil
             Task { await applyArtwork(from: item, to: target) }
         }
         .alert(
@@ -261,7 +278,7 @@ struct SongsView: View {
                         Button {
                             // Set before the picker opens, not read back after
                             // it closes. See `artworkTarget`.
-                            artworkTarget = track
+                            artworkTarget = track.persistentModelID
                             pickedPhoto = nil
                             showArtworkPicker = true
                         } label: {
@@ -289,8 +306,29 @@ struct SongsView: View {
     /// something the user can act on, but a silent no-op for the first two is
     /// exactly the "I picked an image and nothing happened" the fresh-filename
     /// rule in `setArtwork` exists to prevent — so none of them is swallowed.
+    ///
+    /// **Takes an id, not a row, and re-resolves it after the waiting.** There
+    /// are two real suspensions in here, not formalities: a photo that lives in
+    /// iCloud makes `loadTransferable` take seconds, and
+    /// `ArtworkStore.jpegForStorage` is `@concurrent`, so it genuinely leaves
+    /// the main actor. The picker is already dismissed and the list already
+    /// fully interactive throughout both, so the user can swipe away the very
+    /// row this task was started for. `LibraryService.onTrackWillBeDeleted`
+    /// reaches `PlaybackService`, `LibraryStore` and `SearchResultsStore` — it
+    /// cannot reach a `Task` — so a captured `Track` would come back to a row
+    /// that had been `delete`d and `save`d, and `setArtwork` reads and writes
+    /// its properties: `NSObjectInaccessibleException`, uncatchable in Swift.
+    ///
+    /// The shape is `PlaybackService.loadArtworkIntoNowPlaying`'s: lift the
+    /// identity out before the waiting, then check it against live state
+    /// afterwards. `store.tracks` is the live state here, because
+    /// `LibraryStore.remove(_:)` is what guarantees it holds no dead row.
+    ///
+    /// A row that has gone gets no error message. The user deleted the song
+    /// they had asked to re-cover; telling them the cover failed would be
+    /// reporting a problem they created on purpose.
     @MainActor
-    private func applyArtwork(from item: PhotosPickerItem, to track: Track) async {
+    private func applyArtwork(from item: PhotosPickerItem, to targetID: PersistentIdentifier) async {
         let raw: Data?
         do { raw = try await item.loadTransferable(type: Data.self) }
         catch {
@@ -312,6 +350,9 @@ struct SongsView: View {
                 localized: "Không đọc được ảnh đã chọn.",
                 bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale
             )
+            return
+        }
+        guard let track = store.tracks.first(where: { $0.persistentModelID == targetID }) else {
             return
         }
         do { try library.setArtwork(jpeg, for: track) }
