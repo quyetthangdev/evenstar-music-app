@@ -366,11 +366,25 @@ struct PlayerCard: View {
     /// property, nên nó chạy mỗi lần `body` chạy: mỗi khung suốt cú kéo thẻ,
     /// cho một kết quả không đổi trong cả cú kéo ấy.
     ///
-    /// Giá trị ở đây luôn thuộc về đường dẫn hiện tại, vì nó chỉ được ghi ở hai
-    /// chỗ và cả hai đều biết mình vừa tra đường dẫn nào: `.onChange` trên
-    /// `artworkIdentity` trong `body`, và cuối `loadArtwork`. Xem chú thích ở
-    /// hai chỗ ấy để biết vì sao chừng ấy mốc là đủ.
+    /// Được ghi ở hai chỗ: `.onChange` trên `artworkIdentity` trong `body`, và
+    /// cuối `loadArtwork`. Xem chú thích ở hai chỗ ấy để biết vì sao chừng ấy
+    /// mốc là đủ.
     @State private var cachedCover: UIImage?
+    /// Bài mà `cachedCover` được tra cho — cùng vai trò `artworkOwner` giữ cho
+    /// `artwork`, và có mặt vì cùng một lý do.
+    ///
+    /// Một `@State` không tự hết hạn khi bài đổi. Ở khung đầu tiên của bài B,
+    /// `cachedCover` vẫn còn là ảnh tra cho bài A cho tới khi `.onChange` chạy;
+    /// không có chốt này thì `displayedArtwork` sẽ trả bìa của A cho B trong
+    /// đúng khung ấy. Trước khi giá trị được cất vào `@State`, chuyện đó bất
+    /// khả: chỗ tra cache đọc thẳng đường dẫn của bài hiện tại nên không bao giờ
+    /// lệch bài.
+    ///
+    /// Chốt nằm ở chỗ gọi `preferredCover`, không nằm trong `preferredCover` —
+    /// đúng như `loadedForThisTrack` đang làm. Nó đổi câu hỏi "`.onChange` có
+    /// kịp khung không" từ chuyện *đúng/sai* thành chuyện *nhanh/chậm*: chậm
+    /// một khung thì ô bìa là mảng màu phẳng, chứ không phải bìa bài trước.
+    @State private var cachedCoverOwner: ArtworkIdentity?
     @State private var tint: Color?
 
 
@@ -757,12 +771,34 @@ struct PlayerCard: View {
     /// Bản trong cache đọc từ `cachedCover` chứ không tra thẳng
     /// `ArtworkStore.anyCachedImage` nữa: quy tắc thì không đổi, chỉ *khi nào*
     /// tra mới đổi. Xem `cachedCover`.
+    ///
+    /// Hai nhánh đều qua chốt chủ sở hữu, vì cả hai đều là `@State` không tự hết
+    /// hạn khi bài đổi. `cachedForThisPath` trong tên tham số là một lời hứa, và
+    /// đây là chỗ giữ lời hứa ấy.
     private var displayedArtwork: UIImage? {
         Self.preferredCover(
             hasArtwork: hasArtwork,
             loadedForThisTrack: artworkOwner == artworkIdentity ? artwork : nil,
-            cachedForThisPath: cachedCover
+            cachedForThisPath: cachedCoverOwner == artworkIdentity ? cachedCover : nil
         )
+    }
+
+    /// Tra cache một lần cho `owner`, và ghi lại cả ảnh lẫn chủ của nó.
+    ///
+    /// Một chỗ cho cả hai mốc, vì ghi ảnh mà quên ghi chủ thì ảnh sẽ bị chốt ở
+    /// `displayedArtwork` loại đi và cả việc này thành vô nghĩa — im lặng.
+    ///
+    /// Cả hai lần gán đều có rào so sánh: `@State` không so sánh giá trị trước
+    /// khi làm mất hiệu lực (`UIImage?` thì cũng không có gì để so), nên một lần
+    /// gán nil-đè-nil — ca rất thường gặp: bài không bìa, hoặc cache chưa có gì —
+    /// vẫn tốn trọn một lượt `body` của một view rất lớn, đúng vào lúc đổi bài.
+    /// `!==` chứ không phải `==`: cùng một đối tượng ảnh mới là "không có gì
+    /// đổi"; `UIImage` không định nghĩa so sánh nội dung, và có định nghĩa thì so
+    /// pixel ở đây cũng là sai chỗ.
+    private func refreshCachedCover(for path: String?, owner: ArtworkIdentity) {
+        let cover = ArtworkStore.anyCachedImage(for: path)
+        if cover !== cachedCover { cachedCover = cover }
+        if cachedCoverOwner != owner { cachedCoverOwner = owner }
     }
 
     /// The ordering above, on its own so it can be tested.
@@ -810,21 +846,31 @@ struct PlayerCard: View {
         // ấy đổi. `artworkIdentity` bắt được cả hai — `setArtwork` luôn ghi ra
         // một tên file mới, nên thay bìa cho bài đang phát cũng đổi định danh.
         //
-        // `onChange` chứ không phải trong thân `.task` bên dưới: `onChange`
-        // chạy sau `body` nhưng vẫn nằm trong cùng một lượt cập nhật, nên lần
-        // ghi này kịp vào chính khung đang dựng — trả giá bằng một lượt `body`
-        // thừa đúng vào lúc bài đổi, chứ không phải mỗi khung. Thân `.task` thì
-        // là một `Task` trên main actor, chạy sau khi khung đã commit; đặt ở đó
-        // thì bìa dự phòng tới trễ đúng một nhịp, mà tránh đúng một nhịp ấy là
-        // toàn bộ lý do `anyCachedImage` có mặt trong màn hình này.
+        // `onChange` chứ không phải thân `.task` bên dưới, vì `onChange` chạy
+        // sớm hơn: nó chạy ngay sau `body` trong cùng lượt cập nhật, còn thân
+        // `.task` là một `Task` trên main actor và chỉ chạy sau khi lượt ấy
+        // xong. Sớm hơn là đáng, vì bìa dự phòng có mặt chỉ để cứu vài chục mili
+        // giây đầu.
+        //
+        // Sớm bao nhiêu thì **không** khẳng định ở đây. Chú thích của
+        // `expansion` phía trên chỉ chứng cho một điều: `onChange` chạy sau
+        // `body` và tốn thêm một lượt cập nhật — ở đó điều ấy được nêu như lý do
+        // *tránh* `onChange`, chứ không phải bằng chứng rằng lần ghi kịp khung
+        // đang dựng. Nếu nó không kịp, cái mất là một khung bìa dự phòng, không
+        // phải một khung bìa sai: `cachedCoverOwner` gác chỗ đó.
+        //
+        // Một lượt `body` thừa mỗi lần đổi bài là giá phải trả, và đó đúng là
+        // cái giá mà chú thích `expansion` cảnh báo — chỉ khác ở chỗ nó rơi vào
+        // lúc đổi bài, không phải mỗi khung của một cú kéo.
         //
         // `initial: true` cho lần đầu thẻ xuất hiện đã có sẵn bài đang phát
         // (khôi phục phiên trước). Ở đúng lúc ấy cache thường rỗng vì tiến
         // trình vừa khởi động, nhưng một lần tra rẻ hơn là phải suy luận xem
         // trường hợp nào thì rỗng.
         .onChange(of: artworkIdentity, initial: true) {
-            cachedCover = ArtworkStore.anyCachedImage(
-                for: playback.currentTrack?.artworkRelativePath
+            refreshCachedCover(
+                for: playback.currentTrack?.artworkRelativePath,
+                owner: artworkIdentity
             )
         }
         .onChange(of: progress) { _, newValue in
@@ -2365,16 +2411,18 @@ struct PlayerCard: View {
         artwork = loadedImage
         // Mốc thứ hai, và chỉ cho đúng nhánh này. Khi bản giải mã của chính thẻ
         // về nil thì `cachedCover` là thứ duy nhất còn vẽ được, mà cache có thể
-        // đã có thêm ảnh cho đúng đường dẫn này kể từ lúc bài đổi — một hàng
-        // danh sách vừa cuộn tới chẳng hạn. Khi `loadedImage` khác nil thì tra
-        // lại là thừa: `preferredCover` cho bản đầy đủ thắng, và ảnh trong cache
-        // không được nhìn tới nữa.
+        // đã có thêm ảnh cho đúng đường dẫn này kể từ lúc bài đổi. Có ít nhất
+        // hai người ghi vào đó trong quãng ấy: một hàng danh sách vừa cuộn tới,
+        // và `PlaybackService.loadArtworkIntoNowPlaying` — nó giải mã 1024px cho
+        // màn khoá sau **mỗi** lần đổi bài, vô điều kiện, cho đúng đường dẫn
+        // này. Khi `loadedImage` khác nil thì tra lại là thừa: `preferredCover`
+        // cho bản đầy đủ thắng, và ảnh trong cache không được nhìn tới nữa.
         //
         // `path` ở đây là đường dẫn hiện tại — dòng `guard` ngay trên vừa đối
         // chiếu nó với bài đang phát — nên không có đường nào để một ảnh của
         // bài khác lọt vào.
         if loadedImage == nil {
-            cachedCover = ArtworkStore.anyCachedImage(for: path)
+            refreshCachedCover(for: path, owner: artworkIdentity)
         }
         tint = loadedColour
     }
