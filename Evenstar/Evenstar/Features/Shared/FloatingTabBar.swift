@@ -188,6 +188,10 @@ struct FloatingTabBar: View {
 
     /// Identifies the selected tab's wash across all four slots. A constant,
     /// because the whole point is that every slot claims the *same* geometry.
+    ///
+    /// Claimed **only on the travelling branch**. With Reduce Motion on the
+    /// wash is built a different way and this id is never handed out at all —
+    /// see `selectionWash(for:)`.
     private static let selectionGeometryID = "tab-selection-wash"
 
     /// Identifies a tab's glyph as it travels between its slot in the pill and
@@ -615,6 +619,68 @@ struct FloatingTabBar: View {
         withAnimation(BottomBarStyle.selection) { selection = tab }
     }
 
+    /// The wash itself. One expression, so the two structures below can only
+    /// ever differ in *how they are identified*, never in what they look like:
+    /// at rest the two modes have to be pixel-identical, and the surest way to
+    /// get that is for there to be one description of the ink.
+    private var washInk: some View {
+        Capsule()
+            .fill(Color.primary.opacity(Self.selectionWash))
+            .padding(Self.selectionInset)
+    }
+
+    /// The selected tab's backing, in the slot belonging to `tab`.
+    ///
+    /// **Two structures, not one structure with a parameter**, and that is
+    /// forced rather than chosen. `matchedGeometryEffect` cannot be switched
+    /// off: two views claiming one id in one namespace stay geometrically
+    /// matched whatever is passed to it, so "the wash does not travel" is not
+    /// something a flag on that modifier can express. The only way to stop the
+    /// travel is for there to be nothing to match.
+    ///
+    /// **Travelling (the default).** One capsule, handed from tab to tab.
+    ///
+    /// Each tab used to draw its own, so changing tabs removed one view and
+    /// inserted another — nothing moved, because nothing was the same view
+    /// twice. `matchedGeometryEffect` makes it one view as far as SwiftUI is
+    /// concerned, so it interpolates the frame between the old slot and the new
+    /// one and the wash slides across.
+    ///
+    /// This is the case that effect is actually for, and it is not the case
+    /// `PlayerCard`'s doc comment rejects it for: both slots are in one view
+    /// tree in one layout pass, and this is a discrete state change rather than
+    /// something tracking a finger.
+    ///
+    /// **Reduced.** A wash in *every* slot, at all times, and only its opacity
+    /// changes. Nothing is inserted and nothing is removed as the selection
+    /// moves, so there is no pair of views for SwiftUI to match and no frame to
+    /// interpolate: the old slot's wash fades out where it is and the new
+    /// slot's fades in where it is. Nothing crosses the bar.
+    ///
+    /// The wash stays, rather than going the way `recedeScale` went. It is not
+    /// decoration — it is the only thing on the bar that says which of the four
+    /// destinations you are in, and the tint at `tint(isCurrent:)` is a 0.6-to-1
+    /// difference on a 15pt glyph, not a replacement for it. What Reduce Motion
+    /// removes here is the journey, not the mark.
+    ///
+    /// Both branches animate on whatever transaction changed `selection`, which
+    /// is `select(_:)`'s `withAnimation(BottomBarStyle.selection)` — 0.18s of
+    /// `easeInOut` with the setting on. The `.animation(BottomBarStyle.control,
+    /// value: selection)` further up the chain is applied to the label before
+    /// `.background`, so it does not reach this and the fade does not land on
+    /// the tint's shorter curve.
+    @ViewBuilder
+    private func selectionWash(for tab: LibraryTab) -> some View {
+        if BottomBarStyle.reduceMotion {
+            washInk.opacity(selection == tab ? 1 : 0)
+        } else if selection == tab {
+            washInk.matchedGeometryEffect(
+                id: Self.selectionGeometryID,
+                in: selectionNamespace
+            )
+        }
+    }
+
     private var tabsRowContent: some View {
         HStack(spacing: 0) {
             ForEach(Array(LibraryTab.pillTabs.enumerated()), id: \.element.id) { index, tab in
@@ -662,32 +728,7 @@ struct FloatingTabBar: View {
                     // backing to the label's length and breaks the concentric
                     // curve at the pill's leading edge.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // One capsule, handed from tab to tab.
-                    //
-                    // Each tab used to draw its own, so changing tabs removed
-                    // one view and inserted another — nothing moved, because
-                    // nothing was the same view twice.
-                    // `matchedGeometryEffect` makes it one view as far as
-                    // SwiftUI is concerned, so it interpolates the frame
-                    // between the old slot and the new one and the wash slides
-                    // across.
-                    //
-                    // This is the case that effect is actually for, and it is
-                    // not the case `PlayerCard`'s doc comment rejects it for:
-                    // both slots are in one view tree in one layout pass, and
-                    // this is a discrete state change rather than something
-                    // tracking a finger.
-                    .background {
-                        if selection == tab {
-                            Capsule()
-                                .fill(Color.primary.opacity(Self.selectionWash))
-                                .padding(Self.selectionInset)
-                                .matchedGeometryEffect(
-                                    id: Self.selectionGeometryID,
-                                    in: selectionNamespace
-                                )
-                        }
-                    }
+                    .background { selectionWash(for: tab) }
                     // The whole slot takes the tap, not just the ink.
                     //
                     // `.frame(maxWidth:.infinity, maxHeight:.infinity)` above
