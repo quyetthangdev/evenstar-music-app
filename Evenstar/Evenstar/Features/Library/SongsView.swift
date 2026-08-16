@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import SwiftData
 import UniformTypeIdentifiers
+import OSLog
 
 struct SongsView: View {
     @Environment(LibraryService.self) private var library
@@ -401,7 +402,7 @@ struct SongsView: View {
             try library.delete(track)
         } catch {
             // 2a: log only. A polished alert is part of 2d.
-            print("Delete failed: \(error)")
+            AppLog.library.error("Delete failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

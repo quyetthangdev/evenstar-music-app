@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import OSLog
 
 @main
 struct EvenstarApp: App {
@@ -59,7 +60,7 @@ struct EvenstarApp: App {
         } catch {
             // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
             // path for the library not opening at all belongs to 2d.
-            print("Initial library fetch failed: \(error)")
+            AppLog.library.error("Initial library fetch failed: \(error.localizedDescription, privacy: .public)")
             store = LibraryStore()
         }
         // The local library's half of the same wiring the two remote sources get

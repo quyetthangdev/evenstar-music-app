@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// One track as the catalogue describes it. Not a stored row — see
 /// `JamendoTrack` for what saving produces.
@@ -190,11 +191,15 @@ struct JamendoClient {
         do {
             payload = try JSONDecoder().decode(Payload.self, from: data)
         } catch {
-            // Printed, not swallowed: a `try?` here used to discard the
+            // Logged, not swallowed: a `try?` here used to discard the
             // `DecodingError` entirely, so a field-shape change on Jamendo's
             // side surfaced only as a generic "couldn't read the data"
             // message with nothing in a crash log to diagnose it from.
-            print("JamendoClient: failed to decode response — \(error)")
+            // `.fault`, not `.error`: this isn't a user's action failing —
+            // it's this code's assumption about the shape of Jamendo's
+            // response turning out to be wrong, which is supposed to be
+            // impossible as long as `Payload` matches the API.
+            AppLog.jamendo.fault("JamendoClient: failed to decode response — \(error.localizedDescription, privacy: .public)")
             throw JamendoError.decodingFailed
         }
 

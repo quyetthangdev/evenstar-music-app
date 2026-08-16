@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OSLog
 
 /// The Jamendo half of the Bài hát tab: saved tracks only — the catalogue
 /// itself lives behind `JamendoDiscoveryView`, reached from this screen's
@@ -90,7 +91,7 @@ struct JamendoSongsList: View {
             try jamendo.unsave(track)
         } catch {
             // 2a: log only. A polished alert is part of 2d.
-            print("Delete failed: \(error)")
+            AppLog.jamendo.error("Delete failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

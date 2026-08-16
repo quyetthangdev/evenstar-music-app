@@ -3,6 +3,7 @@ import Observation
 import AVFoundation
 import UIKit
 import SwiftUI
+import OSLog
 
 @Observable
 @MainActor
@@ -1346,7 +1347,7 @@ final class PlaybackService {
             try session.setActive(true)
             sessionActivated = true
         } catch {
-            print("Failed to activate audio session: \(error)")
+            AppLog.playback.error("Failed to activate audio session: \(error.localizedDescription, privacy: .public)")
         }
     }
 
