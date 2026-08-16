@@ -2466,6 +2466,36 @@ struct PlayerCard: View {
     /// `SwiftUIAnimationTransactionEvidenceTests`: cả ba hành vi ở đây đều có
     /// vết đo, và bản ba dòng này không có trạng thái nào chờ ai dọn.
     ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// MỘT CÚ MORPH ĐÈ LÊN CÚ HOÀ MỜ ĐANG CHẠY
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Có thật, không hiếm: `collapse()` chạy từ
+    /// `onChange(of: playback.currentTrack?.id)` và có thể rơi vào giữa cú hoà
+    /// mờ của `expand()`.
+    ///
+    /// Mối lo đúng chỗ: lúc ấy `cardOpacity` **trong state đã là 1**, nên hạ
+    /// về 0 rồi đưa về 1 là một cặp không đổi gì trong lượt ấy. Nếu SwiftUI
+    /// giữ nguyên animation đang chạy thì thẻ đang ở một độ mờ *lưng chừng*
+    /// đúng lúc hình học nhảy — tức cú nhảy hiện ra trên màn hình, đúng thứ cả
+    /// tính năng này tồn tại để giấu.
+    ///
+    /// Đã đo, và nó không xảy ra — nhưng lý do không giống cả hai dự đoán.
+    /// Animation của SwiftUI **cộng dồn**: hạ state đi 1 trong lúc một
+    /// animation đang bay làm giá trị đang vẽ tụt xuống đúng 1.0 chứ không bị
+    /// bỏ qua. Đo ở hai thời điểm cắt ngang khác nhau, giá trị ngay sau cú đè
+    /// bằng `giá trị trước đó − 1.0` tới ba chữ số thập phân. Mà cú hoà mờ
+    /// đang chạy thì không bao giờ vẽ quá 1, nên hiệu ấy **luôn ≤ 0**: opacity
+    /// kẹp ở 0, thẻ vô hình hoàn toàn đúng khoảnh khắc hình học nhảy — ở mọi
+    /// điểm cắt ngang, không chỉ hai điểm đã lấy mẫu. Xem
+    /// `SwiftUIAnimationTransactionEvidenceTests.testASecondFadeArrivingMidFadeIsNeverPartiallyVisible`.
+    ///
+    /// Cái phải trả là một khoảng **trống dài hơn**, không phải một cú nhảy lộ
+    /// ra: cú hồi phục xuất phát từ dưới 0 nên một cú morph bị cắt ngang nằm
+    /// vô hình lâu hơn một cú morph bình thường trước khi bắt đầu hiện. Ghi lại
+    /// chứ không chữa: chữa nó là quay về bản hai nửa có con dấu huỷ, tức đổi
+    /// một khoảng trống dài hơn lấy một trạng thái mà một `completion` rơi mất
+    /// sẽ để lại player vô hình vĩnh viễn.
+    ///
     /// `curve` được dùng nguyên si cho cú hoà mờ, không đổi sang một hằng số
     /// riêng. Khi giảm chuyển động thì nó đã là nhánh phẳng của chính đường nó
     /// vốn chạy — 0.37s cho cú chạm, 0.29s cho cú đáp — và ghi chú của

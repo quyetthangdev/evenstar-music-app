@@ -149,26 +149,91 @@ final class ReduceMotionTests: XCTestCase {
     }
 
     /// The constant is not the claim. The claim is that the screen behind the
-    /// player does not move, so the assertion is on the expression
-    /// `RecedeBehindPlayer` actually applies — at every `progress`, because a
-    /// drag visits all of them and Reduce Motion must not depend on which one.
-    func testTheContentBehindThePlayerNeverShrinksWhenMotionIsReduced() {
+    /// player does not move — so this renders the **production modifier** and
+    /// looks at pixels.
+    ///
+    /// An earlier version of this test restated
+    /// `1 - (1 - recedeScale) * progress` in the test body and asserted on
+    /// that, which is a test of a copy: change the real `scaleEffect` in
+    /// `RecedeBehindPlayer` and it stays green. This plan has already caught
+    /// that defect once, in `SwiftUIOnChangeOrderingEvidenceTests`' own
+    /// warning.
+    ///
+    /// `RecedeBehindPlayer` is `private` and stays private — the access level
+    /// is not widened for the test's sake. The public entry point
+    /// `recedesBehindPlayer(_:)` is what the app calls and is what is called
+    /// here.
+    ///
+    /// The probe: a 100pt blue square centred in a 200pt red field. Receded by
+    /// 0.92 it spans 54…146, so the column at x = 52 is red; unreceded it
+    /// spans 50…150 and that same column is blue. One pixel answers the whole
+    /// question, and it answers it about whatever transform the modifier
+    /// actually applies rather than about arithmetic retyped here.
+    func testTheContentBehindThePlayerNeverShrinksWhenMotionIsReduced() throws {
         BottomBarStyle.reduceMotion = true
 
-        for step in 0...20 {
-            let progress = Double(step) / 20
-            let scale = 1 - (1 - BottomBarStyle.recedeScale) * progress
-            XCTAssertEqual(scale, 1, accuracy: 1e-12, "at progress \(progress)")
+        // Every progress, because a drag visits all of them and Reduce Motion
+        // must not depend on which one it is interrupted at.
+        for step in 0...10 {
+            let progress = Double(step) / 10
+            XCTAssertTrue(
+                try isBlueAtTheUnrecededEdge(progress: progress),
+                "the content shrank at progress \(progress) with Reduce Motion on"
+            )
         }
     }
 
-    /// …and with the setting off it still recedes, all the way to 0.92 at full
-    /// screen. A branch that flattened both modes would pass the test above.
-    func testTheContentBehindThePlayerStillRecedesWithTheSettingOff() {
+    /// …and with the setting off it still recedes. A branch that flattened
+    /// both modes, or a modifier that had quietly stopped scaling at all,
+    /// passes the test above and fails this one.
+    func testTheContentBehindThePlayerStillRecedesWithTheSettingOff() throws {
         BottomBarStyle.reduceMotion = false
 
-        XCTAssertEqual(1 - (1 - BottomBarStyle.recedeScale) * 0, 1, accuracy: 1e-12)
-        XCTAssertEqual(1 - (1 - BottomBarStyle.recedeScale) * 1, 0.92, accuracy: 1e-12)
+        XCTAssertTrue(
+            try isBlueAtTheUnrecededEdge(progress: 0),
+            "the content was already receding at progress 0"
+        )
+        XCTAssertFalse(
+            try isBlueAtTheUnrecededEdge(progress: 1),
+            "the content did not recede at progress 1 with Reduce Motion off"
+        )
+    }
+
+    /// Renders `recedesBehindPlayer(_:)` and reports whether the square still
+    /// reaches the column only an unreceded square reaches.
+    private func isBlueAtTheUnrecededEdge(progress: Double) throws -> Bool {
+        let expansion = PlayerExpansion()
+        expansion.progress = progress
+
+        let probe = Color.blue
+            .frame(width: 100, height: 100)
+            .recedesBehindPlayer(expansion)
+            .frame(width: 200, height: 200)
+            .background(Color.red)
+
+        let renderer = ImageRenderer(content: probe)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.uiImage?.cgImage, "ImageRenderer produced nothing")
+
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        // Draw the whole image shifted so that the pixel of interest — 52pt
+        // across, halfway down — is the one that lands in the 1×1 context.
+        context.draw(
+            image,
+            in: CGRect(x: -52, y: -100, width: CGFloat(image.width), height: CGFloat(image.height))
+        )
+
+        XCTAssertGreaterThan(Int(pixel[0]) + Int(pixel[2]), 100, "sampled neither red nor blue")
+        return pixel[2] > pixel[0]
     }
 
     // MARK: - The drag path, which must not change at all
@@ -404,7 +469,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
 /// Everything below runs on `Harness`, declared in this file. None of it
 /// imports a line of `PlayerCard`, and a green run here says nothing about the
 /// player; what it says is whether the mechanism the player's
-/// `fadeMorph(to:)` leans on is the mechanism SwiftUI has. Same division of
+/// `morph(to:curve:)` leans on is the mechanism SwiftUI has. Same division of
 /// labour as `SwiftUIOnChangeOrderingEvidenceTests` below, and here for the
 /// same reason: this project has been wrong about SwiftUI internals often
 /// enough, and corrected by measurement often enough, that a comment claiming
@@ -589,6 +654,88 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
             "the fade did not run; trace: \(Trace.interpolated)"
         )
         XCTAssertEqual(Trace.interpolated.last ?? -1, 1, accuracy: 0.001)
+    }
+
+    /// One fade interrupted by a second one, `interruptAfter` seconds in.
+    /// Returns the last value rendered before the interruption and everything
+    /// rendered from the interruption onward.
+    private func dipDuringDip(interruptAfter: TimeInterval) throws -> (before: Double, after: [Double]) {
+        let dip = try XCTUnwrap(Trace.dip)
+        Trace.reset()
+
+        dip(.easeInOut(duration: 0.5))
+        pump(interruptAfter)
+        let mark = Trace.interpolated.count
+        XCTAssertGreaterThan(mark, 0, "the first fade never started")
+        let before = try XCTUnwrap(Trace.interpolated.last)
+
+        dip(.easeInOut(duration: 0.5))
+        pump(0.7)
+
+        return (before, Array(Trace.interpolated[mark...]))
+    }
+
+    /// **A second morph arriving mid-fade, which is reachable in the app**:
+    /// `collapse()` fires from `onChange(of: playback.currentTrack?.id)` and
+    /// can land while an `expand()` fade is still running.
+    ///
+    /// The worry was that SwiftUI would treat the second dip as a no-op —
+    /// state is already 1, so writing 0 and then 1 changes nothing that
+    /// update — keep the animation already in flight, and leave the card at a
+    /// *partial* opacity at the instant the geometry jumps. That would put the
+    /// jump on screen, which is the one thing this feature exists to prevent.
+    ///
+    /// It does not happen, and the reason is worth having in writing because
+    /// it is not what either prediction expected. SwiftUI's animations are
+    /// **additive**: dropping the state by 1 while an animation is in flight
+    /// moves the presented value down by a full 1.0 rather than being ignored.
+    /// Measured at two different interruption points, the value at the moment
+    /// of the second dip is `previous - 1.0` to three decimals — and since the
+    /// running fade can never have presented more than 1, that difference is
+    /// **always at or below 0**. Opacity clamps there, so the card is fully
+    /// invisible at the instant the geometry jumps, at every interruption
+    /// point, not just the two sampled here.
+    ///
+    /// What it costs is real but small, and it is a blank, not a jump: the
+    /// recovery starts from below zero, so an interrupted morph stays
+    /// invisible longer than a fresh one before it begins to show. Recorded
+    /// rather than fixed — the fix is the two-phase version with a
+    /// cancellation token, and that trades a longer blank for a state in which
+    /// a dropped completion leaves the player invisible for good.
+    func testASecondFadeArrivingMidFadeIsNeverPartiallyVisible() throws {
+        for interruptAfter in [0.1, 0.3] {
+            let (before, after) = try dipDuringDip(interruptAfter: interruptAfter)
+            let first = try XCTUnwrap(after.first)
+
+            XCTAssertLessThanOrEqual(
+                first, 0,
+                "interrupted at \(interruptAfter)s: the card was \(first) visible when the geometry jumped"
+            )
+            XCTAssertEqual(
+                first, before - 1, accuracy: 0.001,
+                "interrupted at \(interruptAfter)s: expected the additive drop; trace \(after)"
+            )
+            XCTAssertEqual(
+                after.last ?? -1, 1, accuracy: 0.001,
+                "interrupted at \(interruptAfter)s: did not recover to fully visible; trace \(after)"
+            )
+        }
+    }
+
+    /// And the same run seen from the other end: nothing in an interrupted
+    /// morph is ever rendered in the band where a jump would be visible *and*
+    /// the card still recognisable. Between the interruption and zero the card
+    /// is clamped invisible; above zero it is already at the destination
+    /// geometry and merely fading in.
+    func testAnInterruptedMorphRendersNothingBetweenTheJumpAndInvisible() throws {
+        let (_, after) = try dipDuringDip(interruptAfter: 0.2)
+
+        guard let firstVisible = after.firstIndex(where: { $0 > 0.0001 }) else {
+            return XCTFail("the interrupted fade never came back; trace \(after)")
+        }
+        for value in after[..<firstVisible] {
+            XCTAssertLessThanOrEqual(value, 0, "trace \(after)")
+        }
     }
 }
 
