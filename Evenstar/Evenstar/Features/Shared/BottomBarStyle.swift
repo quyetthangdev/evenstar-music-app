@@ -20,6 +20,89 @@ enum BottomBarStyle {
 
     // MARK: - Motion
 
+    /// Whether the system's **Reduce Motion** setting is on.
+    ///
+    /// Every `Animation` below branches on this, so one switch in
+    /// Settings → Accessibility changes the whole bottom bar's motion
+    /// vocabulary at once.
+    ///
+    /// **Written from exactly one place: `RootView`.** It holds the app's only
+    /// `@Environment(\.accessibilityReduceMotion)` and pushes the value here
+    /// from an `.onChange(of:initial:true)` action. `initial: true` is what
+    /// makes the flag right on the first frame rather than only after the user
+    /// toggles the setting mid-session. The write is in an action closure and
+    /// never inside a `body`: mutating global state while SwiftUI is evaluating
+    /// a view is undefined behaviour.
+    ///
+    /// A static rather than an environment value, for two reasons. The weaker
+    /// one is reach — `BottomBarStyle` has no instances, and
+    /// `TransportButtonStyle`, `QueueToggleStyle` and `TapHalo` are
+    /// `ButtonStyle`s and `ViewModifier`s that cannot read the environment
+    /// where the constant is actually needed. The stronger one is agreement:
+    /// `morph` alone is read from `RootView`, `FloatingTabBar`, `PlayerCard`
+    /// and `ScrollMinimise`, and if any two of those disagreed within a frame,
+    /// the two halves of one morph would run different curves — a worse bug
+    /// than having no reduced mode at all. A single storage location makes that
+    /// disagreement impossible to express rather than merely unlikely. This is
+    /// the same argument `RootView.isMinimisedActive` makes: filter once, in
+    /// one place, instead of asking every reader to remember.
+    ///
+    /// **When a change takes effect.** `withAnimation(BottomBarStyle.x)` reads
+    /// the constant at the moment of the write, so those sites are always
+    /// current. `.animation(BottomBarStyle.x, value: v)` captures its curve
+    /// when the enclosing `body` runs, which sounds like a stale-curve trap and
+    /// is not one: that modifier only fires when `v` differs from the previous
+    /// evaluation, and `v` is produced by the same `body`, so any evaluation
+    /// that can change `v` has re-read the constant on the way. There is no
+    /// reachable state in which a flag flipped after a `body` ran lets that
+    /// body's stale spring play. What *is* accepted deliberately: an animation
+    /// already in flight when the user flips the setting finishes on the curve
+    /// it started with — retargeting mid-flight would be a visible seam, and
+    /// the next one is already correct.
+    @MainActor static var reduceMotion = false
+
+    // Where the `…Flat` durations below come from — none of them is invented.
+    //
+    // Each is the time its own spring first reaches 98% of the target and
+    // stays there, found by sampling `Spring(duration:bounce:)` with
+    // `value(target:time:)` at 1ms and rounding to the hundredth this file is
+    // written in. 98% rather than settling time because a spring's tail is not
+    // motion anyone reads — `queue`'s own note below measures Apple Music
+    // standing still around 350ms while the analytic spring is still creeping,
+    // and `queueContentIn`'s note records SwiftUI cutting a spring off inside
+    // that same tail.
+    //
+    //   constant             spring       t(98%)   flat
+    //   morph                0.36 / 0.24  0.199    0.20
+    //   selection            0.38 / 0.34  0.177    0.18
+    //   content              0.34 / 0.20  0.204    0.20
+    //   settle               0.42 / 0.14  0.287    0.29
+    //   expand               0.52 / 0.12  0.372    0.37
+    //   queue                0.31 / 0     0.288    0.29
+    //   queueContentSlide    0.20 / 0     0.186    0.19
+    //
+    // The harness is checkable against this file: sampling `queue` at 30fps
+    // gives 0.147, 0.391, 0.601, 0.851, 0.912 where the frame-by-frame Apple
+    // Music numbers in its doc comment are 0.14, 0.40, 0.61, 0.86, 0.92.
+    //
+    // Two consequences worth naming rather than discovering later. `morph` and
+    // `content` land on the same flat duration: what separated them was bounce
+    // (0.24 against 0.20) and reducing motion is precisely the removal of that.
+    // And `selection`, the bounciest of the set, comes out *shortest* — a
+    // bouncier spring is stiffer for the same duration, so it arrives sooner
+    // and spends the difference overshooting. Both are honest results of
+    // dropping the overshoot, not rounding accidents.
+    //
+    // Six constants below — `press`, `control`, `queueContentIn`,
+    // `queueContentOut`, `queueTitleOut`, `queueTitleIn` — are already duration
+    // curves driving a fade or a 5pt swell, with no displacement to take out,
+    // so their flat branch is the full one spelled `xFlat = xFull`. They are
+    // still written through the branch rather than left as plain `let`s, so
+    // that every motion constant in this type answers `reduceMotion` and a
+    // future edit to one of them has somewhere obvious to put a second answer.
+    // What actually disappears for those six is the scale and the offset at
+    // their call sites, which is B3/B4's job, not this file's.
+
     /// A surface changing shape: the tab pill collapsing to a circle, the
     /// search field growing, the collapsed player sliding into the row.
     ///
@@ -34,7 +117,16 @@ enum BottomBarStyle {
     /// it wobbles rather than settles, and well before that it starts arriving
     /// hard — a high bounce over a short duration snaps back from its overshoot
     /// instead of easing into place.
-    static let morph = Animation.spring(duration: 0.36, bounce: 0.24)
+    ///
+    /// Reduced: 0.20s `easeInOut`, the point at which the spring above is
+    /// visually done. The shape-change itself stays — a pill becoming a circle
+    /// is the surface telling the user what it now is, and removing it would
+    /// leave two indistinguishable states rather than a calmer transition. What
+    /// goes is the overshoot: the pill no longer arrives past its own edge and
+    /// swings back.
+    @MainActor static var morph: Animation { reduceMotion ? morphFlat : morphFull }
+    private static let morphFull = Animation.spring(duration: 0.36, bounce: 0.24)
+    private static let morphFlat = Animation.easeInOut(duration: 0.20)
 
     /// The selected tab's wash travelling to the tab just tapped.
     ///
@@ -43,7 +135,16 @@ enum BottomBarStyle {
     /// the user just made, and can afford to be more alive. The extra bounce is
     /// what makes it read as liquid — arriving past the new tab and settling
     /// back — where a calmer curve reads as merely sliding.
-    static let selection = Animation.spring(duration: 0.38, bounce: 0.34)
+    ///
+    /// Reduced: 0.18s `easeInOut`. This is the constant that loses the most,
+    /// and losing it is the point — "arriving past the new tab and settling
+    /// back" is a description of exactly what makes someone motion-sensitive
+    /// look away. The wash still travels, because it is what says which tab is
+    /// selected; it simply stops being liquid. Note it comes out marginally
+    /// shorter than `morph` rather than longer: see the table above.
+    @MainActor static var selection: Animation { reduceMotion ? selectionFlat : selectionFull }
+    private static let selectionFull = Animation.spring(duration: 0.38, bounce: 0.34)
+    private static let selectionFlat = Animation.easeInOut(duration: 0.18)
 
     /// How a tab answers the finger, before anything has moved.
     ///
@@ -56,7 +157,14 @@ enum BottomBarStyle {
     /// so the first thing that happened after a tap happened on touch-*up*,
     /// once the wash began to slide. Everything before that was the app
     /// appearing not to have noticed.
-    static let press = Animation.easeOut(duration: 0.09)
+    ///
+    /// Reduced: unchanged, and see the shared note above. 0.09s of ease-out is
+    /// not a curve anyone can perceive as motion; the thing that moves is
+    /// `pressedScale`, and removing *that* is B4's decision at the call site.
+    /// Whatever replaces it there still wants to answer the finger in 0.09s.
+    @MainActor static var press: Animation { reduceMotion ? pressFlat : pressFull }
+    private static let pressFull = Animation.easeOut(duration: 0.09)
+    private static let pressFlat = pressFull
 
     /// What a pressed tab shrinks to. Shallower than the transport buttons'
     /// 0.92: those are 44pt circles the thumb lands on squarely, while a tab is
@@ -70,7 +178,15 @@ enum BottomBarStyle {
     /// Quicker and calmer than `morph` on purpose. The surface closing around
     /// them is the gesture; the glyphs should feel carried by it rather than
     /// staging a second performance inside it.
-    static let content = Animation.spring(duration: 0.34, bounce: 0.20)
+    ///
+    /// Reduced: 0.20s `easeInOut`, the same figure `morph` lands on. That
+    /// collision is correct rather than sloppy — "quicker and calmer" above was
+    /// a statement about bounce, and with the bounce gone the two are the same
+    /// pace. Being carried by the surface is if anything more true flat than it
+    /// was sprung.
+    @MainActor static var content: Animation { reduceMotion ? contentFlat : contentFull }
+    private static let contentFull = Animation.spring(duration: 0.34, bounce: 0.20)
+    private static let contentFlat = Animation.easeInOut(duration: 0.20)
 
     /// A surface settling after the user let go of it, or moving to an end
     /// state they asked for: the player card released mid-drag, collapsing when
@@ -87,10 +203,18 @@ enum BottomBarStyle {
     /// 0.45/0.15 in these units, a difference of three hundredths of a second
     /// and one hundredth of bounce. A comment described the second as
     /// "snappier"; it was in fact the slower of the two.
-    static let settle = Animation.spring(duration: 0.42, bounce: 0.14)
+    ///
+    /// Reduced: 0.29s `easeInOut`. The overshoot this one already tried hardest
+    /// to avoid is now gone entirely, so the only thing lost is the last of the
+    /// give at the end of a gesture. See `settle(initialVelocity:)` below for
+    /// the part of this that is a real trade rather than a free one.
+    @MainActor static var settle: Animation { reduceMotion ? settleFlat : settleFull }
+    private static let settleFull = Animation.spring(duration: 0.42, bounce: 0.14)
+    private static let settleFlat = Animation.easeInOut(duration: settleFlatDuration)
 
     private static let settleDuration: Double = 0.42
     private static let settleBounce: Double = 0.14
+    private static let settleFlatDuration: Double = 0.29
 
     /// `settle`, but starting at the speed the finger was already moving.
     ///
@@ -110,8 +234,24 @@ enum BottomBarStyle {
     /// - Parameter initialVelocity: in units of the *remaining* distance per
     ///   second — 1 means "would arrive in one second at this speed". The caller
     ///   converts, because only it knows the travel and how far is left.
+    ///
+    /// Reduced: the velocity is dropped on the floor and this returns the flat
+    /// `settle` — the same 0.29s curve for every release, gentle or violent.
+    ///
+    /// That is deliberate and it is the one place in this file where reducing
+    /// motion costs something real. Everything the paragraphs above praise —
+    /// no discontinuity in speed at release, a flick that reads as a flick —
+    /// is *carried by* the initial velocity, and a hand-off of momentum is
+    /// exactly the sensation vestibular symptoms are triggered by. Keeping the
+    /// velocity and only flattening the curve would keep the thing worth
+    /// removing and remove the thing that was harmless. The card still ends
+    /// where the flick aimed it, because the target is chosen from the
+    /// predicted end translation at the call site and that decision is
+    /// untouched; only the manner of arrival is.
+    @MainActor
     static func settle(initialVelocity: Double) -> Animation {
-        .interpolatingSpring(
+        if reduceMotion { return settleFlat }
+        return .interpolatingSpring(
             duration: settleDuration,
             bounce: settleBounce,
             initialVelocity: initialVelocity
@@ -139,7 +279,17 @@ enum BottomBarStyle {
     /// Longer and calmer accordingly. Not bounce-free: a little overshoot is
     /// what keeps a large move from feeling mechanical, but far less than a
     /// short one can carry.
-    static let expand = Animation.spring(duration: 0.52, bounce: 0.12)
+    ///
+    /// Reduced: 0.37s `easeInOut`, the longest flat curve here, for the same
+    /// reason it is the longest spring — 750pt covered too fast arrives before
+    /// the eye has followed it, and that is true of a flat curve too. The
+    /// "little overshoot that keeps a large move from feeling mechanical" is
+    /// the deliberate loss. B3 decides whether the 750pt travel survives at all
+    /// or becomes a cross-fade; if it becomes a cross-fade, this duration is
+    /// still the right length for it.
+    @MainActor static var expand: Animation { reduceMotion ? expandFlat : expandFull }
+    private static let expandFull = Animation.spring(duration: 0.52, bounce: 0.12)
+    private static let expandFlat = Animation.easeInOut(duration: 0.37)
 
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.
@@ -163,7 +313,14 @@ enum BottomBarStyle {
     ///
     /// A curve, not a spring: it is a state change on a small element, not a
     /// mass arriving somewhere, and a bounce on a 5pt height change is noise.
-    static let control = Animation.easeOut(duration: 0.15)
+    ///
+    /// Reduced: unchanged, and see the shared note above. The sentence directly
+    /// above already made the reduced-motion argument for its own reasons — a
+    /// 5pt swell on a curve is not a mass arriving anywhere, and there is no
+    /// overshoot here to take away.
+    @MainActor static var control: Animation { reduceMotion ? controlFlat : controlFull }
+    private static let controlFull = Animation.easeOut(duration: 0.15)
+    private static let controlFlat = controlFull
 
     /// The queue panel opening and closing.
     ///
@@ -197,7 +354,18 @@ enum BottomBarStyle {
     ///
     /// `bounce: 0` chính là hệ số tắt dần 1.0; `duration` ở dạng khởi tạo này
     /// là `response`, không phải thời gian chạy.
-    static let queue = Animation.spring(Spring(duration: 0.31, bounce: 0))
+    ///
+    /// Giảm chuyển động: `easeInOut` 0.29s. Lò xo này vốn đã tắt dần tới hạn —
+    /// không có khung nào vọt lố ở cả hai chiều — nên cái mất đi chỉ là hình
+    /// dáng gia tốc, không phải một cú nảy. Đây cũng là hằng số dùng để kiểm
+    /// bộ đo ở ghi chú trên đầu file: lấy mẫu chính lò xo này ở 30fps ra đúng
+    /// dãy Apple Music chép ở trên, nên 0.29 không phải một con số đoán.
+    ///
+    /// Cả ba thứ nó lái vẫn phải chung một đồng hồ ở chế độ phẳng, vì lý do
+    /// không đổi: hai nửa của cùng một cử chỉ chạy hai curve là lỗi tệ hơn.
+    @MainActor static var queue: Animation { reduceMotion ? queueFlat : queueFull }
+    private static let queueFull = Animation.spring(Spring(duration: 0.31, bounce: 0))
+    private static let queueFlat = Animation.easeInOut(duration: 0.29)
 
     /// Ba khối trong `QueuePanel` — chữ header, hai viên thuốc, danh sách —
     /// hiện ra và trượt lên theo **nhịp riêng**, không theo `queueFactor`.
@@ -225,7 +393,15 @@ enum BottomBarStyle {
     ///
     /// `bounce: 0`: các bước đo được giảm dần đều — 15, 8, 4, 4, 1 điểm mỗi
     /// khung — không có khung nào vượt qua đích. Đây không phải chỗ đàn hồi.
-    static let queueContentIn = Animation.easeOut(duration: 0.13)
+    ///
+    /// Giảm chuyển động: **giữ nguyên**, xem ghi chú chung ở đầu phần này. Đây
+    /// là cú *hiện ra*, tức một phép hoà mờ, và HIG cho phép hoà mờ. Cái phải
+    /// bỏ là cú trượt kèm theo, và cú trượt ấy là `queueContentSlide` bên dưới
+    /// cùng chỗ áp nó ở B3/B4 — không phải hằng số này. Đổi 0.13 ở đây chỉ làm
+    /// lệch pha với `queueTitleOut` mà chẳng bỏ được chuyển động nào.
+    @MainActor static var queueContentIn: Animation { reduceMotion ? queueContentInFlat : queueContentInFull }
+    private static let queueContentInFull = Animation.easeOut(duration: 0.13)
+    private static let queueContentInFlat = queueContentInFull
 
     /// Cùng ba khối ấy **trượt** về chỗ, và nó dài hơn cú hiện ở trên.
     ///
@@ -241,7 +417,15 @@ enum BottomBarStyle {
     ///
     /// `response = 0.20` khớp dãy tiến độ đo được (0, .373, .655, .791, .882,
     /// .927, .964, .982, .991, 1) với sai số trung bình 2.8%.
-    static let queueContentSlide = Animation.spring(Spring(duration: 0.20, bounce: 0))
+    ///
+    /// Giảm chuyển động: `easeInOut` 0.19s. Đây là hằng số **duy nhất** trong
+    /// nhóm `queue*` mô tả một cú dịch chuyển thật, nên nó là chỗ duy nhất
+    /// trong nhóm đáng đổi curve. Việc tách "đọc được nhanh rồi mới thong thả
+    /// về chỗ" ở trên vẫn còn nguyên giá trị ở chế độ phẳng: hai thứ vẫn phải
+    /// rời nhau, chỉ là quãng đường sẽ do B3/B4 quyết có còn hay không.
+    @MainActor static var queueContentSlide: Animation { reduceMotion ? queueContentSlideFlat : queueContentSlideFull }
+    private static let queueContentSlideFull = Animation.spring(Spring(duration: 0.20, bounce: 0))
+    private static let queueContentSlideFlat = Animation.easeInOut(duration: 0.19)
 
     /// Chiều ngược lại **không trễ, và nhanh hơn**.
     ///
@@ -249,7 +433,14 @@ enum BottomBarStyle {
     /// ngay từ đầu. Đối xứng ở đây là sai — thứ đang đi khỏi màn hình không có
     /// lý do gì để chờ, và giữ nó lại là giữ một tấm bảng chắn trước tấm bìa
     /// đang lớn dần.
-    static let queueContentOut = Animation.easeIn(duration: 0.10)
+    ///
+    /// Giảm chuyển động: **giữ nguyên**, xem ghi chú chung ở đầu phần này. Cú
+    /// tan trong hai tới ba khung là một phép hoà mờ, và kéo dài nó ra ở chế độ
+    /// giảm chuyển động là đi ngược mục đích — thứ ở lại lâu hơn trên đường đi
+    /// của tấm bìa mới là thứ gây khó chịu.
+    @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
+    private static let queueContentOutFull = Animation.easeIn(duration: 0.10)
+    private static let queueContentOutFlat = queueContentOutFull
 
     /// Khối chữ lớn của `NowPlayingContent` tan đi khi hàng đợi mở.
     ///
@@ -271,7 +462,16 @@ enum BottomBarStyle {
     /// đặt cú hiện lại của khối chữ vào quãng 0.032s – 0.102s — nằm gọn bên
     /// trong quãng `queueContentOut` đang tan. Hai khối chữ lấn nhau, và không
     /// có cặp số nào trên một trục duy nhất tách được chúng ở cả hai chiều.
-    static let queueTitleOut = Animation.easeIn(duration: 0.06).delay(0.04)
+    ///
+    /// Giảm chuyển động: **giữ nguyên**, xem ghi chú chung ở đầu phần này. Chỉ
+    /// là lượng mực của một khối chữ đi về 0 — không dịch chuyển, không phóng
+    /// to. Cả `delay(0.04)` cũng giữ: nó là dàn cảnh chứ không phải chuyển
+    /// động, và lập luận về **mối nối** ở trên (`easeOut` về 0 với vận tốc gần
+    /// 0 để khớp đạo hàm với cú hiện tiếp sau) vẫn đúng nguyên si khi cú hiện
+    /// tiếp sau đổi từ lò xo sang curve — curve cũng khởi động từ vận tốc 0.
+    @MainActor static var queueTitleOut: Animation { reduceMotion ? queueTitleOutFlat : queueTitleOutFull }
+    private static let queueTitleOutFull = Animation.easeIn(duration: 0.06).delay(0.04)
+    private static let queueTitleOutFlat = queueTitleOutFull
 
     /// Chiều ngược lại, và nó **đợi `queueContentOut` xong hẳn**.
     ///
@@ -283,7 +483,15 @@ enum BottomBarStyle {
     /// nhất của cú morph. Nhét khối chữ vào giữa đó là hai thứ tranh nhau. Thứ tự khi đóng vì thế là
     /// nghịch đảo đúng của thứ tự khi mở: ba khối panel đi trước, khối chữ lớn
     /// quay lại sau, không lúc nào cả hai cùng đọc được.
-    static let queueTitleIn = Animation.easeOut(duration: 0.10).delay(0.13)
+    ///
+    /// Giảm chuyển động: **giữ nguyên**, xem ghi chú chung ở đầu phần này.
+    /// Cũng là hoà mờ, và `delay(0.13)` càng phải giữ: nó tồn tại để hai khối
+    /// chữ không bao giờ cùng đọc được, mà điều đó lại càng đúng hơn khi tấm
+    /// bìa phía sau đổi sang một curve khác — thứ tự vẫn phải là nghịch đảo
+    /// đúng của chiều mở.
+    @MainActor static var queueTitleIn: Animation { reduceMotion ? queueTitleInFlat : queueTitleInFull }
+    private static let queueTitleInFull = Animation.easeOut(duration: 0.10).delay(0.13)
+    private static let queueTitleInFlat = queueTitleInFull
 
     // MARK: - Surface
 

@@ -62,6 +62,23 @@ struct RootView: View {
     /// `SettingsView`; both read the one key on `AppTheme`.
     @AppStorage(AppTheme.storageKey) private var theme: AppTheme = .system
 
+    /// The system's Reduce Motion setting, and **the app's only read of it**.
+    ///
+    /// It is pushed straight into `BottomBarStyle.reduceMotion` below and never
+    /// used by this body for anything else — every constant that has to answer
+    /// the setting answers it there, not here. `grep accessibilityReduceMotion`
+    /// returning exactly one hit is the invariant: the moment a second view
+    /// reads the environment directly, two halves of the same morph can
+    /// disagree within a frame, which is the failure that flag's doc comment
+    /// exists to prevent.
+    ///
+    /// Reading it here rather than inside `BottomBarStyle` is what makes the
+    /// value *live*. `UIAccessibility.isReduceMotionEnabled` would answer the
+    /// same question from anywhere, but nothing would invalidate a view when it
+    /// changed; an `@Environment` read is a dependency, so this body re-runs
+    /// when the user flips the switch and the `.onChange` below gets to fire.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// The user's language override. Read here only so this body re-runs when
     /// it changes — the value itself comes from `AppLanguage.resolvedLocale`,
     /// which everything outside a view uses too.
@@ -328,6 +345,28 @@ struct RootView: View {
                 // that value even on a frame where the raw `isMinimised` does
                 // not, and the animation must key on what the card receives.
                 .animation(BottomBarStyle.morph, value: isMinimisedActive)
+        }
+        // The one write of `BottomBarStyle.reduceMotion`, in the whole app.
+        //
+        // In an action closure and not in the body above, deliberately: the
+        // body is SwiftUI evaluating a view, and writing global state during
+        // that is undefined behaviour — the flag would be read by some views on
+        // this pass and by others on the next one, which is precisely the
+        // split-frame disagreement the flag exists to rule out.
+        //
+        // `initial: true` is load-bearing rather than tidy. Without it the flag
+        // stays `false` for a session that launched with Reduce Motion already
+        // on, and only corrects itself if the user goes and toggles the setting
+        // — so the people this is for would be the one group it never reached.
+        //
+        // The first evaluation of every body below therefore captures the
+        // default `false`. That is harmless and worth stating so nobody hunts
+        // it: nothing animates on the first frame, `withAnimation` sites read
+        // the constant at the moment they fire, and a `.animation(_:value:)`
+        // cannot fire until its `value` changes, which requires the body that
+        // built it to run again and re-read. See `BottomBarStyle.reduceMotion`.
+        .onChange(of: reduceMotion, initial: true) { _, isOn in
+            BottomBarStyle.reduceMotion = isOn
         }
         // Chỉ lựa chọn giao diện của người dùng. **Player không còn ép cả cửa
         // sổ sang tối nữa** — nó chỉ tô tối phần chrome của chính nó, xem
