@@ -592,6 +592,45 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         values.filter { $0 > 0.0001 && $0 < 0.9999 }
     }
 
+    /// How much blue survives `.opacity(value)` over a red ground, 0…255.
+    ///
+    /// The same render-and-read-a-pixel technique
+    /// `ReduceMotionTests.isBlueAtTheUnrecededEdge(progress:)` uses, for the
+    /// same reason: what a modifier *does* is a question about pixels.
+    /// The centre pixel of `ink` composited over a 40pt system-red ground,
+    /// as `[R, G, B]`.
+    ///
+    /// System colours rather than pure primaries, deliberately: a pure ground
+    /// has nothing in its other channels to subtract, so it cannot see the
+    /// ghost a negative opacity paints. See
+    /// `testANegativeOpacityIsNotInvisibleButPaintsAnInvertedGhost`.
+    private func pixel<Ink: View>(of ink: Ink) throws -> [Int] {
+        let probe = ink
+            .frame(width: 40, height: 40)
+            .background(Color.red)
+
+        let renderer = ImageRenderer(content: probe)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.uiImage?.cgImage, "ImageRenderer produced nothing")
+
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &bytes,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(
+            image,
+            in: CGRect(x: -20, y: -20, width: CGFloat(image.width), height: CGFloat(image.height))
+        )
+        return [Int(bytes[0]), Int(bytes[1]), Int(bytes[2])]
+    }
+
+
     func testWithAnimationDrivesIntermediateValues() throws {
         let apply = try XCTUnwrap(Trace.apply)
         Trace.reset()
@@ -722,20 +761,107 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         }
     }
 
-    /// And the same run seen from the other end: nothing in an interrupted
-    /// morph is ever rendered in the band where a jump would be visible *and*
-    /// the card still recognisable. Between the interruption and zero the card
-    /// is clamped invisible; above zero it is already at the destination
-    /// geometry and merely fading in.
-    func testAnInterruptedMorphRendersNothingBetweenTheJumpAndInvisible() throws {
-        let (_, after) = try dipDuringDip(interruptAfter: 0.2)
+    /// **The last link of the argument, which was reasoning until round 2.**
+    ///
+    /// The chain is: the geometry jumps → the presented opacity at that
+    /// instant is at or below 0 → therefore nothing of the card is on screen.
+    /// The first two links are traced above. The third was assumed, and this
+    /// closes it: `View.opacity` clamps a negative to fully transparent, so a
+    /// presented `-0.915` renders as exactly the ground.
+    ///
+    /// **And a trap sitting right next to it, which this test exists as much
+    /// to record as the clamp itself.** `ShapeStyle.opacity` —
+    /// `Color.blue.opacity(x)`, the identically-named method on `Color` — does
+    /// *not* clamp. It multiplies the colour's own alpha, and a negative alpha
+    /// composites subtractively: `ground + a·(ink − ground)`, clamped per
+    /// channel afterwards, which paints an inverted ghost. On this ground that
+    /// is `[255, 56, 60]` coming out as `[255, 0, 0]`.
+    ///
+    /// The first version of this measurement used `Color.blue.opacity(v)` and
+    /// concluded that a negative opacity paints a ghost in production. It does
+    /// not: `cardOpacity` is applied with `View.opacity`, to a whole view tree,
+    /// which is the clamping one. A `ClampedOpacity` modifier was written to
+    /// fix the phantom defect, shipped into `PlayerCard`, and reverted once the
+    /// probe was split in two — the mutation check caught it by **surviving**,
+    /// which is the only reason it was caught at all.
+    ///
+    /// So the ordering of these assertions is the point: same value, same
+    /// ground, two spellings, two different results.
+    func testViewOpacityClampsNegativesWhereColourOpacityDoesNot() throws {
+        let ground = try pixel(of: Color.blue.opacity(0))
 
-        guard let firstVisible = after.firstIndex(where: { $0 > 0.0001 }) else {
-            return XCTFail("the interrupted fade never came back; trace \(after)")
+        // `View.opacity` — what `PlayerCard` applies to `cardOpacity`.
+        XCTAssertEqual(
+            try pixel(of: Color.blue.frame(width: 40, height: 40).opacity(-0.915)),
+            ground,
+            "View.opacity did not clamp a negative; an interrupted morph would show its jump"
+        )
+        XCTAssertEqual(
+            try pixel(of: Color.blue.frame(width: 40, height: 40).opacity(-1)),
+            ground
+        )
+
+        // `ShapeStyle.opacity` — the same word, a different operation.
+        XCTAssertEqual(try pixel(of: Color.blue.opacity(-0.915)), [255, 0, 0])
+        XCTAssertNotEqual(try pixel(of: Color.blue.opacity(-0.915)), ground)
+
+        // Above zero the two agree, so what differs above is the handling of
+        // the sign and not the two spellings differing everywhere.
+        XCTAssertEqual(
+            try pixel(of: Color.blue.frame(width: 40, height: 40).opacity(0.5)),
+            try pixel(of: Color.blue.opacity(0.5))
+        )
+    }
+
+    /// **The precondition the interrupted-morph invariant depends on, and it
+    /// is not written down anywhere else.**
+    ///
+    /// "The additive drop always lands at or below 0" holds because a running
+    /// fade never presents *above* its target of 1. That is a property of the
+    /// curve, not of the mechanism: `PlayerCard.morph(to:curve:)` takes any
+    /// `Animation`, and a curve that overshoots would present above 1
+    /// mid-flight, put the additive drop at a **positive** value, and show the
+    /// geometry jump — the exact failure the feature exists to prevent.
+    ///
+    /// So: the two curves that can actually reach that call in reduced mode
+    /// are measured here for overshoot, rather than trusted. The control at
+    /// the end is a bouncy spring, which the same probe must catch overshooting
+    /// — without it this test would pass against a harness that had stopped
+    /// recording.
+    func testTheCurvesTheReducedMorphRunsOnNeverPresentAboveTheirTarget() throws {
+        let apply = try XCTUnwrap(Trace.apply)
+        let saved = BottomBarStyle.reduceMotion
+        defer { BottomBarStyle.reduceMotion = saved }
+        BottomBarStyle.reduceMotion = true
+
+        func peak(of animation: Animation) -> Double {
+            apply(0, nil)
+            pump(0.05)
+            Trace.reset()
+            apply(1, animation)
+            pump(0.9)
+            return Trace.interpolated.max() ?? .nan
         }
-        for value in after[..<firstVisible] {
-            XCTAssertLessThanOrEqual(value, 0, "trace \(after)")
+
+        // Every curve `morph(to:curve:)` can be handed with the setting on:
+        // `expand()` and `collapse()` pass `BottomBarStyle.expand`, and the
+        // drag's release passes `settle(initialVelocity:)` — whose reduced
+        // branch drops the velocity, so the extremes are the same curve.
+        for (name, animation) in [
+            ("expand", BottomBarStyle.expand),
+            ("settle(0)", BottomBarStyle.settle(initialVelocity: 0)),
+            ("settle(max)", BottomBarStyle.settle(initialVelocity: BottomBarStyle.maxSettleVelocity)),
+        ] {
+            XCTAssertLessThanOrEqual(
+                peak(of: animation), 1.0001,
+                "\(name) presented above its target; an interrupted morph would show the jump"
+            )
         }
+
+        XCTAssertGreaterThan(
+            peak(of: .spring(duration: 0.38, bounce: 0.34)), 1.0001,
+            "the probe did not catch a spring overshooting, so it cannot catch one here either"
+        )
     }
 }
 

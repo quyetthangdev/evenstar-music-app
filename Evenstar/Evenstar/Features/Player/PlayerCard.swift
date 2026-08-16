@@ -887,6 +887,14 @@ struct PlayerCard: View {
         // lồng nhau sẽ cho chúng nhìn xuyên qua nhau giữa chừng cú tan thay vì
         // cùng nhạt đi. Ở đây nó cũng bao luôn bóng đổ và mọi thứ
         // `card(size:insets:)` dựng ra, khỏi phải nhớ lớp nào đã được bao.
+        //
+        // **`.opacity` của `View`, và ở đây điều đó là load-bearing.** Giá trị
+        // này đi *xuống dưới 0* khi một cú morph đè lên cú hoà mờ đang chạy —
+        // xem `morph(to:curve:)` — và `View.opacity` kẹp số âm thành trong
+        // suốt hoàn toàn. `ShapeStyle.opacity` (tức `Color.blue.opacity(x)`)
+        // thì **không**: nó nhân thẳng vào alpha của màu và một alpha âm vẽ ra
+        // một bóng ma âm bản. Hai thứ trùng tên và khác hẳn nhau. Đo ở
+        // `SwiftUIAnimationTransactionEvidenceTests.testViewOpacityClampsNegativesWhereColourOpacityDoesNot`.
         .opacity(cardOpacity)
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
@@ -2479,22 +2487,52 @@ struct PlayerCard: View {
     /// đúng lúc hình học nhảy — tức cú nhảy hiện ra trên màn hình, đúng thứ cả
     /// tính năng này tồn tại để giấu.
     ///
-    /// Đã đo, và nó không xảy ra — nhưng lý do không giống cả hai dự đoán.
-    /// Animation của SwiftUI **cộng dồn**: hạ state đi 1 trong lúc một
-    /// animation đang bay làm giá trị đang vẽ tụt xuống đúng 1.0 chứ không bị
-    /// bỏ qua. Đo ở hai thời điểm cắt ngang khác nhau, giá trị ngay sau cú đè
-    /// bằng `giá trị trước đó − 1.0` tới ba chữ số thập phân. Mà cú hoà mờ
-    /// đang chạy thì không bao giờ vẽ quá 1, nên hiệu ấy **luôn ≤ 0**: opacity
-    /// kẹp ở 0, thẻ vô hình hoàn toàn đúng khoảnh khắc hình học nhảy — ở mọi
-    /// điểm cắt ngang, không chỉ hai điểm đã lấy mẫu. Xem
+    /// Đã đo, và animation cũ **không** được giữ — nhưng lý do không giống cả
+    /// hai dự đoán. Animation của SwiftUI **cộng dồn**: hạ state đi 1 trong lúc
+    /// một animation đang bay làm giá trị đang vẽ tụt xuống đúng 1.0 chứ không
+    /// bị bỏ qua. Đo ở hai thời điểm cắt ngang khác nhau, giá trị ngay sau cú
+    /// đè bằng `giá trị trước đó − 1.0` tới ba chữ số thập phân. Mà cú hoà mờ
+    /// đang chạy không bao giờ vẽ quá 1, nên hiệu ấy **luôn ≤ 0** — thẻ không
+    /// bao giờ ở một độ mờ lưng chừng đúng khoảnh khắc hình học nhảy. Xem
     /// `SwiftUIAnimationTransactionEvidenceTests.testASecondFadeArrivingMidFadeIsNeverPartiallyVisible`.
+    ///
+    /// **Điều kiện của bất biến ấy, và nó nằm ở file khác.** "Không bao giờ vẽ
+    /// quá 1" là tính chất của *đường cong*, không phải của cơ chế. Hàm này
+    /// nhận bất kỳ `Animation` nào; một đường cong có vọt lố sẽ vẽ quá 1 giữa
+    /// chừng, làm cú tụt cộng dồn rơi vào vùng **dương**, và cú nhảy hình học
+    /// hiện ra — đúng cái hỏng mà cả tính năng tồn tại để tránh. Cái đang giữ
+    /// điều kiện ấy là mọi chỗ gọi đều truyền `BottomBarStyle.expand` hoặc
+    /// `settle(initialVelocity:)`, mà nhánh giảm chuyển động của cả hai là
+    /// `easeInOut` — không vọt lố. **Nếu bạn định truyền một đường cong có nảy
+    /// vào đây, dừng lại và đọc đoạn này trước.** Điều kiện được đo trực tiếp
+    /// ở `testTheCurvesTheReducedMorphRunsOnNeverPresentAboveTheirTarget`, kèm
+    /// một lò xo có nảy làm đối chứng để bộ đo không thể xanh vì mù.
+    ///
+    /// **Và "≤ 0 nghĩa là vô hình" cũng đã được đo, chứ không còn là suy
+    /// luận.** Vòng sửa 1 chỉ đo tới chỗ giá trị đi âm rồi *cho rằng* âm là
+    /// trong suốt; vòng 2 đo nốt bằng cách dựng ảnh và đọc pixel:
+    /// `View.opacity` — đúng cái modifier chỗ áp `cardOpacity` dùng — kẹp số âm
+    /// thành trong suốt hoàn toàn, ra đúng bằng nền.
+    ///
+    /// Cẩn thận một cái bẫy nằm ngay cạnh: `ShapeStyle.opacity`, tức
+    /// `Color.blue.opacity(x)`, **không** kẹp — nó nhân thẳng vào alpha của màu
+    /// và một alpha âm composite theo kiểu trừ mực, vẽ ra một bóng ma âm bản
+    /// (đo được: nền `[255, 56, 60]`, mực xanh ở alpha −0,915 ra `[255, 0, 0]`).
+    /// Hai thứ trùng tên. Chuỗi lập luận ở đây đứng được là nhờ chỗ áp
+    /// `cardOpacity` dùng cái thứ nhất, nên **đừng đổi nó thành một `Color` có
+    /// alpha**.
     ///
     /// Cái phải trả là một khoảng **trống dài hơn**, không phải một cú nhảy lộ
     /// ra: cú hồi phục xuất phát từ dưới 0 nên một cú morph bị cắt ngang nằm
-    /// vô hình lâu hơn một cú morph bình thường trước khi bắt đầu hiện. Ghi lại
-    /// chứ không chữa: chữa nó là quay về bản hai nửa có con dấu huỷ, tức đổi
-    /// một khoảng trống dài hơn lấy một trạng thái mà một `completion` rơi mất
-    /// sẽ để lại player vô hình vĩnh viễn.
+    /// vô hình lâu hơn trước khi bắt đầu hiện. Chặn trên tính được: cú tụt là
+    /// đúng −1.0 và giá trị trước đó ≥ 0, nên chỗ xuất phát tệ nhất là −1, và
+    /// một `easeInOut` đi từ −1 tới 1 cắt qua 0 ở đúng giữa chặng. Tức **thêm
+    /// tối đa nửa thời lượng của chính đường cong ấy: 0,185s khi chạm
+    /// (`expand` 0,37s) và 0,145s khi thả tay (`settle` 0,29s)**. Tổng độ dài
+    /// cú chuyển không đổi — chỉ phần đầu trống dài ra. Ghi lại chứ không chữa:
+    /// chữa nó là quay về bản hai nửa có con dấu huỷ, tức đổi một khoảng trống
+    /// dài hơn lấy một trạng thái mà một `completion` rơi mất sẽ để lại player
+    /// vô hình vĩnh viễn.
     ///
     /// `curve` được dùng nguyên si cho cú hoà mờ, không đổi sang một hằng số
     /// riêng. Khi giảm chuyển động thì nó đã là nhánh phẳng của chính đường nó
