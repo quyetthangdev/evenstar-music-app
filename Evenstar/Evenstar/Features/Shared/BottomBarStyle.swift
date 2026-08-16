@@ -318,6 +318,27 @@ enum BottomBarStyle {
     /// the deliberate loss. B3 decides whether the 750pt travel survives at all
     /// or becomes a cross-fade; if it becomes a cross-fade, this duration is
     /// still the right length for it.
+    ///
+    /// **B3 took the second branch, and this constant did not have to change
+    /// for it.** The card no longer travels 750pt when the setting is on: its
+    /// geometry jumps to the destination inside a `nil` transaction and the
+    /// card fades in at it, and *this is the curve that fade runs on*. The
+    /// same 0.37s, timing the same transition, with the displacement taken
+    /// out of it — which is what the paragraph above had already worked out
+    /// would be the right thing to do.
+    ///
+    /// Not literally a cross-fade, and the difference is worth the word: the
+    /// two states never overlap, so the old one cuts rather than dissolving
+    /// while the new one fades in. `PlayerCard.morph(to:curve:)` says what
+    /// that costs and why the version without the cut is out of reach here.
+    ///
+    /// The full branch is untouched and still animates the whole travel.
+    ///
+    /// Note that `PlayerCard.morph(to:curve:)` fades on whatever curve its
+    /// caller passes, not on this one specifically: a tap arrives here, a
+    /// release after a drag arrives at `settle`'s 0.29s. The two keep their
+    /// different tempos in the reduced mode exactly as they had them in the
+    /// full one.
     @MainActor static var expand: Animation { reduceMotion ? expandFlat : expandFull }
     private static let expandFull = Animation.spring(duration: 0.52, bounce: 0.12)
     private static let expandFlat = Animation.easeInOut(duration: 0.37)

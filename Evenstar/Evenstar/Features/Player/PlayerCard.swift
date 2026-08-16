@@ -286,6 +286,25 @@ struct PlayerCard: View {
     /// region, which is precisely the case that broke.
     @State private var isDragging = false
 
+    /// Độ mờ của cả tấm thẻ. **Chỉ rời khỏi 1 khi Giảm chuyển động đang bật.**
+    ///
+    /// Đây là thứ thay cho cú morph ở chế độ giảm chuyển động: thẻ không lớn
+    /// dần từ viên thuốc ra toàn màn hình nữa mà đổi hình học tức thì lúc đang
+    /// vô hình rồi mờ vào ở đích. Xem `morph(to:curve:)`.
+    ///
+    /// Với Giảm chuyển động tắt, giá trị này không bao giờ bị ghi và
+    /// `.opacity(1)` là một modifier không làm gì — đường đi cũ không đổi một
+    /// dòng nào.
+    ///
+    /// **Trong `@State` nó chỉ ở 0 đúng một khoảnh khắc, không bao giờ chờ ai
+    /// đặt lại**, và đó là lý do không cần con dấu, không cần cờ "đang hoà mờ",
+    /// không cần `completion` nào. `morph(to:curve:)` hạ nó xuống 0 rồi đưa
+    /// ngay về 1 trong cùng một lượt; thứ chạy tiếp sau đó là phần nội suy của
+    /// SwiftUI, còn giá trị trong state đã là 1 rồi. Một cú morph mới cắt
+    /// ngang cũng chỉ dựng lại đúng cú hoà mờ ấy, và một cú hoà mờ bị bỏ dở
+    /// không để lại tấm thẻ vô hình — đích của nó vốn đã là 1.
+    @State private var cardOpacity: Double = 1
+
     /// Ba khối trong `QueuePanel` hiện ra tới đâu: 0 chưa có gì, 1 đã tới nơi.
     ///
     /// **Một giá trị riêng, không phải một phép ánh xạ trên `queueFactor`.**
@@ -851,6 +870,24 @@ struct PlayerCard: View {
                     await loadArtwork(safeAreaSize: outer.size, insets: outer.safeAreaInsets)
                 }
         }
+        // Cú hoà mờ thay cho cú morph khi giảm chuyển động — xem
+        // `cardOpacity` và `morph(to:curve:)`. Ở chế độ thường nó là hằng số 1.
+        //
+        // Một modifier riêng, nhân vào modifier bên dưới chứ không gộp thành
+        // một biểu thức với nó. Hai giá trị này trả lời hai câu hỏi khác nhau
+        // — "có bài nào không" và "đang ở giữa cú hoà mờ nào không" — và cái
+        // bên dưới đã có `.animation(_:value:)` gắn đích danh câu hỏi của nó.
+        // Gộp lại thì hai câu hỏi ấy đi chung một biểu thức và chỉ còn một chỗ
+        // để nói đường cong cho cả hai; tách ra thì mỗi cái tự nói lấy, và cú
+        // hoà mờ nhận đường cong từ chính `withAnimation` đã đặt nó.
+        //
+        // Áp ở ngoài cùng, một lần, chứ không rải xuống các lớp trong
+        // `card(size:insets:)`: cả thẻ phải tan như **một** vật. Nền, ảnh bìa,
+        // chrome thu nhỏ và chrome mở rộng chồng lên nhau, nên nhiều `.opacity`
+        // lồng nhau sẽ cho chúng nhìn xuyên qua nhau giữa chừng cú tan thay vì
+        // cùng nhạt đi. Ở đây nó cũng bao luôn bóng đổ và mọi thứ
+        // `card(size:insets:)` dựng ra, khỏi phải nhớ lớp nào đã được bao.
+        .opacity(cardOpacity)
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
@@ -2362,29 +2399,152 @@ struct PlayerCard: View {
                         to: target
                     )
                 )
-                withAnimation(curve) {
-                    settled = target
-                    dragDelta = 0
-                    expansion.set(progress: target, animation: curve)
-                }
+                // Cú đáp cũng đi qua `morph(to:curve:)`, không tự gọi
+                // `withAnimation`. Nó là **animation**, không phải thao tác
+                // trực tiếp: ngón tay đã rời màn hình, và quãng còn lại — một
+                // cú búng từ thẻ đang mở là gần trọn 750 điểm — là đúng thứ
+                // Giảm chuyển động tồn tại để bỏ đi. Phần bám ngón tay nằm ở
+                // `onChanged` phía trên và không đổi.
+                morph(to: target, curve: curve)
             }
     }
 
     private func expand() {
-        withAnimation(BottomBarStyle.expand) {
-            settled = 1
-            dragDelta = 0
-            expansion.set(progress: 1, animation: BottomBarStyle.expand)
-        }
+        morph(to: 1, curve: BottomBarStyle.expand)
     }
 
     private func collapse() {
-        withAnimation(BottomBarStyle.expand) {
-            settled = 0
+        morph(to: 0, curve: BottomBarStyle.expand)
+    }
+
+    // MARK: - Morph
+
+    /// Đưa thẻ tới `target`, bằng một trong **hai** đường tuỳ theo Giảm chuyển
+    /// động.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// RANH GIỚI: ANIMATION ĐỔI, THAO TÁC TRỰC TIẾP KHÔNG
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `progress` đổi theo hai đường hoàn toàn khác nhau, và chỉ một đường đi
+    /// qua đây.
+    ///
+    ///   - **Thao tác trực tiếp** — `drag(...).onChanged` ghi `dragDelta` từng
+    ///     khung, ngoài mọi transaction. Không có gì nội suy: thẻ ở đâu là do
+    ///     ngón tay ở đó. **Đường ấy không đổi một dòng nào khi giảm chuyển
+    ///     động**, và đó là chủ ý. Thẻ đi theo ngón tay là *phản hồi*; tắt nó
+    ///     đi là làm hỏng cách điều khiển chứ không phải làm app dễ tiếp cận
+    ///     hơn — người dùng sẽ không vuốt đóng được player nữa.
+    ///   - **Animation** — chạm mở, chạm đóng, cú đáp sau khi thả. Cả ba đều
+    ///     gọi hàm này, và chỉ ở đây mới có gì để bỏ đi.
+    ///
+    /// Nhánh thường giữ nguyên si cú `withAnimation` cũ, kể cả việc `curve`
+    /// phải tới cả `settled` lẫn `expansion` — xem ghi chú ở `onEnded`.
+    ///
+    /// Nhánh giảm chuyển động **không phải một đường cong khác**. Đổi curve
+    /// thôi thì thẻ vẫn phóng từ viên thuốc ra toàn màn hình, chỉ là phóng theo
+    /// curve khác, và người say chuyển động vẫn thấy đúng thứ làm họ khó chịu.
+    /// Cái phải biến mất là **quãng đường**, không phải hình dáng gia tốc của
+    /// nó.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// BA DÒNG, VÀ VÌ SAO CHỈ CẦN BA DÒNG
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Hình học nhảy thẳng tới đích trong một transaction `nil`, cùng lượt ấy
+    /// độ mờ bị hạ về 0, rồi độ mờ được `withAnimation` đưa về 1. Người dùng
+    /// **không bao giờ thấy cú nhảy**: khung duy nhất có hình học mới ở độ mờ
+    /// 0 là khung không vẽ ra gì cả, và thứ hiện lên sau đó đã đứng yên sẵn ở
+    /// đích. Không có khung nào có thẻ ở một hình học trung gian, nên không có
+    /// cú phóng to nào để mà thấy.
+    ///
+    /// Ba dòng ấy dựa vào một hành vi của SwiftUI mà **suy luận đã đoán sai và
+    /// phép đo bác bỏ**: hạ một giá trị xuống 0 rồi cho `withAnimation` đưa nó
+    /// về 1 trong cùng một lượt cập nhật *vẫn chạy* cú hoà mờ, xuất phát từ 0
+    /// — SwiftUI không gộp cặp ấy thành "1 tới 1". Bản nháp trước tin là nó có
+    /// gộp, nên phải làm hai nửa nối bằng `completion`, kèm con dấu huỷ, kèm
+    /// một quãng `cardOpacity` nằm ở 0 trong state — tức một `completion` rơi
+    /// mất là một player vô hình vĩnh viễn. Xem
+    /// `SwiftUIAnimationTransactionEvidenceTests`: cả ba hành vi ở đây đều có
+    /// vết đo, và bản ba dòng này không có trạng thái nào chờ ai dọn.
+    ///
+    /// `curve` được dùng nguyên si cho cú hoà mờ, không đổi sang một hằng số
+    /// riêng. Khi giảm chuyển động thì nó đã là nhánh phẳng của chính đường nó
+    /// vốn chạy — 0.37s cho cú chạm, 0.29s cho cú đáp — và ghi chú của
+    /// `BottomBarStyle.expand` đã kết luận sẵn rằng nếu quãng đường ấy thành
+    /// một cú hoà mờ thì đây vẫn là độ dài đúng. Hai lối vào giữ nguyên nhịp
+    /// khác nhau của chúng, đúng như khi còn là chuyển động.
+    ///
+    /// Cái mất, nói thẳng: trạng thái **cũ** bị cắt phụt chứ không tan dần.
+    /// Đóng player thì thư viện hiện ra ngay trong một khung rồi viên thuốc mờ
+    /// vào. Một cú hoà mờ chéo thật sự sẽ tránh được điều đó, và nó đòi hai bản
+    /// thẻ cùng tồn tại ở hai `progress` khác nhau — tức phải luồn `progress`
+    /// qua từng chỗ đọc nó trong 2.400 dòng của file này, đúng cái tái cấu trúc
+    /// đang bị chặn. Xem b3-report. Một cú cắt không phải chuyển động, nên bản
+    /// này đạt yêu cầu của HIG; nó chỉ chưa phải bản êm nhất có thể có.
+    private func morph(to target: Double, curve: Animation) {
+        guard BottomBarStyle.reduceMotion else {
+            withAnimation(curve) {
+                settled = target
+                dragDelta = 0
+                expansion.set(progress: target, animation: curve)
+            }
+            return
+        }
+
+        // Hỏi trước khi `settled` đổi: `progress` là chỗ xuất phát, và sau
+        // dòng dưới thì nó đã là đích rồi.
+        let needsFade = Self.morphNeedsFade(from: progress, to: target)
+
+        // `Transaction(animation: nil)` viết rõ ràng chứ không phải gán trần.
+        // Đây là chỗ duy nhất của cả tính năng, cú nhảy hình học phải là cú
+        // nhảy thật, và `morph` được gọi từ nhiều nơi — một chỗ gọi nằm trong
+        // `withAnimation` của ai đó là đủ để cú nhảy biến thành cú phóng to.
+        //
+        // `animation: nil` cho `expansion` vì cùng lẽ ấy: cú thu nhỏ nền không
+        // được phép chạy một đồng hồ riêng ở đây. Khi giảm chuyển động thì
+        // `BottomBarStyle.recedeScale` đã là 1 nên nó không vẽ ra gì — nhưng
+        // truyền `nil` là nói đúng ý định thay vì dựa vào một hằng số ở file
+        // khác tình cờ triệt tiêu biểu thức.
+        withTransaction(Transaction(animation: nil)) {
+            settled = target
             dragDelta = 0
-            expansion.set(progress: 0, animation: BottomBarStyle.expand)
+            expansion.set(progress: target, animation: nil)
+            if needsFade { cardOpacity = 0 }
+        }
+
+        if needsFade {
+            withAnimation(curve) { cardOpacity = 1 }
         }
     }
+
+    /// Quãng đổi có đáng giấu sau một cú hoà mờ không.
+    ///
+    /// **Cái này không phải chỉnh cho đẹp, nó chặn một lỗi thật.**
+    /// `expand()` chạy từ `onChange(of: playback.explicitSelections)`, và
+    /// `explicitSelections` tăng cả khi người dùng chạm một hàng trong
+    /// `QueuePanel` — tức lúc thẻ *đang mở sẵn*. Ghi chú ở chỗ gọi ấy nói rõ
+    /// đó là chuyện thường và vô hại: "animates 1 to 1, which is a no-op the
+    /// spring resolves on its first frame". Với cú hoà mờ thì nó không còn vô
+    /// hại: cả player sẽ chớp tắt rồi hiện lại mỗi lần chọn một bài trong hàng
+    /// đợi. Cùng chuyện ấy với `collapse()` khi `currentTrack` về `nil` lúc thẻ
+    /// đã đóng.
+    ///
+    /// 0.02 là **chọn, không phải đo** — và nó là quãng đường chứ không phải
+    /// thời gian, nên nó không thuộc về `BottomBarStyle`. Trên một máy có
+    /// `dragTravel` khoảng 800 điểm thì đó là 16 điểm: một cú nhảy cỡ một dòng
+    /// chữ, thấy được nhưng không phải một cú morph, và giấu nó sau một cú chớp
+    /// tắt tốn nhiều hơn nó che. Ngưỡng chỉ nói *quãng nào không đáng giấu*;
+    /// quãng vẫn nhảy tức thì trong cả hai nhánh, nên nó không bao giờ để lọt
+    /// một cú phóng to.
+    ///
+    /// Thuần và `static` vì cùng lý do `dragOffset` và `dragThreshold` là vậy:
+    /// một cái rào mà sai thì không nhìn ra được, chỉ thấy player thỉnh thoảng
+    /// chớp.
+    static func morphNeedsFade(from current: Double, to target: Double) -> Bool {
+        abs(target - current) > morphFadeMinimumTravel
+    }
+
+    /// Xem `morphNeedsFade(from:to:)`.
+    static let morphFadeMinimumTravel: Double = 0.02
 
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will

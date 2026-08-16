@@ -171,6 +171,88 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(1 - (1 - BottomBarStyle.recedeScale) * 1, 0.92, accuracy: 1e-12)
     }
 
+    // MARK: - The drag path, which must not change at all
+
+    /// **The non-negotiable one.** Reduce Motion is aimed at animation, not at
+    /// direct manipulation: while a finger is on the card, the card following
+    /// it is *feedback*, and every system sheet keeps doing it with the
+    /// setting on. Taking it away would not make the app more accessible, it
+    /// would leave the user unable to close the player.
+    ///
+    /// The gesture's arithmetic is four pure functions, so "the drag path did
+    /// not change" is a statement that can be asserted rather than eyeballed:
+    /// every one of them must give the same answer in both modes. A reduced
+    /// branch introduced into any of them — a smaller threshold, a swallowed
+    /// velocity, a scaled-down offset — fails here.
+    ///
+    /// What this cannot see is the gesture handler itself, which needs a
+    /// touch to run. `drag(...).onChanged` is unchanged by B3 and writes
+    /// `dragDelta` outside every transaction exactly as it did before; that
+    /// half is pinned by review of the diff, not by this test.
+    func testEveryPieceOfTheDragArithmeticIgnoresReduceMotion() {
+        let translations: [CGFloat] = [-400, -37, -10, -2, 0, 2, 10, 37, 400]
+        let progresses: [Double] = [0, 0.05, 0.49, 0.5, 0.51, 0.95, 1]
+        let velocities: [CGFloat] = [-3000, -420, 0, 420, 3000]
+
+        func answers() -> [Double] {
+            var out: [Double] = [Double(BottomBarStyle.maxSettleVelocity)]
+            for progress in progresses {
+                let threshold = PlayerCard.dragThreshold(progress: progress)
+                out.append(Double(threshold))
+                for translation in translations {
+                    out.append(Double(PlayerCard.dragOffset(
+                        translationHeight: translation,
+                        threshold: threshold
+                    )))
+                }
+                for velocity in velocities {
+                    out.append(PlayerCard.settleVelocity(
+                        verticalVelocity: velocity,
+                        travel: 803,
+                        from: progress,
+                        to: progress > 0.5 ? 1 : 0
+                    ))
+                }
+            }
+            return out
+        }
+
+        BottomBarStyle.reduceMotion = false
+        let full = answers()
+
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(full, answers())
+    }
+
+    // MARK: - The fade that replaces the card's morph
+
+    /// A morph worth hiding gets hidden…
+    func testTheFullTravelNeedsTheFade() {
+        XCTAssertTrue(PlayerCard.morphNeedsFade(from: 0, to: 1))
+        XCTAssertTrue(PlayerCard.morphNeedsFade(from: 1, to: 0))
+        XCTAssertTrue(PlayerCard.morphNeedsFade(from: 0.62, to: 1))
+        XCTAssertTrue(PlayerCard.morphNeedsFade(from: 0.44, to: 0))
+    }
+
+    /// …and a move nobody can see does not, which is the half that stops the
+    /// whole player blinking every time a row in the queue is tapped:
+    /// `explicitSelections` calls `expand()` on an already-expanded card.
+    func testAMoveNobodyCanSeeIsNotWorthAFade() {
+        XCTAssertFalse(PlayerCard.morphNeedsFade(from: 1, to: 1))
+        XCTAssertFalse(PlayerCard.morphNeedsFade(from: 0, to: 0))
+        XCTAssertFalse(PlayerCard.morphNeedsFade(from: 0.995, to: 1))
+        XCTAssertFalse(PlayerCard.morphNeedsFade(from: 0.01, to: 0))
+    }
+
+    /// The threshold has to be small enough that it can only ever skip the
+    /// fade for a move of a few points. On the ~800pt travel of an iPhone 17
+    /// this is 16pt; anything an order of magnitude larger would start
+    /// letting real morphs through unfaded.
+    func testTheFadeThresholdStaysSmallEnoughToOnlySkipInvisibleMoves() {
+        XCTAssertLessThanOrEqual(PlayerCard.morphFadeMinimumTravel, 0.05)
+        XCTAssertGreaterThan(PlayerCard.morphFadeMinimumTravel, 0)
+    }
+
     // MARK: - The velocity hand-off
 
     /// The reason `settle(initialVelocity:)` exists is that a violent flick and
@@ -217,6 +299,296 @@ final class ReduceMotionTests: XCTestCase {
                 initialVelocity: BottomBarStyle.maxSettleVelocity
             )
         )
+    }
+}
+
+/// **The wiring for the card's own morph.** `PlayerCard` is rendered for real
+/// and made to open by the one path a test can reach without a finger:
+/// `explicitSelections`, which is what a tapped row increments and what
+/// `onChange(of: playback.explicitSelections)` turns into `expand()`.
+///
+/// What it can observe is `PlayerExpansion`, which the test owns: the card
+/// writes both the destination and the curve into it from inside
+/// `morph(to:curve:)`, so the object is a direct readout of which branch ran.
+/// `settled`, `dragDelta` and `cardOpacity` are private `@State` and stay
+/// unobservable — this class cannot tell you the card *looks* right, only that
+/// the branch it took is the branch the setting asks for.
+///
+/// The distinction that matters is in `animation`, not in `progress`. Both
+/// modes end at 1; the reduced one gets there with `nil`, meaning nothing
+/// between here and there is interpolated, which is the whole feature.
+@MainActor
+final class PlayerCardReducedMorphWiringTests: XCTestCase {
+
+    private var saved = false
+    private var window: UIWindow?
+
+    override func setUp() {
+        super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() {
+        BottomBarStyle.reduceMotion = saved
+        window?.isHidden = true
+        window = nil
+        super.tearDown()
+    }
+
+    /// Renders a card that is collapsed and has a track, then plays a track
+    /// the way a tapped row does.
+    private func openThePlayer(reduceMotion: Bool) throws -> PlayerExpansion {
+        BottomBarStyle.reduceMotion = reduceMotion
+
+        let library = try InMemoryLibrary.make()
+        let track = InMemoryLibrary.makeTrack()
+        try library.insert(track)
+        let playback = PlaybackService(
+            player: MockAudioPlayer(),
+            nowPlaying: MockNowPlayingPublisher(),
+            library: library
+        )
+        let expansion = PlayerExpansion()
+
+        let host = UIHostingController(
+            rootView: PlayerCard(playback: playback, minimised: 0, expansion: expansion)
+                .environment(library)
+                .environment(playback)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        self.window = window
+
+        // The card starts collapsed, and `onChange` cannot have fired yet.
+        XCTAssertEqual(expansion.progress, 0)
+
+        playback.play(track, in: [track])
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        return expansion
+    }
+
+    /// With the setting on, the card is *told* where to be and nothing is
+    /// interpolated on the way. A `nil` here is the geometry jump; anything
+    /// else means the 750pt travel is still being animated and B3 did not
+    /// happen.
+    func testOpeningWithReduceMotionOnHandsOverNoAnimationAtAll() throws {
+        let expansion = try openThePlayer(reduceMotion: true)
+
+        XCTAssertEqual(expansion.progress, 1)
+        XCTAssertNil(
+            expansion.animation,
+            "the reduced morph handed over \(String(describing: expansion.animation))"
+        )
+    }
+
+    /// And with it off, the same tap still animates the whole travel on
+    /// `expand`. Without this the test above would pass against a card that
+    /// had simply stopped animating for everybody.
+    func testOpeningWithReduceMotionOffStillHandsOverTheExpandSpring() throws {
+        let expansion = try openThePlayer(reduceMotion: false)
+
+        XCTAssertEqual(expansion.progress, 1)
+        XCTAssertEqual(expansion.animation, .spring(duration: 0.52, bounce: 0.12))
+    }
+}
+
+/// **What SwiftUI does with transactions** — the three behaviours B3's
+/// cross-fade is built on, measured instead of reasoned about.
+///
+/// Everything below runs on `Harness`, declared in this file. None of it
+/// imports a line of `PlayerCard`, and a green run here says nothing about the
+/// player; what it says is whether the mechanism the player's
+/// `fadeMorph(to:)` leans on is the mechanism SwiftUI has. Same division of
+/// labour as `SwiftUIOnChangeOrderingEvidenceTests` below, and here for the
+/// same reason: this project has been wrong about SwiftUI internals often
+/// enough, and corrected by measurement often enough, that a comment claiming
+/// one is not worth writing without a harness under it.
+///
+/// The three claims, all of them load-bearing:
+///
+///   1. `withAnimation` really does drive intermediate values — so a fade
+///      written this way actually fades.
+///   2. `withTransaction(Transaction(animation: nil))` drives **none** — so
+///      the geometry change in `morph(to:curve:)` is a jump and not a fast
+///      interpolation. The whole point of the feature is that the jump is
+///      never on screen.
+///   3. Clearing a value to 0 without animation and animating it back to 1
+///      **in the same update** does fade, from 0.
+///
+/// The third is here because reasoning got it wrong first. The prediction was
+/// that SwiftUI only ever sees the value a state variable ends an update
+/// holding, so the pair would collapse into "1 to 1" and no fade would run —
+/// which would have forced a two-phase implementation with a `completion`, a
+/// cancellation token, and a window in which `cardOpacity` sits at 0 in state
+/// and a dropped completion leaves the player invisible for good. The trace
+/// this class prints says otherwise, and `PlayerCard` is the smaller, safer
+/// shape because of it. Written down so nobody re-derives the wrong version
+/// from first principles later.
+///
+/// The recorder is an `Animatable` `ViewModifier`, and the two traces mean
+/// different things. `interpolated` is what SwiftUI wrote into
+/// `animatableData` — an animation, frame by frame. `rendered` is every value
+/// its `body` was actually evaluated with, animated or not. A change with no
+/// animation shows up in the second and not the first, which is precisely the
+/// distinction claim 2 needs.
+@MainActor
+final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
+
+    private enum Trace {
+        @MainActor static var interpolated: [Double] = []
+        @MainActor static var rendered: [Double] = []
+        @MainActor static var apply: ((Double, Animation?) -> Void)?
+        @MainActor static var dip: ((Animation) -> Void)?
+
+        @MainActor static func reset() {
+            interpolated = []
+            rendered = []
+        }
+    }
+
+    private struct Recorder: ViewModifier, Animatable {
+        var value: Double
+        var animatableData: Double {
+            get { value }
+            set {
+                value = newValue
+                Trace.interpolated.append(newValue)
+            }
+        }
+        func body(content: Content) -> some View {
+            Trace.rendered.append(value)
+            return content.opacity(value)
+        }
+    }
+
+    private struct Harness: View {
+        @State private var value: Double = 1
+
+        var body: some View {
+            Color.blue
+                .modifier(Recorder(value: value))
+                .onAppear {
+                    Trace.apply = { target, animation in
+                        if let animation {
+                            withAnimation(animation) { value = target }
+                        } else {
+                            withTransaction(Transaction(animation: nil)) { value = target }
+                        }
+                    }
+                    // Both writes in one synchronous scope, which is the
+                    // shape `PlayerCard.morph(to:curve:)` has.
+                    Trace.dip = { animation in
+                        withTransaction(Transaction(animation: nil)) { value = 0 }
+                        withAnimation(animation) { value = 1 }
+                    }
+                }
+        }
+    }
+
+    private var window: UIWindow?
+
+    override func setUp() {
+        super.setUp()
+        Trace.reset()
+        Trace.apply = nil
+        Trace.dip = nil
+
+        let host = UIHostingController(rootView: Harness())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        self.window = window
+    }
+
+    override func tearDown() {
+        window?.isHidden = true
+        window = nil
+        super.tearDown()
+    }
+
+    /// Lets the display link tick. Nothing about an animation happens without
+    /// this — a test that only laid out would see the final value and call it
+    /// a snap.
+    private func pump(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// Values strictly between the two ends: the evidence that something was
+    /// interpolated rather than assigned.
+    private func between(_ values: [Double]) -> [Double] {
+        values.filter { $0 > 0.0001 && $0 < 0.9999 }
+    }
+
+    func testWithAnimationDrivesIntermediateValues() throws {
+        let apply = try XCTUnwrap(Trace.apply)
+        Trace.reset()
+
+        apply(0, .easeInOut(duration: 0.2))
+        pump(0.3)
+
+        XCTAssertFalse(
+            between(Trace.interpolated).isEmpty,
+            "nothing was interpolated; trace: \(Trace.interpolated)"
+        )
+        XCTAssertEqual(Trace.rendered.last ?? -1, 0, accuracy: 0.001)
+    }
+
+    /// The claim the geometry jump rests on. If this goes red, the reduced
+    /// morph is not a jump-while-invisible any more — it is a very fast
+    /// version of exactly the motion the setting exists to remove, and the
+    /// feature is back to "changed the curve".
+    ///
+    /// Note what the two traces say together, because either alone would be
+    /// weak: `interpolated` comes back **empty**, and `rendered` ends at the
+    /// new value. The write landed and was drawn; SwiftUI simply rebuilt the
+    /// modifier from it rather than animating `animatableData` toward it.
+    func testANilAnimationTransactionDrivesNoIntermediateValueAtAll() throws {
+        let apply = try XCTUnwrap(Trace.apply)
+        Trace.reset()
+
+        apply(0, nil)
+        pump(0.3)
+
+        XCTAssertTrue(
+            Trace.interpolated.isEmpty,
+            "a nil-animation transaction interpolated; trace: \(Trace.interpolated)"
+        )
+        XCTAssertTrue(
+            between(Trace.rendered).isEmpty,
+            "a nil-animation transaction drew a value in between; trace: \(Trace.rendered)"
+        )
+        XCTAssertEqual(Trace.rendered.last ?? -1, 0, accuracy: 0.001)
+    }
+
+    /// **The one that was predicted to fail.** Clearing the value to 0 with no
+    /// animation and animating it back to 1 in the same synchronous scope
+    /// fades, from 0 — SwiftUI does not collapse the pair into the value the
+    /// update ends on.
+    ///
+    /// This is `PlayerCard.morph(to:curve:)`'s whole mechanism, so the trace
+    /// is asserted in three ways rather than one: it starts at 0, it passes
+    /// through the middle, and it ends at 1.
+    func testClearingAndRestoringInOneUpdateStillFadesFromZero() throws {
+        let dip = try XCTUnwrap(Trace.dip)
+        Trace.reset()
+
+        dip(.easeInOut(duration: 0.2))
+        pump(0.3)
+
+        XCTAssertEqual(Trace.interpolated.first ?? -1, 0, accuracy: 0.001)
+        XCTAssertFalse(
+            between(Trace.interpolated).isEmpty,
+            "the fade did not run; trace: \(Trace.interpolated)"
+        )
+        XCTAssertEqual(Trace.interpolated.last ?? -1, 1, accuracy: 0.001)
     }
 }
 
