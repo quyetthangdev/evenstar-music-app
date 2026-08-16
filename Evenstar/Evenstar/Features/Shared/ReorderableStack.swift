@@ -147,14 +147,53 @@ enum ReorderTuning {
     /// Các hàng nhường chỗ. `dampingFraction` 0.68 để có **chút vọt lố** — đó
     /// là cái đàn hồi nhẹ; 1.0 thì chúng trượt tới nơi rồi đứng, đọc ra như cửa
     /// trượt chứ không như vật có khối lượng.
-    static let part = Animation.spring(response: 0.28, dampingFraction: 0.68)
+    /// Giảm chuyển động: `easeInOut` 0.14s. Chính cái "chút vọt lố" câu trên
+    /// khen là thứ phải bỏ — đo được là 105.4% của quãng đường, tức hàng nhường
+    /// chỗ đi *quá* ô của nó rồi lùi lại, và đó đúng là cú nảy mà "Xong khi"
+    /// của việc này cấm.
+    ///
+    /// Quãng đường thì giữ. Hàng nhường chỗ *là* lời giải thích cho việc sắp
+    /// xảy ra — bỏ nó đi thì thứ tự mới hiện ra bằng một cú nhảy không ai đọc
+    /// được — nên đây là chỗ đổi curve, không phải chỗ bỏ dịch chuyển. Cùng
+    /// ranh giới `BottomBarStyle.selection` áp cho vệt tab.
+    ///
+    /// 0.14 lấy theo đúng cách bảng trong `BottomBarStyle.swift` lấy bảy con số
+    /// của nó: thời điểm chính lò xo ấy **lần đầu vượt 98%**, lấy mẫu 1ms bằng
+    /// `Spring.value(target:time:)`, làm tròn tới hàng phần trăm — 0.135 →
+    /// 0.14. `ReorderTuningFlatDurationTests` chạy lại phép ấy, nên nó không
+    /// phải một con số chép tay.
+    ///
+    /// Trùng với `press` ngay dưới, và trùng thật chứ không phải nhầm: hai thứ
+    /// đo ra cùng một con số vì cùng là "nhanh, không nảy" ở cùng một cỡ.
+    @MainActor static var part: Animation { BottomBarStyle.reduceMotion ? partFlat : partFull }
+    private static let partFull = Animation.spring(response: 0.28, dampingFraction: 0.68)
+    private static let partFlat = Animation.easeInOut(duration: 0.14)
 
     /// Nền hiện ra lúc chạm. Nhanh và không nảy: đây là biên nhận, không phải
     /// chuyển động.
+    ///
+    /// Giảm chuyển động: **giữ nguyên**. Đây là độ đục của một cái nền đi từ 0
+    /// lên 0.4 trong 0.14 giây — không dịch chuyển, không phóng to, không có gì
+    /// vọt lố. Hoà mờ thì HIG cho phép, và bỏ nó đi là bỏ dấu hiệu duy nhất
+    /// nói rằng ngón tay đang đè lên hàng nào.
     static let press = Animation.easeOut(duration: 0.14)
 
     /// Cú đáp lúc thả. Xem `ReorderModel.settleAnimation(distance:velocity:)`.
     static let settleSpring = Spring(response: 0.34, dampingRatio: 0.76)
+
+    /// Cú đáp ấy khi giảm chuyển động: `easeInOut` 0.19s, **và không nhận vận
+    /// tốc**.
+    ///
+    /// Lò xo trên vọt lố 102.5%, nghĩa là hàng vừa thả đi quá ô đích rồi lùi
+    /// lại — cú nảy phải bỏ. 0.19 là thời điểm nó lần đầu vượt 98%, cùng phép
+    /// đo với `partFlat`.
+    ///
+    /// Vận tốc bị bỏ chứ không được làm phẳng quanh, đúng quyết định
+    /// `BottomBarStyle.settle(initialVelocity:)` đã ghi: cú trao lại đà là
+    /// chính cái cảm giác mà triệu chứng tiền đình phản ứng với. Hàng vẫn về
+    /// đúng ô mà ngón tay chỉ tới — `targetIndex` tính ở `liftMoved` và không
+    /// đổi — chỉ có cách nó tới là đổi.
+    static let settleFlat = Animation.easeInOut(duration: 0.19)
 
     static let corner: CGFloat = 12
 }
@@ -166,6 +205,13 @@ enum ReorderTuning {
 /// Cử chỉ nằm ở đây chứ không ở view vì đây là chỗ duy nhất biết đủ để trả lời
 /// "chạm vào đâu là hàng nào" — và vì một máy trạng thái thì đọc được thành
 /// lời, còn một chuỗi `.onChanged` lồng nhau thì không.
+/// `@MainActor` từ khi `ReorderTuning.part` và `settleAnimation` phải hỏi
+/// `BottomBarStyle.reduceMotion` — cờ ấy cố tình bị khoá vào main actor, vì nó
+/// được ghi từ `body` của `RootView` và đọc từ mọi chỗ vẽ. Không phải một ràng
+/// buộc mới trên thực tế: lớp này vốn chỉ chạy từ callback của recogniser và từ
+/// thân view, cả hai đều đã ở main actor, và nó gọi `withAnimation` với
+/// `UIImpactFeedbackGenerator` — không thứ nào chịu được luồng khác.
+@MainActor
 @Observable
 final class ReorderModel {
 
@@ -327,7 +373,7 @@ final class ReorderModel {
         lastSample = nil
 
         let destination = CGFloat(targetIndex - sourceIndex) * slot
-        let settle = settleAnimation(distance: destination - dragOffset, velocity: velocity)
+        let settle = Self.settleAnimation(distance: destination - dragOffset, velocity: velocity)
         // Thôi trông như đang nhấc — thu về, tắt bóng, tắt nền — nhưng vẫn là
         // một phiên kéo, nên phép toán ô không đổi dưới chân cú đáp.
         withAnimation(ReorderTuning.part) {
@@ -351,7 +397,16 @@ final class ReorderModel {
         return order.indices.contains(index) ? index : nil
     }
 
-    private func settleAnimation(distance: CGFloat, velocity: CGFloat) -> Animation {
+    /// **Giảm chuyển động cắt ở đây, trước cả phép chia.** Một curve phẳng cho
+    /// mọi cú thả, dù nhẹ hay mạnh, dù còn xa hay đã sát đích — xem
+    /// `ReorderTuning.settleFlat`.
+    ///
+    /// `static` và không `private` để hỏi được từ test. Đây là toàn bộ phần
+    /// tách được của việc này: `liftEnded` quanh nó chỉ gọi được khi có ngón
+    /// tay thật, còn hàm này thì thuần.
+    @MainActor
+    static func settleAnimation(distance: CGFloat, velocity: CGFloat) -> Animation {
+        if BottomBarStyle.reduceMotion { return ReorderTuning.settleFlat }
         guard abs(distance) > 0.5 else { return .spring(ReorderTuning.settleSpring) }
         // `initialVelocity` tính theo đơn vị của giá trị đang animate mỗi giây;
         // giá trị ở đây là độ lệch tính bằng điểm, nên điểm/giây phải chia cho
@@ -463,6 +518,13 @@ extension View {
             // chiều rộng hàng, còn lề thì cố định. Cảm giác "được nhấc lên" đã
             // nằm ở cái bóng và ở nền đặc hơn; đó cũng là chỗ Apple Music đặt
             // nó, hàng đợi của họ không phóng to hàng đang nhấc.
+            //
+            // Nhờ đó việc giảm chuyển động không phải động gì tới chỗ này: cái
+            // duy nhất `lifted` đổi là **độ đục** của thẻ và của hai lớp bóng,
+            // và hai lớp bóng ấy giữ nguyên theo yêu cầu — bóng là dấu hiệu
+            // "đang nhấc", không phải chuyển động. `ReorderTuning.part` tự phân
+            // nhánh, nên curve của cú đổi độ đục đi theo cùng, và đó là toàn bộ
+            // thay đổi ở đây.
             .animation(ReorderTuning.part, value: lifted)
     }
 }
