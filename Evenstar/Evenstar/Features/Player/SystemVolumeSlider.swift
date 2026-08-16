@@ -127,47 +127,6 @@ struct SystemVolumeSlider: UIViewRepresentable {
         )
     }
 
-    /// A 30x30 transparent image. An empty `UIImage()` is not reliably
-    /// honoured by `setVolumeThumbImage` across iOS versions — if a knob is
-    /// still visible on device, this is the first thing to check.
-    ///
-    /// It must not shrink back to 1x1: `UISlider` only begins tracking a
-    /// touch that lands inside the thumb rect, and that rect derives from
-    /// the thumb image's size. A 1x1 image gives a roughly 1pt grab target
-    /// across a control this wide — nothing is drawn either way, since the
-    /// image itself is invisible, so there is no size at which 1x1 is
-    /// better and 30x30 costs nothing visually.
-    /// A capsule as thick as `ScrubberBar`'s resting bar, so the two controls
-    /// read as the same kind of thing rather than one being a hairline next to
-    /// the other. `UISlider`'s own track is about 4pt and cannot be resized any
-    /// other way.
-    ///
-    /// Rendered as a **template** image, deliberately. Painting `UIColor.label`
-    /// into the bitmap would bake whichever appearance was current at launch
-    /// and leave the bar the wrong colour after a switch to dark mode; a
-    /// template takes `minimumTrackTintColor`/`maximumTrackTintColor` instead,
-    /// which `TintedVolumeView` keeps dynamic.
-    ///
-    /// One image serves both ends: the caps make it stretch from the middle, so
-    /// the same bitmap draws a short filled section and a long unfilled one.
-    static let trackImage: UIImage = {
-        let side = ScrubberBar.restingHeight
-        let size = CGSize(width: side, height: side)
-        let capsule = UIGraphicsImageRenderer(size: size).image { _ in
-            UIColor.black.setFill()
-            UIBezierPath(
-                roundedRect: CGRect(origin: .zero, size: size),
-                cornerRadius: side / 2
-            ).fill()
-        }
-        return capsule
-            .resizableImage(
-                withCapInsets: UIEdgeInsets(top: 0, left: side / 2, bottom: 0, right: side / 2),
-                resizingMode: .stretch
-            )
-            .withRenderingMode(.alwaysTemplate)
-    }()
-
     private static let invisibleThumb: UIImage = {
         UIGraphicsImageRenderer(size: CGSize(width: 30, height: 30)).image { _ in }
     }()
@@ -200,7 +159,14 @@ final class TintedVolumeView: MPVolumeView {
     /// True while a finger is down on the slider. Chỉ để khử rung hai mép của
     /// `onPressChanged`; cú phồng không còn vẽ ở đây.
     private var isPressed = false
-    private var isObservingSliderTouches = false
+    /// Which slider currently has our targets, not just whether *some* slider
+    /// once did. A `Bool` was tried first and went silently wrong: the doc
+    /// comment above says `MPVolumeView` can rebuild its `UISlider`, and when
+    /// it does, `findSlider` returns a new instance while the flag is still
+    /// `true`, so no target is ever attached to it — `onTouchDown` and
+    /// `onPressChanged` go dead with no error, no log, no crash. `weak`
+    /// because this view does not own the slider; `MPVolumeView` does.
+    private weak var observedSlider: UISlider?
 
     /// Fired once per touch-down — see its doc comment on `SystemVolumeSlider`.
     var onTouchDown: (() -> Void)?
@@ -211,8 +177,9 @@ final class TintedVolumeView: MPVolumeView {
         super.layoutSubviews()
         guard let slider = Self.findSlider(in: self) else { return }
 
-        if !isObservingSliderTouches {
-            isObservingSliderTouches = true
+        if observedSlider !== slider {
+            observedSlider?.removeTarget(self, action: nil, for: .allEvents)
+            observedSlider = slider
             slider.addTarget(self, action: #selector(handleTouchDown), for: .touchDown)
             slider.addTarget(self, action: #selector(handleTouchUp),
                               for: [.touchUpInside, .touchUpOutside, .touchCancel])

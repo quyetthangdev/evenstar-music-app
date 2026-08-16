@@ -154,4 +154,45 @@ final class SystemVolumeSliderTests: XCTestCase {
 
         XCTAssertEqual(fireCount, 1, "one press must fire the callback once, not once per event")
     }
+
+    // MARK: - Slider rebuild (audit A3)
+
+    /// `MPVolumeView` rebuilds its internal `UISlider` during layout (see the
+    /// doc comment on `TintedVolumeView`). This test supplies its own
+    /// `UISlider` subview rather than relying on that rebuild, so it runs in
+    /// the simulator too — `findSlider` walks the whole subtree and does not
+    /// care who put the slider there.
+    ///
+    /// It removes that slider and adds a second one to stand in for a real
+    /// rebuild, then asserts the second slider actually got the touch
+    /// targets. A `Bool` flag that only remembers *that* a slider was once
+    /// observed, not *which* one, would leave this second slider untargeted:
+    /// `onTouchDown`/`onPressChanged` would go silently dead for the rest of
+    /// the view's life.
+    func testTouchTargetSurvivesTheSliderBeingRebuilt() {
+        let view = TintedVolumeView(
+            frame: CGRect(x: 0, y: 0, width: 300, height: ScrubberBar.touchHeight)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
+        window.addSubview(view)
+        window.isHidden = false
+
+        let firstSlider = UISlider()
+        view.addSubview(firstSlider)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        firstSlider.removeFromSuperview()
+        let secondSlider = UISlider()
+        view.addSubview(secondSlider)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        let actions = secondSlider.actions(forTarget: view, forControlEvent: .touchDown)
+        XCTAssertEqual(
+            actions,
+            ["handleTouchDown"],
+            "the rebuilt slider must be retargeted, not skipped because a slider was targeted before"
+        )
+    }
 }
