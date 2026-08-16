@@ -476,6 +476,12 @@ final class PressFeedbackConstantsTests: XCTestCase {
             XCTAssertEqual(style.kickPeak.offset, 0)
             XCTAssertEqual(style.kickPeak.scaleX, 1)
             XCTAssertEqual(style.kickPeak.scaleY, 1)
+            // Against a literal as well as against the shared constant. The
+            // second assertion alone survived a mutation that took
+            // `pressedOpacityFlat` to 1 — both sides moved together and the
+            // peak claimed a dim of exactly nothing. Caught by the pixel test
+            // next door; pinned here so it does not need to be.
+            XCTAssertLessThan(style.kickPeak.opacity, 0.6)
             XCTAssertEqual(style.kickPeak.opacity, BottomBarStyle.pressedOpacity)
         }
     }
