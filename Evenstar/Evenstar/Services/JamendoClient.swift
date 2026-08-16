@@ -199,7 +199,18 @@ struct JamendoClient {
             // it's this code's assumption about the shape of Jamendo's
             // response turning out to be wrong, which is supposed to be
             // impossible as long as `Payload` matches the API.
-            AppLog.jamendo.fault("JamendoClient: failed to decode response — \(error.localizedDescription, privacy: .public)")
+            //
+            // `privacy: .public` on the full error, unlike its sibling log
+            // sites: a `DecodingError`'s description is a coding path and a
+            // type mismatch — e.g. "key 'artist_name' expected String, found
+            // number" — which describes the *shape* of Jamendo's JSON against
+            // `Row`, not any value inside it. `JSONDecoder` does not embed the
+            // actual decoded content in that description, so nothing a user
+            // has (a track's real title, say) can appear here. That is a
+            // fact about a third-party API contract and this file's own
+            // `Row`, not about the person holding the phone, which is what
+            // the redact-by-default rule exists to protect.
+            AppLog.jamendo.fault("JamendoClient: failed to decode response — \(String(describing: error), privacy: .public)")
             throw JamendoError.decodingFailed
         }
 
