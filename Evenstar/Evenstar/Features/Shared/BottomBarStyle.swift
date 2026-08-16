@@ -201,7 +201,49 @@ enum BottomBarStyle {
     /// 0.92: those are 44pt circles the thumb lands on squarely, while a tab is
     /// a whole quarter of the bar, and the same ratio on something that wide
     /// reads as the bar itself flinching.
-    static let pressedScale: CGFloat = 0.96
+    ///
+    /// Reduced: **1**, no shrink at all. The second constant here that is a
+    /// distance rather than a curve, and it goes the way `recedeScale` went for
+    /// the same reason — `press` above can flatten nothing, because what moves
+    /// is this. `pressedOpacity` below is what answers the finger instead.
+    @MainActor static var pressedScale: CGFloat { reduceMotion ? pressedScaleFlat : pressedScaleFull }
+    private static let pressedScaleFull: CGFloat = 0.96
+    private static let pressedScaleFlat: CGFloat = 1
+
+    /// What a pressed control dims to when the scale has been taken out of it.
+    ///
+    /// **The whole point of this constant is that pressing must still show.** A
+    /// control that answers a finger with nothing is a broken control, not a
+    /// more accessible one, so the three styles that lose a scale here —
+    /// `TabPressStyle`, `QueueToggleStyle`, `TransportButtonStyle` — all pick
+    /// this up in its place.
+    ///
+    /// **One number for all three, where `pressedScale` deliberately differs per
+    /// control.** That difference exists because a percentage of a wide thing is
+    /// many points of travel and a percentage of a small thing is barely any:
+    /// 0.96 on a quarter-bar tab and 0.9 on a 44pt glyph are the same *apparent*
+    /// movement. Opacity has no points in it. There is nothing for the size of
+    /// the control to scale, so a second figure would be a distinction without
+    /// a difference — and this file exists to stop the pieces down here drifting
+    /// apart.
+    ///
+    /// **0.45, and why that is enough to see.** The bar already stakes a
+    /// readability claim on a smaller gap than this one: `tint(isCurrent:)` in
+    /// `FloatingTabBar` distinguishes the current destination from the other
+    /// three by 1.0 against 0.6 and nothing else, and that difference is
+    /// expected to be read at a glance, on a 15pt glyph, without moving. A press
+    /// dim has to clear that bar, because it is momentary where the tint is
+    /// permanent — 0.45 is more than twice the distance from 1. It stops short
+    /// of the 0.3 or so that reads as *disabled*: the control is being pressed,
+    /// not switched off, and `isEnabled` already owns that appearance in
+    /// `TransportButtonStyle`.
+    ///
+    /// Full: **1**, which is no dim at all. The full mode keeps answering with
+    /// the scale it always did, and stacking a dim on top of it would change how
+    /// the app looks for everyone — the setting off must be untouched.
+    @MainActor static var pressedOpacity: Double { reduceMotion ? pressedOpacityFlat : pressedOpacityFull }
+    private static let pressedOpacityFull: Double = 1
+    private static let pressedOpacityFlat: Double = 0.45
 
     /// Content inside a surface as that surface changes shape: icons and labels
     /// shrinking and fading as the pill closes over them.

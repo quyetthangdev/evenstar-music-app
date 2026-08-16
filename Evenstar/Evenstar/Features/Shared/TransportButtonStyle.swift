@@ -81,10 +81,51 @@ struct TransportButtonStyle: ButtonStyle {
     /// the spring was chosen for.
     fileprivate static let reboundDuration = 0.62
 
-    fileprivate struct Kick {
+    /// How long the dim takes to come back, on the reduced branch.
+    ///
+    /// Its own figure rather than `reboundDuration`, because there is no mass
+    /// arriving: 0.62s of a glyph creeping back to full strength reads as the
+    /// button having been disabled and then re-enabled. Longer than
+    /// `kickDuration` all the same — a dip that comes back as fast as it went
+    /// is a flicker, and a flicker is not an acknowledgement. 0.09 down and 0.20
+    /// up puts the whole pulse at 0.29s, which is where every flat curve in
+    /// `BottomBarStyle` settles and comfortably inside the length of a real
+    /// press.
+    fileprivate static let dimReturnDuration = 0.20
+
+    /// Where the kick's three tracks are aimed, and **the one place Reduce
+    /// Motion changes this style.**
+    ///
+    /// The keyframes below read nothing else: every literal they used to carry
+    /// comes from here now, so there is no second copy of the peak to disagree
+    /// with this one and no way for the reduced branch to be applied to two of
+    /// the three tracks. Read inside the nested view's `body` rather than at
+    /// `makeBody` time, so it is re-derived on every render the way the
+    /// `Animation` constants are re-read at every `withAnimation`.
+    ///
+    /// Reduced: the offset goes to 0 and both scales to 1 — a button that
+    /// neither travels nor deforms — and `opacity` picks up
+    /// `BottomBarStyle.pressedOpacity` so that something still happens when the
+    /// finger lands. The kick is the *only* visual answer this style has left
+    /// once `TapHalo` switches itself off, which is why it may not simply be
+    /// removed.
+    var kickPeak: Kick {
+        if BottomBarStyle.reduceMotion {
+            return Kick(offset: 0, scaleX: 1, scaleY: 1, opacity: BottomBarStyle.pressedOpacity)
+        }
+        return Kick(offset: direction * translate, scaleX: stretchX, scaleY: stretchY, opacity: 1)
+    }
+
+    /// The four quantities a press animates, at rest.
+    ///
+    /// Internal rather than `fileprivate` so `kickPeak` above can be asserted
+    /// on. It is the whole of what this style does with the setting on, and it
+    /// is invisible in a build either way.
+    struct Kick {
         var offset: CGFloat = 0
         var scaleX: CGFloat = 1
         var scaleY: CGFloat = 1
+        var opacity: Double = 1
     }
 
     func makeBody(configuration: Configuration) -> some View {
@@ -95,15 +136,12 @@ struct TransportButtonStyle: ButtonStyle {
         // exactly like an enabled one. Next is disabled on the last track and
         // every transport button is disabled with no track loaded, so without
         // this they look tappable when they are not.
-        Interaction(
-            configuration: configuration,
-            trigger: trigger,
-            direction: direction,
-            translate: translate,
-            stretchX: stretchX,
-            stretchY: stretchY,
-            haloShape: haloShape
-        )
+        // The whole style, not its fields one by one. `kickPeak` has to be read
+        // inside the nested view's `body` — that is what makes a Reduce Motion
+        // change take effect on the next render rather than being frozen into
+        // whatever `makeBody` saw — and it can only be read there if the style
+        // itself is what got handed over.
+        Interaction(configuration: configuration, style: self)
     }
 
     /// Named for what it does, not `Body` — that collides with `ButtonStyle`'s
@@ -120,32 +158,47 @@ struct TransportButtonStyle: ButtonStyle {
         /// 0.92 scale on a glyph is not much of an answer.
         @State private var presses = 0
         let configuration: Configuration
-        let trigger: Int
-        let direction: CGFloat
-        let translate: CGFloat
-        let stretchX: CGFloat
-        let stretchY: CGFloat
-        let haloShape: AnyShape
+        let style: TransportButtonStyle
 
         var body: some View {
-            configuration.label
+            // Read here, in `body`, and handed to the keyframe builder as a
+            // value. Both places need the same peak, and re-reading the flag in
+            // the builder would give it two chances to disagree.
+            let peak = style.kickPeak
+            return configuration.label
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-                .keyframeAnimator(initialValue: Kick(), trigger: trigger) { view, kick in
+                .keyframeAnimator(initialValue: Kick(), trigger: style.trigger) { view, kick in
                     view
                         .scaleEffect(x: kick.scaleX, y: kick.scaleY)
                         .offset(x: kick.offset)
+                        // Outside the deformation would be wrong here and right
+                        // for the halo: an opacity is uniform, so there is
+                        // nothing for a scale to distort, and applying it inside
+                        // keeps it on the glyph rather than on the halo that in
+                        // this mode is not drawn anyway.
+                        .opacity(kick.opacity)
                 } keyframes: { _ in
                     KeyframeTrack(\.offset) {
-                        CubicKeyframe(direction * translate, duration: TransportButtonStyle.kickDuration)
+                        CubicKeyframe(peak.offset, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(0, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
                     KeyframeTrack(\.scaleX) {
-                        CubicKeyframe(stretchX, duration: TransportButtonStyle.kickDuration)
+                        CubicKeyframe(peak.scaleX, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
                     KeyframeTrack(\.scaleY) {
-                        CubicKeyframe(stretchY, duration: TransportButtonStyle.kickDuration)
+                        CubicKeyframe(peak.scaleY, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
+                    }
+                    // Linear rather than the rebound spring, and it is the only
+                    // track that is. A spring here would overshoot *past* full
+                    // strength — an opacity above 1 clamps, so the button would
+                    // simply sit at 1 for a stretch of the return and the pulse
+                    // would read as ending early. Nothing about a dim is a mass
+                    // arriving anywhere.
+                    KeyframeTrack(\.opacity) {
+                        LinearKeyframe(peak.opacity, duration: TransportButtonStyle.kickDuration)
+                        LinearKeyframe(1, duration: TransportButtonStyle.dimReturnDuration)
                     }
                 }
                 // Outside the kick, deliberately. Inside it, the deformation
@@ -157,7 +210,7 @@ struct TransportButtonStyle: ButtonStyle {
                 // Keyed on touch-down, not on the completed tap: the halo is the
                 // acknowledgement, and an acknowledgement that waits for the
                 // finger to leave is not one.
-                .tapHalo(trigger: presses, in: haloShape)
+                .tapHalo(trigger: presses, in: style.haloShape)
                 // Same counter as the halo, so the tap lands in the hand at the
                 // same moment it lands in the eye — which is now the moment of
                 // contact rather than the moment of release. `.sensoryFeedback`

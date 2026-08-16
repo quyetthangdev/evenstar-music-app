@@ -970,10 +970,24 @@ private struct FloatingTabBarPreview: View {
 /// `tint(isCurrent:)`, which is already animating on its own curve, and a
 /// highlight behind the glyph would collide with the selection wash arriving
 /// in the same place a moment later.
+///
+/// With Reduce Motion on it is deliberately only an *opacity*, for the mirror
+/// of that reason: `BottomBarStyle.pressedScale` goes to 1 and
+/// `pressedOpacity` to 0.45, so the tab answers the finger without changing
+/// size. Both are applied unconditionally and it is the constants that branch —
+/// in the mode that is not reduced, one of the two is the identity and costs
+/// nothing, which keeps the whole decision in `BottomBarStyle` rather than half
+/// here.
+///
+/// A dim is not the tint change ruled out above: that one changes the
+/// *foreground* of the glyph and the label, on `control`'s own curve, and would
+/// have collided with a colour already in flight. This is the whole slot, on
+/// `press`, and it does not touch the tint at all.
 private struct TabPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? BottomBarStyle.pressedScale : 1)
+            .opacity(configuration.isPressed ? BottomBarStyle.pressedOpacity : 1)
             .animation(BottomBarStyle.press, value: configuration.isPressed)
     }
 }

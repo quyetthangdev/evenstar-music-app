@@ -24,7 +24,20 @@ struct QueueToggleStyle: ButtonStyle {
     /// whole quarter of the bar). This is a 44pt glyph the thumb lands on
     /// squarely, and the same ratio on something that small reads as barely
     /// moving.
-    fileprivate static let pressedScale: CGFloat = 0.9
+    ///
+    /// Reduced: **1**, no shrink. `BottomBarStyle.pressedOpacity` answers the
+    /// finger instead, and it is the *same* 0.45 the tab and the transport
+    /// buttons use — see the note there for why the per-control difference this
+    /// constant exists for does not carry over to a dim.
+    ///
+    /// Internal rather than `fileprivate`, unlike the constants in
+    /// `TransportButtonStyle`: this is the one number that decides whether the
+    /// queue button still deforms with the setting on, there is nothing else in
+    /// the app that can be asked about it, and a Reduce Motion branch that only
+    /// exists in a diff is exactly the kind this plan has already shipped twice.
+    @MainActor static var pressedScale: CGFloat { BottomBarStyle.reduceMotion ? pressedScaleFlat : pressedScaleFull }
+    private static let pressedScaleFull: CGFloat = 0.9
+    private static let pressedScaleFlat: CGFloat = 1
 
     func makeBody(configuration: Configuration) -> some View {
         // A nested view, not the style itself: a `ButtonStyle` is not a `View`
@@ -45,6 +58,12 @@ struct QueueToggleStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .scaleEffect(configuration.isPressed ? QueueToggleStyle.pressedScale : 1)
+                // The dim that takes over from the shrink when motion is
+                // reduced, and the identity when it is not — see
+                // `BottomBarStyle.pressedOpacity`. Applied unconditionally so
+                // the branch lives in one place rather than being restated as
+                // an `if` in every style that needs it.
+                .opacity(configuration.isPressed ? BottomBarStyle.pressedOpacity : 1)
                 // `press`, not the layout spring. A press has no known
                 // duration, and a spring that overshoots on the way *in* reads
                 // as the button wobbling under a finger that is still holding
