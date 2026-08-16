@@ -328,7 +328,34 @@ enum BottomBarStyle {
     /// The scale is small on purpose. iOS's own card presentation moves the
     /// screen behind it by only a few percent; more than that stops reading as
     /// depth and starts reading as the app shrinking.
-    static let recedeScale: CGFloat = 0.92
+    ///
+    /// Reduced: **1**, which is no recede at all.
+    ///
+    /// The only constant outside the `Animation` group that has to branch, and
+    /// it has to because it is not a curve — it is a *distance*.
+    /// `RecedeBehindPlayer` applies
+    /// `scaleEffect(1 - (1 - recedeScale) * progress)`, so setting this to 1
+    /// takes the `(1 - recedeScale)` coefficient to 0 and the whole expression
+    /// to a constant 1 at every `progress`. Not a recede that runs flatter or
+    /// faster: the screen behind the player holds perfectly still for the
+    /// entire opening, including while a finger is dragging it.
+    ///
+    /// **Including the drag path, and that is the right exception.** B3 leaves
+    /// the drag path alone for the card itself — a card that follows the finger
+    /// is feedback, not an animation, and taking it away would leave the user
+    /// unable to close the player. The *background's* shrink is not feedback:
+    /// it is a depth effect drawn on top, nobody is holding it, and nothing
+    /// about the interaction is lost when it stops. The HIG asks for scaling to
+    /// go, and a whole screen scaling is exactly that.
+    ///
+    /// The route stays what it was — `PlayerExpansion.animation` into
+    /// `.animation(_:value:)` — rather than being switched off: with the
+    /// coefficient at 0 that modifier interpolates a value that never changes,
+    /// which costs nothing and needs no second branch in
+    /// `RecedeBehindPlayer`.
+    @MainActor static var recedeScale: CGFloat { reduceMotion ? recedeScaleFlat : recedeScaleFull }
+    private static let recedeScaleFull: CGFloat = 0.92
+    private static let recedeScaleFlat: CGFloat = 1
     // A `recedeCornerRadius` stood here, rounding the receding content the way
     // a sheet's backdrop is rounded. It was removed rather than tuned: applying
     // it meant clipping the whole screen to a shape on every frame of a drag,

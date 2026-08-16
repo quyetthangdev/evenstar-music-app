@@ -136,6 +136,41 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.queueTitleIn, .easeOut(duration: 0.10).delay(0.13))
     }
 
+    // MARK: - The distances that go to zero
+
+    /// `recedeScale` is not a curve, it is a *distance*, and reducing motion
+    /// has to take the distance out rather than travel it differently.
+    func testTheRecedeScaleFlattensToNoScaleAtAll() {
+        BottomBarStyle.reduceMotion = false
+        XCTAssertEqual(BottomBarStyle.recedeScale, 0.92)
+
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(BottomBarStyle.recedeScale, 1)
+    }
+
+    /// The constant is not the claim. The claim is that the screen behind the
+    /// player does not move, so the assertion is on the expression
+    /// `RecedeBehindPlayer` actually applies — at every `progress`, because a
+    /// drag visits all of them and Reduce Motion must not depend on which one.
+    func testTheContentBehindThePlayerNeverShrinksWhenMotionIsReduced() {
+        BottomBarStyle.reduceMotion = true
+
+        for step in 0...20 {
+            let progress = Double(step) / 20
+            let scale = 1 - (1 - BottomBarStyle.recedeScale) * progress
+            XCTAssertEqual(scale, 1, accuracy: 1e-12, "at progress \(progress)")
+        }
+    }
+
+    /// …and with the setting off it still recedes, all the way to 0.92 at full
+    /// screen. A branch that flattened both modes would pass the test above.
+    func testTheContentBehindThePlayerStillRecedesWithTheSettingOff() {
+        BottomBarStyle.reduceMotion = false
+
+        XCTAssertEqual(1 - (1 - BottomBarStyle.recedeScale) * 0, 1, accuracy: 1e-12)
+        XCTAssertEqual(1 - (1 - BottomBarStyle.recedeScale) * 1, 0.92, accuracy: 1e-12)
+    }
+
     // MARK: - The velocity hand-off
 
     /// The reason `settle(initialVelocity:)` exists is that a violent flick and
