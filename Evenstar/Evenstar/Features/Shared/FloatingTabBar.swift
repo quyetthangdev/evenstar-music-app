@@ -363,16 +363,18 @@ struct FloatingTabBar: View {
 
             // Zero-width and invisible when merged: its glyph has moved inside
             // the merged capsule, and leaving a 56pt button here would both
-            // duplicate search and push the centred row off centre.
-            // `.clipped()` before the shadow, never after. A shadow is drawn
-            // outside the shape that casts it, so clipping *over* one cuts its
-            // soft edge off at the frame's rectangle — which is exactly the
-            // square halo that appeared around this circular button once the
-            // clip was added for the merged layout.
+            // duplicate search and push the centred row off centre. `.clipped()`
+            // still earns its keep without a shadow beside it — `trailingButton`
+            // is a fixed `barHeight`-square view, and without the clip it would
+            // overflow the zero-width frame above instead of disappearing into
+            // it.
+            //
+            // No shadow modifier here any more — see the comment on the main
+            // pill's `.clipShape(Capsule())` in `leadingCapsule(expandedWidth:)`
+            // for the mechanism and the measured numbers (87.6 → 0.0 ms/s).
             trailingButton
                 .frame(width: isMerged ? 0 : barHeight)
                 .clipped()
-                .floatingBarShadow()
                 .opacity(isMerged ? 0 : 1)
                 .animation(BottomBarStyle.morph, value: isSearching)
         }
@@ -450,9 +452,21 @@ struct FloatingTabBar: View {
         // capsule while it is collapsed, and without the clip those tabs draw
         // straight across the search field beside it.
         .clipShape(Capsule())
-        // After the clip, so the shadow falls outside the capsule instead of
-        // being clipped away with the overhanging tabs.
-        .floatingBarShadow()
+        // No shadow modifier here any more. A shadow over `.regularMaterial`
+        // cannot be cached: its shape has to be re-derived from the blurred
+        // content behind it every frame, which forces an offscreen
+        // rasterisation pass on a view that is already animating. Measured on
+        // device (Instruments "Animation Hitches", Release, scrolling the
+        // Songs list): 87.6 ms/s of hitch with the shadow on this bar, 0.0 ms/s
+        // with it removed — against Apple's 10 ms/s "bad" threshold. A
+        // solid-colour backing with the same shadow still measured 6.9 ms/s, so
+        // the material alone was not the cost; dropping the shadow is what
+        // actually cleared it. The other two sites in this file that used to
+        // carry the same shadow modifier point back to this comment rather
+        // than repeating the numbers.
+        //
+        // `BottomBarStyle`'s shadow helper stays — `PlayerCard` still calls
+        // it, and that call is unmeasured, a separate decision from this one.
     }
 
     /// Sized to the collapsed circle rather than filling. In a leading-aligned
@@ -560,11 +574,9 @@ struct FloatingTabBar: View {
             .frame(height: barHeight)
             .background(.regularMaterial, in: Capsule())
             .clipShape(Capsule())
-            // Before the opacity, so the shadow fades out with the capsule
-            // rather than lingering under an invisible surface — and it costs
-            // nothing while minimised, where this is invisible anyway and the
-            // player's own shadow is doing the lifting in this slot.
-            .floatingBarShadow()
+            // No shadow modifier here any more — see the comment on the main
+            // pill's `.clipShape(Capsule())` in `leadingCapsule(expandedWidth:)`
+            // for the mechanism and the measured numbers (87.6 → 0.0 ms/s).
             .opacity(isSearching ? 1 : 0)
             .allowsHitTesting(isSearching)
             .accessibilityHidden(!isSearching)

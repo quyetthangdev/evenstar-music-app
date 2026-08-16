@@ -297,6 +297,17 @@ enum BottomBarStyle {
     ///
     /// The expanded player needs no exception: at full screen it covers
     /// everything, so its shadow is occluded rather than wasted.
+    ///
+    /// That warning has since been measured, not just guessed at. On device
+    /// (Instruments "Animation Hitches", Release, scrolling the Songs list)
+    /// `FloatingTabBar`'s three call sites cost 87.6 ms/s of hitch — even
+    /// constant, a shadow over `.regularMaterial` cannot be cached, because its
+    /// shape has to be re-derived from the blurred content behind it every
+    /// frame. Removing all three brought it to 0.0 ms/s, against Apple's
+    /// 10 ms/s "bad" threshold, and `FloatingTabBar.swift` no longer calls
+    /// `floatingBarShadow()` anywhere. `PlayerCard`'s call (~line 1176) is
+    /// still standing and still **unmeasured** — its fate is a separate
+    /// decision, not something to infer from the tab bar's number.
     private static let shadowColor = Color.black.opacity(0.15)
     private static let shadowRadius: CGFloat = 10
     private static let shadowOffsetY: CGFloat = 4
