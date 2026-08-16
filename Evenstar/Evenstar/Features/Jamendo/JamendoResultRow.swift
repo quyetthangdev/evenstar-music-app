@@ -160,13 +160,21 @@ struct RemoteArtworkThumbnail: View {
     /// `remoteImage` is `@concurrent`, so awaiting it suspends even on a hit.
     @State private var image: UIImage?
 
+    /// Resolved once in `init` and stored, so the seed and the task cannot ask
+    /// the cache different questions — and resolved *there* because that is the
+    /// only one of the two moments where the hosting display's scale is
+    /// readable. `ArtworkThumbnail.maxPixel` carries the measurements.
+    private let maxPixel: CGFloat
+
     init(url: URL?, size: CGFloat) {
         self.url = url
         self.size = size
+        let maxPixel = size * UITraitCollection.current.displayScale
+        self.maxPixel = maxPixel
         _image = State(
             initialValue: ArtworkStore.cachedRemoteImage(
                 from: url,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             )
         )
     }
@@ -190,7 +198,7 @@ struct RemoteArtworkThumbnail: View {
             // the placeholder.
             if let cached = ArtworkStore.cachedRemoteImage(
                 from: url,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             ) {
                 image = cached
                 return
@@ -198,15 +206,9 @@ struct RemoteArtworkThumbnail: View {
             image = nil
             image = await ArtworkStore.remoteImage(
                 from: url,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             )
         }
-    }
-
-    /// Shared by the seed and the task so the two cannot ask the cache
-    /// different questions about the same thumbnail.
-    private static func pixels(for size: CGFloat) -> CGFloat {
-        size * UIScreen.main.scale
     }
 
     private var placeholder: some View {

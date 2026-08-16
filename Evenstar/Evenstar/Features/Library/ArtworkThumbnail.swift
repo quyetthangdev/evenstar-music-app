@@ -20,14 +20,37 @@ struct ArtworkThumbnail: View {
     /// scrolling into view flashed grey regardless of what was in memory.
     @State private var image: UIImage?
 
+    /// The decode size in pixels. Resolved **once**, here in `init`, and stored,
+    /// so the seed and the task cannot ask the cache different questions about
+    /// the same thumbnail.
+    ///
+    /// Stored rather than recomputed because the scale is only readable at one
+    /// of those two moments. `UITraitCollection.current` carries the trait
+    /// collection of the view actually *hosting* this one while SwiftUI
+    /// evaluates a body: measured with `traitOverrides.displayScale = 2` on the
+    /// hosting controller and a 3x main screen, an `init` reached from that
+    /// host's body reads 2.0 — which is the external-display and Stage Manager
+    /// case the old main-screen read got wrong. Inside `.task` that push is
+    /// gone and the same expression falls back to the main screen's 3.0, so
+    /// reading it in both places would break the shared question on precisely
+    /// the displays this change exists for.
+    ///
+    /// `@Environment(\.displayScale)` is not the answer either: it is empty
+    /// until `body`, and the seed below has to run in `init`. (It is measurably
+    /// fine from an `async` method the way `PlayerCard` uses it — that view has
+    /// no `init` to serve.)
+    private let maxPixel: CGFloat
+
     init(relativePath: String?, size: CGFloat, tint: Color? = nil) {
         self.relativePath = relativePath
         self.size = size
         self.tint = tint
+        let maxPixel = size * UITraitCollection.current.displayScale
+        self.maxPixel = maxPixel
         _image = State(
             initialValue: ArtworkStore.cachedImage(
                 for: relativePath,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             )
         )
     }
@@ -54,7 +77,7 @@ struct ArtworkThumbnail: View {
             // flicker-free too: only a genuine miss ever shows the placeholder.
             if let cached = ArtworkStore.cachedImage(
                 for: relativePath,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             ) {
                 image = cached
                 return
@@ -62,15 +85,9 @@ struct ArtworkThumbnail: View {
             image = nil
             image = await ArtworkStore.image(
                 for: relativePath,
-                maxPixel: Self.pixels(for: size)
+                maxPixel: maxPixel
             )
         }
-    }
-
-    /// The decode size in pixels. Shared by the seed and the task so the two
-    /// cannot ask the cache different questions about the same thumbnail.
-    private static func pixels(for size: CGFloat) -> CGFloat {
-        size * UIScreen.main.scale
     }
 
     private var placeholder: some View {

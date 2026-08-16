@@ -264,6 +264,17 @@ struct PlayerCard: View {
     /// frame too early, which would be a visible flash.
     private static let materialCutoff: Double = 0.34
 
+    /// Tỉ lệ điểm→pixel của **màn hình đang vẽ thẻ này**, không phải màn hình
+    /// chính, để `loadArtwork` giải mã bìa đúng số pixel sẽ vẽ ra.
+    ///
+    /// Đọc thẳng được ở đây vì `loadArtwork` là một hàm của `View` chạy từ
+    /// `.task` — môi trường đã điền xong từ `body` trở đi, và giá trị ấy còn
+    /// đúng cả sau khi tác vụ đã treo (đo được: với `traitOverrides` đặt 2x
+    /// trên host mà màn chính 3x, một hàm `async` như thế đọc ra 2.0).
+    /// `ArtworkThumbnail` không dùng được cách này: nó cần con số ngay trong
+    /// `init`, nơi môi trường còn rỗng — xem `ArtworkThumbnail.maxPixel`.
+    @Environment(\.displayScale) private var displayScale
+
     /// Where the card rests: 0 collapsed, 1 expanded. Changed only on release.
     @State private var settled: Double = 0
     /// How far the in-flight drag has moved it. Zeroed when the drag settles.
@@ -2398,7 +2409,7 @@ struct PlayerCard: View {
             for: path,
             // Cạnh khối vuông, không phải bề rộng thẻ: bìa không còn tràn
             // ngang màn hình nên giải mã theo bề rộng thẻ là thừa pixel.
-            maxPixel: artworkSide * UIScreen.main.scale
+            maxPixel: artworkSide * displayScale
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         // Concurrently with the others, not after them: all read the same
