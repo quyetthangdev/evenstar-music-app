@@ -70,11 +70,11 @@ Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warni
 
   *Xong khi:* `grep -n "isObservingSliderTouches\|static let trackImage" SystemVolumeSlider.swift` trả về rỗng, và có test mới đỏ trước khi sửa.
 
-- [ ] **A4 — `Logger` thay bảy chỗ `print`**
+- [ ] **A4 — `Logger` thay năm chỗ `print`**
 
   `grep "import os|Logger(|os_log"` hiện trả về **0**. `print()` không tới được Console.app trên máy người dùng, cũng không vào sysdiagnose — nghĩa là lỗi ngoài thực địa không truy được.
 
-  Bảy chỗ: [EvenstarApp.swift:62](../../../Evenstar/Evenstar/App/EvenstarApp.swift#L62), [SongsView.swift:404](../../../Evenstar/Evenstar/Features/Library/SongsView.swift#L404), [JamendoSongsList.swift:93](../../../Evenstar/Evenstar/Features/Jamendo/JamendoSongsList.swift#L93), [JamendoClient.swift:197](../../../Evenstar/Evenstar/Services/JamendoClient.swift#L197), [PlaybackService.swift:1349](../../../Evenstar/Evenstar/Services/PlaybackService.swift#L1349).
+  Năm chỗ — audit ghi "bảy" là sai, tôi đếm nhầm cả `fatalError` vào: [EvenstarApp.swift:62](../../../Evenstar/Evenstar/App/EvenstarApp.swift#L62), [SongsView.swift:404](../../../Evenstar/Evenstar/Features/Library/SongsView.swift#L404), [JamendoSongsList.swift:93](../../../Evenstar/Evenstar/Features/Jamendo/JamendoSongsList.swift#L93), [JamendoClient.swift:197](../../../Evenstar/Evenstar/Services/JamendoClient.swift#L197), [PlaybackService.swift:1349](../../../Evenstar/Evenstar/Services/PlaybackService.swift#L1349).
 
   Một file `Utilities/AppLog.swift` giữ các `Logger` theo category (`library`, `playback`, `jamendo`, `drive`). Subsystem lấy từ bundle id, không viết cứng chuỗi.
 
