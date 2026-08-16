@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import SwiftData
 @testable import Evenstar
 
 /// `BottomBarStyle`'s Reduce Motion branch.
@@ -184,15 +185,30 @@ final class ReduceMotionTests: XCTestCase {
     }
 }
 
-/// How the flag gets from Settings → Accessibility into `BottomBarStyle`.
+/// What SwiftUI does with `.onChange(of:initial:true)` — **not** what this app
+/// does with it.
 ///
-/// `RootView` reads `@Environment(\.accessibilityReduceMotion)` and pushes it
-/// down from an `.onChange(of:initial:true)` action. Two things about that are
-/// assumptions about SwiftUI rather than about this app, and this project has
-/// been wrong about SwiftUI often enough — and been corrected by measurement
-/// often enough — that they are measured here instead of reasoned about.
+/// **Read this before trusting a green run here.** Every view in this class is
+/// declared in this file. Nothing below imports a single line of the app's
+/// wiring: delete the `.onChange` from `RootView`, flip it to `initial: false`,
+/// or replace its body with a hardcoded constant, and all three of these still
+/// pass. They cannot tell you the app is wired up, and a reader who takes them
+/// for that will ship a build where Reduce Motion does nothing.
+///
+/// `ReduceMotionRootViewWiringTests` below is the one that fails when the app
+/// breaks. This class answers a different and narrower question: *is the
+/// SwiftUI behaviour the design leans on actually the behaviour SwiftUI has?*
+/// Two claims in `RootView` and `BottomBarStyle.reduceMotion` depend on it —
+/// that `initial: true` fires at all, and that it fires after the first `body`
+/// evaluation rather than before, which is why "the first evaluation of every
+/// body captures the default" is written down as harmless. This project has
+/// been wrong about SwiftUI often enough, and corrected by measurement often
+/// enough, that those are measured rather than reasoned about.
+///
+/// So: this class going red means an assumption about SwiftUI expired. It
+/// going green means nothing whatever about `RootView`.
 @MainActor
-final class ReduceMotionWiringTests: XCTestCase {
+final class SwiftUIOnChangeOrderingEvidenceTests: XCTestCase {
 
     /// What SwiftUI did, in the order it did it.
     private enum Trace {
@@ -230,11 +246,15 @@ final class ReduceMotionWiringTests: XCTestCase {
         host.view.layoutIfNeeded()
     }
 
-    /// **`initial: true` fires on the first render.** Without this the app
-    /// would look correct to anyone who toggles the setting while it is running
-    /// and be wrong for everyone who launched with it already on — which is
-    /// everyone the feature is for.
-    func testInitialTrueFiresOnTheFirstRender() {
+    /// **SwiftUI fires an `initial: true` action on the first render** — on
+    /// `Harness` below, which is declared in this file. The app's use of the
+    /// same modifier is pinned in `ReduceMotionRootViewWiringTests`, not here.
+    ///
+    /// Worth measuring because `RootView` would be wrong in an invisible way
+    /// without this behaviour: correct for anyone who toggles the setting
+    /// mid-session, wrong for everyone who launched with it already on — which
+    /// is everyone the feature is for.
+    func testSwiftUIFiresAnInitialTrueActionOnTheFirstRenderOfALocalHarness() {
         render(flag: true)
 
         XCTAssertTrue(
@@ -243,17 +263,20 @@ final class ReduceMotionWiringTests: XCTestCase {
         )
     }
 
-    /// **The action runs after the first `body` evaluation, not before.**
+    /// **SwiftUI runs the action after the first `body` evaluation, not
+    /// before** — measured on `Harness` below, not on `RootView`.
     ///
-    /// This is the ordering the comments in `RootView` and
-    /// `BottomBarStyle.reduceMotion` assert: the first evaluation of every body
-    /// below the root reads the flag's default, and the flag is only correct
-    /// from the action onward. It is documented as harmless — nothing animates
-    /// on the first frame, `withAnimation` reads the constant when it fires,
-    /// and a `.animation(_:value:)` cannot fire until its value changes, which
-    /// needs the body that built it to run again — but "harmless" is only worth
-    /// writing down if the ordering it describes is the real one.
-    func testTheActionRunsAfterTheFirstBodyEvaluation() {
+    /// This is the ordering two comments in the app assert without being able
+    /// to prove it themselves: the first evaluation of every body below the
+    /// root reads the flag's default, and the flag is only right from the
+    /// action onward. Both call that harmless — nothing animates on the first
+    /// frame, `withAnimation` reads the constant when it fires, and a
+    /// `.animation(_:value:)` cannot fire until its value changes, which needs
+    /// the body that built it to run again — but "harmless" is only worth
+    /// writing down if the ordering it describes is the real one. If this goes
+    /// red, those two comments need rewriting, and the app may need a seed
+    /// value; nothing about `RootView` itself has broken.
+    func testSwiftUIRunsTheActionAfterTheFirstBodyEvaluationOfALocalHarness() {
         render(flag: true)
 
         guard let action = Trace.events.firstIndex(of: "onChange true") else {
@@ -270,14 +293,121 @@ final class ReduceMotionWiringTests: XCTestCase {
         XCTAssertLessThan(leafBody, action, "trace: \(Trace.events)")
     }
 
-    /// The value handed over is the current one, not a placeholder — the same
-    /// render with the flag off must report `false`.
-    func testTheActionReceivesTheValueItWasGiven() {
+    /// SwiftUI hands the action the current value rather than a placeholder —
+    /// again on `Harness`, so the same render with the flag off reports
+    /// `false`.
+    func testSwiftUIHandsTheActionTheLocalHarnessesCurrentValue() {
         render(flag: false)
 
         XCTAssertTrue(
             Trace.events.contains("onChange false"),
             "trace: \(Trace.events)"
+        )
+    }
+}
+
+/// **The wiring.** `RootView` is rendered for real here, and this is the only
+/// class in this file that fails when the app stops respecting Reduce Motion.
+///
+/// What it costs: an in-memory `ModelContainer` and the seven services
+/// `EvenstarApp` injects, because `RootView` will not build without them. That
+/// is a lot of setup for two assertions, and it is worth it — everything
+/// cheaper than this turned out to be a test of code written inside the test.
+/// The class above is the cautionary example.
+///
+/// Reduce Motion is injected through `\._accessibilityReduceMotion`. The public
+/// `\.accessibilityReduceMotion` is get-only, so there is no supported way to
+/// write it; the underscored pair is what the public getter reads, and it is
+/// declared in SwiftUICore's `.swiftinterface` rather than being a symbol
+/// prised out of the binary. If a future SDK renames it this file stops
+/// compiling, which is the loud kind of failure — the alternative was leaving
+/// the app's one accessibility invariant untested.
+@MainActor
+final class ReduceMotionRootViewWiringTests: XCTestCase {
+
+    private var saved = false
+
+    override func setUp() {
+        super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() {
+        BottomBarStyle.reduceMotion = saved
+        super.tearDown()
+    }
+
+    /// Everything `EvenstarApp.body` supplies, with the two I/O boundaries
+    /// mocked. `RootView` reads `PlaybackService` itself; the rest are read by
+    /// the screens inside its `TabView`, and a missing one is a crash on
+    /// render rather than a compile error, so they are all here.
+    private func renderRootView(reduceMotion injected: Bool) throws {
+        let container = try ModelContainer(
+            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self, JamendoTrack.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let library = LibraryService(context: ModelContext(container))
+        let playback = PlaybackService(
+            player: MockAudioPlayer(),
+            nowPlaying: MockNowPlayingPublisher(),
+            library: library
+        )
+
+        let root = RootView()
+            .environment(library)
+            .environment(ImportService(library: library, metadataReader: MockMetadataReader()))
+            .environment(playback)
+            .environment(DriveLibraryService(library: library))
+            .environment(JamendoLibraryService(library: library))
+            .environment(LibraryStore())
+            .environment(SearchResultsStore())
+            .modelContainer(container)
+            .environment(\._accessibilityReduceMotion, injected)
+
+        let host = UIHostingController(rootView: root)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        // Put it away again. The action under test has already run by here, and
+        // a visible window left standing outlives this test in a process that
+        // runs 470-odd others.
+        window.isHidden = true
+    }
+
+    /// Rendering `RootView` with Reduce Motion on must leave the flag on.
+    ///
+    /// The flag is seeded to the *opposite* value first, so the assertion
+    /// cannot be satisfied by the default. This is the test that goes red if
+    /// the `.onChange` is deleted from `RootView`, if it is flipped to
+    /// `initial: false` — both leave the seeded `false` standing — or if the
+    /// `@Environment` read is replaced by anything that does not track the
+    /// setting.
+    func testRenderingRootViewPublishesReduceMotionOn() throws {
+        BottomBarStyle.reduceMotion = false
+
+        try renderRootView(reduceMotion: true)
+
+        XCTAssertTrue(
+            BottomBarStyle.reduceMotion,
+            "RootView rendered with Reduce Motion on but left BottomBarStyle.reduceMotion false"
+        )
+    }
+
+    /// And the other direction, seeded the other way.
+    ///
+    /// On its own the test above would pass against a body that assigned `true`
+    /// unconditionally. This one is what makes the pair say "publishes the
+    /// setting" rather than "writes a constant".
+    func testRenderingRootViewPublishesReduceMotionOff() throws {
+        BottomBarStyle.reduceMotion = true
+
+        try renderRootView(reduceMotion: false)
+
+        XCTAssertFalse(
+            BottomBarStyle.reduceMotion,
+            "RootView rendered with Reduce Motion off but left BottomBarStyle.reduceMotion true"
         )
     }
 }

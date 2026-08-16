@@ -63,10 +63,26 @@ enum BottomBarStyle {
 
     // Where the `…Flat` durations below come from — none of them is invented.
     //
-    // Each is the time its own spring first reaches 98% of the target and
-    // stays there, found by sampling `Spring(duration:bounce:)` with
-    // `value(target:time:)` at 1ms and rounding to the hundredth this file is
-    // written in. 98% rather than settling time because a spring's tail is not
+    // Each is the time its own spring **first crosses 98%** of the target,
+    // found by sampling `Spring(duration:bounce:)` with `value(target:time:)`
+    // at 1ms and rounding to the hundredth this file is written in.
+    //
+    // Crossing 98% on the way *up*, and nothing more than that. An earlier
+    // draft of this comment said "reaches 98% and stays there", which is
+    // arithmetically true — none of the seven dips back under 98% afterwards,
+    // the second undershoot being four hundredths of a percent even for the
+    // bounciest — but it reads as "and then it has arrived", and two of them
+    // have not. `morph` carries on to 102.5% and `selection` to 106.3% past
+    // the times in the table, and each spends a further third of a second
+    // coming back down.
+    //
+    // Timing against the crossing rather than against the settled state is the
+    // point, not a shortcut around it: the overshoot is exactly what Reduce
+    // Motion exists to remove, so measuring the flat variant against the tail
+    // of a bounce would make it *slower* than the motion it replaces. That is
+    // the opposite of the same tempo.
+    //
+    // 98% rather than 100% because the last two percent of a spring is not
     // motion anyone reads — `queue`'s own note below measures Apple Music
     // standing still around 350ms while the analytic spring is still creeping,
     // and `queueContentIn`'s note records SwiftUI cutting a spring off inside
