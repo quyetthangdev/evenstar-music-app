@@ -185,6 +185,117 @@ final class ReduceMotionTests: XCTestCase {
     }
 }
 
+/// The arithmetic behind the flat-duration table in `BottomBarStyle.swift`,
+/// re-run against Apple's own `Spring` rather than trusted from a comment.
+///
+/// The table's seven `t(98%)` figures and its two overshoot figures were
+/// measured once, by hand, and written down. B3 found a third figure in the
+/// same block wrong by a factor of ten — the second undershoot was quoted as
+/// "four hundredths of a percent even for the bounciest" when the bounciest is
+/// `selection` at four *tenths*, and six hundredths is `morph`'s number. A
+/// prose figure nothing executes is exactly the kind that can be wrong for
+/// months, so the block now has a harness.
+///
+/// The springs are restated here as literals rather than read from
+/// `BottomBarStyle`, whose `…Full` constants are private. That is the right
+/// way round anyway: this class asks whether the *table* is true of the
+/// springs it names, and `testEverySpringConstantFlattens` above is what pins
+/// the file to those same springs.
+@MainActor
+final class SpringSettlingEvidenceTests: XCTestCase {
+
+    /// Name, duration, bounce, and the flat duration the table derives.
+    private let springs: [(name: String, duration: Double, bounce: Double, flat: Double)] = [
+        ("morph", 0.36, 0.24, 0.20),
+        ("selection", 0.38, 0.34, 0.18),
+        ("content", 0.34, 0.20, 0.20),
+        ("settle", 0.42, 0.14, 0.29),
+        ("expand", 0.52, 0.12, 0.37),
+        ("queue", 0.31, 0, 0.29),
+        ("queueContentSlide", 0.20, 0, 0.19),
+    ]
+
+    /// 1ms sampling, the interval the table says it was built at.
+    private func samples(_ spring: Spring, upTo end: TimeInterval = 4) -> [(t: Double, v: Double)] {
+        stride(from: 0, through: end, by: 0.001).map { time in
+            let value: Double = spring.value(target: 1.0, time: time)
+            return (time, value)
+        }
+    }
+
+    /// Every flat duration is the time its own spring first crosses 98%,
+    /// rounded to the hundredth. This is the whole derivation, executed.
+    func testEachFlatDurationIsItsSpringsFirstCrossingOf98Percent() {
+        for spring in springs {
+            let crossing = samples(Spring(duration: spring.duration, bounce: spring.bounce))
+                .first { $0.v >= 0.98 }?.t
+            guard let crossing else {
+                return XCTFail("\(spring.name) never reached 98%")
+            }
+            XCTAssertEqual(
+                (crossing * 100).rounded() / 100,
+                spring.flat,
+                accuracy: 1e-9,
+                "\(spring.name) crosses 98% at \(crossing)"
+            )
+        }
+    }
+
+    /// "None of the seven dips back under 98% afterwards." The claim the
+    /// corrected figure supports, asserted rather than described.
+    func testNoSpringDipsBackUnder98PercentAfterCrossingIt() {
+        for spring in springs {
+            let after = samples(Spring(duration: spring.duration, bounce: spring.bounce))
+                .drop { $0.v < 0.98 }
+            XCTAssertFalse(after.isEmpty, "\(spring.name) never reached 98%")
+            for sample in after {
+                XCTAssertGreaterThanOrEqual(
+                    sample.v, 0.98,
+                    "\(spring.name) fell back to \(sample.v) at t=\(sample.t)"
+                )
+            }
+        }
+    }
+
+    /// The two figures the comment now quotes, and the ordering that makes
+    /// `selection` the worst case: the trough depth is a function of the
+    /// damping ratio alone, so it ranks by bounce and `morph` cannot be the
+    /// bounciest anything.
+    func testTheSecondUndershootIsFourTenthsOfAPercentForTheBounciest() {
+        func trough(duration: Double, bounce: Double) -> Double {
+            let all = samples(Spring(duration: duration, bounce: bounce))
+            guard let peak = all.max(by: { $0.v < $1.v })?.t else { return 1 }
+            return all.filter { $0.t > peak }.map(\.v).min() ?? 1
+        }
+
+        // `selection`, the bounciest of the seven.
+        XCTAssertEqual(trough(duration: 0.38, bounce: 0.34), 0.995994, accuracy: 5e-6)
+        // `morph`, whose 0.0644% was the number the comment used to quote
+        // against `selection`.
+        XCTAssertEqual(trough(duration: 0.36, bounce: 0.24), 0.999356, accuracy: 5e-6)
+
+        // Ten times apart, which is the size of the error that was there.
+        XCTAssertEqual(
+            (1 - trough(duration: 0.38, bounce: 0.34))
+                / (1 - trough(duration: 0.36, bounce: 0.24)),
+            6.2,
+            accuracy: 0.5
+        )
+    }
+
+    /// The harness itself, checked against the two overshoot figures the same
+    /// comment block already carried. If this class disagreed with those, it
+    /// would be the class that was wrong.
+    func testTheHarnessReproducesTheOvershootsAlreadyInTheComment() {
+        func peak(duration: Double, bounce: Double) -> Double {
+            samples(Spring(duration: duration, bounce: bounce)).map(\.v).max() ?? 0
+        }
+
+        XCTAssertEqual(peak(duration: 0.36, bounce: 0.24), 1.025, accuracy: 5e-4)
+        XCTAssertEqual(peak(duration: 0.38, bounce: 0.34), 1.063, accuracy: 5e-4)
+    }
+}
+
 /// What SwiftUI does with `.onChange(of:initial:true)` — **not** what this app
 /// does with it.
 ///

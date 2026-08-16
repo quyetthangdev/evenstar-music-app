@@ -70,11 +70,26 @@ enum BottomBarStyle {
     // Crossing 98% on the way *up*, and nothing more than that. An earlier
     // draft of this comment said "reaches 98% and stays there", which is
     // arithmetically true — none of the seven dips back under 98% afterwards,
-    // the second undershoot being four hundredths of a percent even for the
+    // the second undershoot being four *tenths* of a percent even for the
     // bounciest — but it reads as "and then it has arrived", and two of them
     // have not. `morph` carries on to 102.5% and `selection` to 106.3% past
     // the times in the table, and each spends a further third of a second
     // coming back down.
+    //
+    // That figure read "four hundredths" until B3, and it was wrong by a
+    // factor of ten for the one case it names. Sampled the same way as the
+    // table: `selection`, the bounciest, troughs at 99.5994% — 0.4006% under —
+    // and `morph` at 99.9356%, 0.0644% under. Six hundredths of a percent is
+    // `morph`'s number, quoted against the constant it is ten times too small
+    // for. The trough depth is a function of the damping ratio *alone* —
+    // `e^(−2πζ/√(1−ζ²))` with `ζ = 1 − bounce` — which is why it ranks by
+    // bounce, why `selection` is the worst case, and why no duration from the
+    // table appears in it. `queue` and `queueContentSlide`, at bounce 0, have
+    // no second undershoot at all.
+    //
+    // The conclusion is untouched, and that is the point of correcting the
+    // number rather than deleting the clause: 0.4006% is nowhere near the two
+    // whole points it would take to re-cross 98% from above.
     //
     // Timing against the crossing rather than against the settled state is the
     // point, not a shortcut around it: the overshoot is exactly what Reduce
