@@ -24,7 +24,33 @@ private struct TapHalo: ViewModifier {
         var scale: Double = 0.5
     }
 
+    /// **Off entirely when Reduce Motion is on, and this is the one place in
+    /// the bottom-bar work allowed to remove feedback rather than restate it.**
+    ///
+    /// A disc growing from half size to full and fading out is displacement and
+    /// scale together, with nothing underneath it: it carries no information at
+    /// all. Every caller already answers the same touch two other ways —
+    /// `TransportButtonStyle` and `QueueToggleStyle` each fire
+    /// `.sensoryFeedback(.impact)` off the identical `presses` counter, and each
+    /// dims its label to `BottomBarStyle.pressedOpacity` on contact. Those are
+    /// the only two callers there are (`grep tapHalo`), so switching this off
+    /// leaves both a haptic and a visible change behind. That is what makes
+    /// deleting it the right answer here and the wrong answer for the tab wash.
+    ///
+    /// `content` on its own rather than a `keyframeAnimator` whose keyframes are
+    /// all zero: the animator would still be built, still be driven by `trigger`
+    /// and still composite a fully transparent background on every press. There
+    /// is nothing here that a flat branch should keep the shape of.
+    @ViewBuilder
     func body(content: Content) -> some View {
+        if BottomBarStyle.reduceMotion {
+            content
+        } else {
+            haloed(content)
+        }
+    }
+
+    private func haloed(_ content: Content) -> some View {
         content.keyframeAnimator(initialValue: Pulse(), trigger: trigger) { view, pulse in
             view.background {
                 shape
