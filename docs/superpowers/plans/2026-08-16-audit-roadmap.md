@@ -50,7 +50,9 @@ Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warni
 
   `UIScreen.main` trả về màn hình *chính*, không phải màn hình đang vẽ. Sai trên màn hình ngoài và dưới Stage Manager, và Apple đã đánh dấu là sẽ bỏ.
 
-  `@Environment(\.displayScale)` là API đúng. Lưu ý ở `ArtworkThumbnail`: `pixels(for:)` hiện là `static func` được gọi từ hai chỗ (seed và `.task`), nên nó phải nhận scale làm tham số chứ không đọc environment — giữ nguyên tính chất "hai chỗ không hỏi cache hai câu khác nhau" mà chú thích dòng 70-71 nêu.
+  ~~`@Environment(\.displayScale)` là API đúng. Lưu ý ở `ArtworkThumbnail`: `pixels(for:)` hiện là `static func` được gọi từ hai chỗ (seed và `.task`), nên nó phải nhận scale làm tham số.~~
+
+  **Chỉ định trên đã sai và bản thi công không theo nó.** `@Environment` rỗng trong `init`, mà cả hai thumbnail đều seed cache từ `init`. Đo được: `UITraitCollection.current.displayScale` đọc đúng màn đang vẽ trong `init` (2.0 khi ép trait, màn chính 3x) nhưng **trả về 3.0 trong `.task`** — nên giữ một `static func` đọc trait ở cả hai chỗ sẽ làm seed và task hỏi cache hai câu khác nhau, đúng trên loại màn hình mà thay đổi này sinh ra để phục vụ. Bản đã làm: tính một lần trong `init`, cất vào `private let maxPixel`. `PlayerCard` không có ràng buộc ấy nên đọc thẳng `@Environment`.
 
   *Xong khi:* `grep -rn "UIScreen.main" Evenstar/Evenstar` trả về rỗng.
 
