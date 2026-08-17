@@ -37,6 +37,19 @@ private struct TapHalo: ViewModifier {
     /// leaves both a haptic and a visible change behind. That is what makes
     /// deleting it the right answer here and the wrong answer for the tab wash.
     ///
+    /// **The two dims are `QueueToggleStyle.Interaction`'s
+    /// `.opacity(configuration.isPressed ? …)` and
+    /// `TransportButtonStyle.Interaction`'s `.opacity(isPressed ? …)`, and the
+    /// second of those did not exist when the paragraph above was first
+    /// written.** The claim was checked against `QueueToggleStyle`, which reads
+    /// `isPressed`, and assumed of the transport buttons, whose dim was on the
+    /// kick's keyframes and therefore on `trigger` — the command, not the
+    /// contact. So the premise that licensed deleting the halo was false for
+    /// one of the two callers: with the setting on, a transport press was
+    /// answered by a haptic and, if it was dragged off before committing,
+    /// nothing else at all. It is true of both now. If a third caller is ever
+    /// added, check its dim is on `isPressed` before trusting this paragraph.
+    ///
     /// `content` on its own rather than a `keyframeAnimator` whose keyframes are
     /// all zero: the animator would still be built, still be driven by `trigger`
     /// and still composite a fully transparent background on every press. There

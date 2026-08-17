@@ -93,8 +93,19 @@ struct TransportButtonStyle: ButtonStyle {
     /// press.
     fileprivate static let dimReturnDuration = 0.20
 
+    /// The dim's return, as an `Animation`. **The dim falls on
+    /// `BottomBarStyle.press` and rises on this**, which is the asymmetry the
+    /// paragraph above argues for: 0.09s down so the answer lands with the
+    /// finger, 0.20s up so the release is not a flicker.
+    ///
+    /// Only the curve is asymmetric. The value at either end is
+    /// `BottomBarStyle.pressedOpacity` and 1, and in the unreduced mode both are
+    /// 1, so this animation runs over a value that never changes and the full
+    /// mode is untouched.
+    fileprivate static let dimReturn = Animation.easeOut(duration: dimReturnDuration)
+
     /// Where the kick's three tracks are aimed, and **the one place Reduce
-    /// Motion changes this style.**
+    /// Motion changes the kick.**
     ///
     /// The keyframes below read nothing else: every literal they used to carry
     /// comes from here now, so there is no second copy of the peak to disagree
@@ -104,19 +115,26 @@ struct TransportButtonStyle: ButtonStyle {
     /// `Animation` constants are re-read at every `withAnimation`.
     ///
     /// Reduced: the offset goes to 0 and both scales to 1 — a button that
-    /// neither travels nor deforms — and `opacity` picks up
-    /// `BottomBarStyle.pressedOpacity` so that something still happens when the
-    /// finger lands. The kick is the *only* visual answer this style has left
-    /// once `TapHalo` switches itself off, which is why it may not simply be
-    /// removed.
+    /// neither travels nor deforms.
+    ///
+    /// **The dim is not here, and a review round says why it may not be.** A
+    /// fourth `opacity` track stood on this struct and was aimed at
+    /// `BottomBarStyle.pressedOpacity` from here. Every track of this animator
+    /// is fired by `trigger`, which is the *command* — a completed tap for a
+    /// plain `Button`, and nothing at all for a press that is dragged off the
+    /// button before it commits. So the one thing left answering the finger
+    /// once `TapHalo` switches itself off arrived after the finger had gone, or
+    /// never. It lives on `configuration.isPressed` now, in `Interaction`,
+    /// exactly where `QueueToggleStyle` and `TabPressStyle` already put theirs.
     var kickPeak: Kick {
         if BottomBarStyle.reduceMotion {
-            return Kick(offset: 0, scaleX: 1, scaleY: 1, opacity: BottomBarStyle.pressedOpacity)
+            return Kick(offset: 0, scaleX: 1, scaleY: 1)
         }
-        return Kick(offset: direction * translate, scaleX: stretchX, scaleY: stretchY, opacity: 1)
+        return Kick(offset: direction * translate, scaleX: stretchX, scaleY: stretchY)
     }
 
-    /// The four quantities a press animates, at rest.
+    /// The three quantities the *kick* animates, at rest. The dim a press
+    /// causes is not one of them — see `kickPeak`.
     ///
     /// Internal rather than `fileprivate` so `kickPeak` above can be asserted
     /// on. It is the whole of what this style does with the setting on, and it
@@ -125,7 +143,6 @@ struct TransportButtonStyle: ButtonStyle {
         var offset: CGFloat = 0
         var scaleX: CGFloat = 1
         var scaleY: CGFloat = 1
-        var opacity: Double = 1
     }
 
     func makeBody(configuration: Configuration) -> some View {
@@ -141,12 +158,26 @@ struct TransportButtonStyle: ButtonStyle {
         // change take effect on the next render rather than being frozen into
         // whatever `makeBody` saw — and it can only be read there if the style
         // itself is what got handed over.
-        Interaction(configuration: configuration, style: self)
+        //
+        // `isPressed` and the label are unpacked out of the configuration here
+        // rather than passed as one — see `Interaction`'s doc for why that is
+        // worth two arguments instead of one.
+        Interaction(label: configuration.label, isPressed: configuration.isPressed, style: self)
     }
 
     /// Named for what it does, not `Body` — that collides with `ButtonStyle`'s
     /// own `Body` associated type and makes the conformance fail to resolve.
-    private struct Interaction: View {
+    ///
+    /// **Internal, and generic over its label, rather than private and holding
+    /// a `Configuration` — widened deliberately.** `ButtonStyleConfiguration`
+    /// cannot be constructed outside SwiftUI and there is no public way to hold
+    /// a real button pressed from a unit test, so a style's *pressed*
+    /// appearance is otherwise unreachable: nothing a test could write would
+    /// have noticed that this style, alone among the three, answered a press
+    /// with no visual at all once `TapHalo` was switched off. Taking `isPressed`
+    /// as a plain `Bool` makes the pressed frame something a test can render and
+    /// look at. It is invisible in a build either way.
+    struct Interaction<Label: View>: View {
         @Environment(\.isEnabled) private var isEnabled
         /// Counts touch-*downs*, where `trigger` counts completed taps.
         ///
@@ -157,7 +188,8 @@ struct TransportButtonStyle: ButtonStyle {
         /// late. The squeeze was the only thing that ever met the finger, and a
         /// 0.92 scale on a glyph is not much of an answer.
         @State private var presses = 0
-        let configuration: Configuration
+        let label: Label
+        let isPressed: Bool
         let style: TransportButtonStyle
 
         var body: some View {
@@ -165,18 +197,33 @@ struct TransportButtonStyle: ButtonStyle {
             // value. Both places need the same peak, and re-reading the flag in
             // the builder would give it two chances to disagree.
             let peak = style.kickPeak
-            return configuration.label
+            return label
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                // **The contact-time answer, and the only one this style has
+                // left with the setting on.** Keyed on `isPressed`, which flips
+                // the instant the finger lands and back when it lifts *or* when
+                // it is dragged off — not on `trigger`, which is the command and
+                // says nothing about a press that never became one.
+                //
+                // Inside the kick rather than outside it, matching
+                // `QueueToggleStyle`'s order exactly: an opacity is uniform, so
+                // there is nothing for the deformation to distort, and staying
+                // inside keeps the dim on the glyph rather than spreading it to
+                // the halo below.
+                //
+                // Unconditional, and it is `pressedOpacity` that branches — 1 in
+                // the unreduced mode, where the kick is still the answer. Same
+                // arrangement as `QueueToggleStyle` and `TabPressStyle`, so the
+                // whole decision stays in `BottomBarStyle`.
+                .opacity(isPressed ? BottomBarStyle.pressedOpacity : 1)
+                .animation(
+                    isPressed ? BottomBarStyle.press : TransportButtonStyle.dimReturn,
+                    value: isPressed
+                )
                 .keyframeAnimator(initialValue: Kick(), trigger: style.trigger) { view, kick in
                     view
                         .scaleEffect(x: kick.scaleX, y: kick.scaleY)
                         .offset(x: kick.offset)
-                        // Outside the deformation would be wrong here and right
-                        // for the halo: an opacity is uniform, so there is
-                        // nothing for a scale to distort, and applying it inside
-                        // keeps it on the glyph rather than on the halo that in
-                        // this mode is not drawn anyway.
-                        .opacity(kick.opacity)
                 } keyframes: { _ in
                     KeyframeTrack(\.offset) {
                         CubicKeyframe(peak.offset, duration: TransportButtonStyle.kickDuration)
@@ -190,16 +237,13 @@ struct TransportButtonStyle: ButtonStyle {
                         CubicKeyframe(peak.scaleY, duration: TransportButtonStyle.kickDuration)
                         SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
                     }
-                    // Linear rather than the rebound spring, and it is the only
-                    // track that is. A spring here would overshoot *past* full
-                    // strength — an opacity above 1 clamps, so the button would
-                    // simply sit at 1 for a stretch of the return and the pulse
-                    // would read as ending early. Nothing about a dim is a mass
-                    // arriving anywhere.
-                    KeyframeTrack(\.opacity) {
-                        LinearKeyframe(peak.opacity, duration: TransportButtonStyle.kickDuration)
-                        LinearKeyframe(1, duration: TransportButtonStyle.dimReturnDuration)
-                    }
+                    // A fourth track stood here, carrying the dim. It was the one
+                    // track that was not sprung, because a spring would
+                    // overshoot past full strength and an opacity above 1
+                    // clamps — that reason survives in `dimReturn` above, which
+                    // is where the dim went and which is a curve for it. What
+                    // did not survive is having the dim on this animator at all:
+                    // see `kickPeak`.
                 }
                 // Outside the kick, deliberately. Inside it, the deformation
                 // would scale the disc unevenly and draw it as an ellipse, and
@@ -223,8 +267,14 @@ struct TransportButtonStyle: ButtonStyle {
                 // the two are separate facts. The kick — the throw that goes
                 // with the command — stays on `trigger` and correctly does not
                 // fire.
+                //
+                // With Reduce Motion on the halo is not drawn, so for a while
+                // that sentence described a drag-off answered by a haptic and
+                // nothing visible at all. The dim on `isPressed` above is the
+                // third thing it gets now, and it is the one that survives the
+                // setting.
                 .sensoryFeedback(.impact(weight: .light), trigger: presses)
-                .onChange(of: configuration.isPressed) { _, pressed in
+                .onChange(of: isPressed) { _, pressed in
                     if pressed { presses += 1 }
                 }
         }
