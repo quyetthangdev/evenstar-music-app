@@ -259,7 +259,27 @@ struct FloatingTabBar: View {
     /// competing with a second one. On one curve a quarter of travel is more
     /// than the motion needs — it reads as the glyphs being pulled away rather
     /// than tucked in.
-    private static let tabRevealScale = 0.86
+    ///
+    /// **Giảm chuyển động: 1** — không co một chút nào, cú mờ đi một mình.
+    ///
+    /// Đây là cú phóng nổ *thường xuyên* nhất trong app, và điều đó không hiện
+    /// ra từ tên biến: `isCollapsed = isSearching || isMinimised`, mà
+    /// `isMinimised` do cuộn danh sách thư viện lái. Tức nó không chỉ chạy khi
+    /// người dùng mở ô tìm kiếm — nó chạy vài lần một phút trong lúc lướt danh
+    /// sách bài hát, cả bốn khối glyph+nhãn cùng co 14%.
+    ///
+    /// Bỏ được vì đoạn văn trên đã tự nói ra: ở 0.92 cú co là **vô hình** và
+    /// thứ người ta thật sự đọc được là cú mờ. Cú mờ ở lại nguyên vẹn
+    /// (`.opacity(isCollapsed ? 0 : 1)` ngay dưới `.scaleEffect`), nên các tab
+    /// vẫn hiện ra và vẫn biến đi đúng nhịp cũ, trên đúng đường cong cũ, với
+    /// đúng cú `stagger` cũ. Chỉ có quãng đường là mất.
+    /// Nội bộ chứ không `private`, cùng lý do `BottomBarStyle.recedeScale` là
+    /// vậy: đây là con số duy nhất nói bốn khối tab còn co hay không.
+    @MainActor static var tabRevealScale: CGFloat {
+        BottomBarStyle.reduceMotion ? tabRevealScaleFlat : tabRevealScaleFull
+    }
+    private static let tabRevealScaleFull: CGFloat = 0.86
+    private static let tabRevealScaleFlat: CGFloat = 1
 
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
@@ -380,6 +400,20 @@ struct FloatingTabBar: View {
             // No shadow modifier here any more — see the comment on the main
             // pill's `.clipShape(Capsule())` in `leadingCapsule(expandedWidth:)`
             // for the mechanism and the measured numbers (87.6 → 0.0 ms/s).
+            //
+            // **What used to stand here, and why it is back.** The rule was
+            // `.clipped()` before the shadow, never after: a shadow is drawn
+            // *outside* the shape that casts it, so clipping over one cuts its
+            // soft edge off at the frame's rectangle — which is exactly the
+            // square halo that appeared around this circular button once the
+            // clip was added for the merged layout. When the shadow went, that
+            // paragraph went with it as no longer applying here, and that was
+            // one step too far: `floatingBarShadow()` still exists, and
+            // `PlayerCard` still calls it on a view that is itself clipped. The
+            // bug is one `.floatingBarShadow()` away from being reintroduced in
+            // this file too, and a bug that has been paid for once should not
+            // have to be found twice. Anyone putting a shadow back on a clipped
+            // view here: it goes after the clip, not before.
             trailingButton
                 .frame(width: isMerged ? 0 : barHeight)
                 .clipped()

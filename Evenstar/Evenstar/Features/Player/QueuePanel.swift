@@ -83,7 +83,27 @@ struct QueuePanel: View {
     ///
     /// Con số 32 trước đó tôi đọc bằng mắt trên một tấm ghép khung đã thu nhỏ,
     /// và nó thiếu gần một nửa.
-    private static let riseDistance: CGFloat = 55
+    ///
+    /// Giảm chuyển động: **0**, không trượt một điểm nào. Đây là một *quãng
+    /// đường*, không phải một đường cong, nên nó đi theo đúng đường
+    /// `BottomBarStyle.recedeScale` và `pressedScale` đã đi: cái phải bỏ là
+    /// khoảng cách, và không có curve nào bỏ được khoảng cách.
+    ///
+    /// Hai khối vẫn **hiện ra**, vì `reveal` không đổi: `queueContentIn` là một
+    /// cú hoà mờ và HIG cho phép hoà mờ. Ghi chú của chính `queueContentSlide`
+    /// đã nói trước điều này — nó là hằng số duy nhất trong nhóm `queue*` mô tả
+    /// một cú dịch chuyển thật, và quãng đường ấy "do B3/B4 quyết có còn hay
+    /// không". Đây là chỗ quyết.
+    ///
+    /// Nội bộ chứ không `private`, cùng lý do `QueueToggleStyle.pressedScale`
+    /// là vậy: đây là con số duy nhất nói hai khối ấy còn trượt hay không, và
+    /// một nhánh Giảm chuyển động chỉ tồn tại trong diff là đúng loại nhánh đợt
+    /// này đã để lọt hai lần.
+    @MainActor static var riseDistance: CGFloat {
+        BottomBarStyle.reduceMotion ? riseDistanceFlat : riseDistanceFull
+    }
+    private static let riseDistanceFull: CGFloat = 55
+    private static let riseDistanceFlat: CGFloat = 0
 
     /// Pill geometry, moved here with the pills.
     ///
@@ -132,7 +152,19 @@ struct QueuePanel: View {
     /// Ngắn hơn 32 của hai khối kia, và ngắn hơn có chủ ý ở bản gốc: chữ header
     /// nằm cao nhất, gần chỗ tấm bìa vừa đáp xuống, nên một quãng dài ở đó đọc
     /// ra như nó rơi từ trên tấm bìa xuống.
-    private static let headerTextRise: CGFloat = 8
+    ///
+    /// Giảm chuyển động: **0**, cùng lẽ với `riseDistance` ngay trên — đây là
+    /// một quãng đường, và không đường cong nào bỏ được quãng đường. Ngắn
+    /// không phải là lý do để giữ: 8 điểm vẫn là 8 điểm trượt, và nếu bỏ 55
+    /// của hai khối dưới mà giữ 8 của khối này thì panel còn đúng một vật lẻ
+    /// loi còn trượt — dễ thấy hơn, không khó thấy hơn.
+    ///
+    /// Khối chữ vẫn **hiện ra**: `.opacity(reveal)` ngay dưới không đổi.
+    @MainActor static var headerTextRise: CGFloat {
+        BottomBarStyle.reduceMotion ? headerTextRiseFlat : headerTextRiseFull
+    }
+    private static let headerTextRiseFull: CGFloat = 8
+    private static let headerTextRiseFlat: CGFloat = 0
 
     /// The artwork and title, one line tall.
     ///

@@ -374,6 +374,26 @@ struct NowPlayingContent: View {
     /// pills, this row replaces nothing and can afford its own height.
     private static let queueGlyphFrame: CGFloat = 44
 
+    /// Mảng nền của nút hàng đợi nở ra từ đâu: 0,7 khi tắt, **1** khi giảm
+    /// chuyển động.
+    ///
+    /// Cùng đường với `BottomBarStyle.pressedScale` và
+    /// `QueueToggleStyle.pressedScale` — cái phải bỏ là cú phóng, không phải
+    /// cú hiện. `.opacity(showingQueue ? 1 : 0)` ngay trên giữ nguyên, nên nền
+    /// vẫn xuất hiện và vẫn biến mất, chỉ là nó không còn nở ra nữa.
+    ///
+    /// Nhỏ, và vẫn tính: nó nổ cùng lúc với cú bay của tấm bìa, tức là ngay
+    /// giữa chỗ đợt này đang dọn.
+    ///
+    /// Nội bộ chứ không `private`, cùng lý do `QueueToggleStyle.pressedScale`
+    /// và `QueuePanel.riseDistance` là vậy: một nhánh Giảm chuyển động chỉ tồn
+    /// tại trong diff là đúng loại nhánh đợt này đã để lọt năm lần.
+    @MainActor static var queueBadgeScale: CGFloat {
+        BottomBarStyle.reduceMotion ? queueBadgeScaleFlat : queueBadgeScaleFull
+    }
+    private static let queueBadgeScaleFull: CGFloat = 0.7
+    private static let queueBadgeScaleFlat: CGFloat = 1
+
     /// One icon, trailing. Apple Music puts three here — lyrics, AirPlay and
     /// the queue — and this app has nothing to put behind the other two.
     private var queueToggleRow: some View {
@@ -412,7 +432,7 @@ struct NowPlayingContent: View {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(Color.primary.opacity(0.14))
                             .opacity(showingQueue ? 1 : 0)
-                            .scaleEffect(showingQueue ? 1 : 0.7)
+                            .scaleEffect(showingQueue ? 1 : Self.queueBadgeScale)
                             .animation(BottomBarStyle.content, value: showingQueue)
                     }
                     .contentShape(Rectangle())

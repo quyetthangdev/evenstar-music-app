@@ -313,6 +313,27 @@ struct PlayerCard: View {
     /// không để lại tấm thẻ vô hình — đích của nó vốn đã là 1.
     @State private var cardOpacity: Double = 1
 
+    /// Độ mờ của **riêng tấm bìa** trong lúc nó đổi chỗ giữa cú mở và cú đóng
+    /// hàng đợi, khi giảm chuyển động.
+    ///
+    /// Song song với `cardOpacity` và cùng một cơ chế ba dòng — xem
+    /// `setQueueFactor(to:)` và `morph(to:curve:)`. Khác đúng hai điểm, và cả
+    /// hai đều có lý do:
+    ///
+    ///   - **Chỉ bao tấm bìa, không bao cả thẻ.** Áp ở `artworkView`, phía trên
+    ///     `.overlay` gắn `QueuePanel`, nên panel không bị hoà mờ lây: ba khối
+    ///     của nó đã có nhịp hiện riêng (`queueContentReveal`) đo từ Apple
+    ///     Music, và chồng thêm một cú hoà mờ nữa lên đó là hai đồng hồ trên
+    ///     cùng một vật.
+    ///   - **Không có ngưỡng kiểu `morphNeedsFade`.** Ở đây chỉ có hai đích, 0
+    ///     và 1, và cả hai chiều đều là trọn quãng đường — không có cú gọi lặp
+    ///     "1 tới 1" nào để mà chớp vô cớ. `showingQueue` là `Bool`, nên
+    ///     `onChange` chỉ nổ khi nó thật sự đổi.
+    ///
+    /// Với Giảm chuyển động tắt, giá trị này không bao giờ bị ghi và
+    /// `.opacity(1)` là một modifier không làm gì.
+    @State private var queueArtworkOpacity: Double = 1
+
     /// Ba khối trong `QueuePanel` hiện ra tới đâu: 0 chưa có gì, 1 đã tới nơi.
     ///
     /// **Một giá trị riêng, không phải một phép ánh xạ trên `queueFactor`.**
@@ -996,9 +1017,7 @@ struct PlayerCard: View {
         // artwork, by an amount that shrinks toward 0 as `progress` keeps
         // falling.
         .onChange(of: showingQueue) { _, newValue in
-            withAnimation(BottomBarStyle.queue) {
-                queueFactor = newValue ? 1 : 0
-            }
+            setQueueFactor(to: newValue ? 1 : 0)
             // **Nối bằng `completion`, không bằng hai con số cộng lại.**
             //
             // Hai khối chữ không được phép cùng đọc được. Diễn đạt điều đó bằng
@@ -1648,7 +1667,18 @@ struct PlayerCard: View {
     ///
     /// Hiệu số của hai lần gọi cùng một hàm hình học, khác nhau đúng một tham
     /// số — nên nó không thể lệch khỏi đường bay của tấm bìa dù đường ấy có đổi.
+    ///
+    /// **Giảm chuyển động: 0, và không có nửa đường nào ở giữa.** Quãng này là
+    /// một phần của cú bay đã bị bỏ đi ở `setQueueFactor(to:)` — cả đoạn văn
+    /// trên nói về việc bám theo mép dưới tấm bìa *đang đi*, mà tấm bìa không
+    /// còn đi nữa. Giữ lại thì khối chữ là vật duy nhất trên màn hình còn trượt
+    /// vài trăm điểm, đuổi theo một thứ đã tới đích từ khung đầu.
+    ///
+    /// Khối chữ vẫn **tan** đúng như cũ: `titleOpacity` chạy trên
+    /// `queueTitleHidden`, không trên quãng này, nên hai khối chữ vẫn không bao
+    /// giờ cùng đọc được và thứ tự khi đóng vẫn là nghịch đảo của chiều mở.
     private func queueTitleTravel(size: CGSize, topInset: CGFloat) -> CGFloat {
+        guard !BottomBarStyle.reduceMotion else { return 0 }
         guard queueFactor > 0 else { return 0 }
         func bottom(_ factor: Double) -> CGFloat {
             let geometry = Self.artworkGeometry(
@@ -1943,6 +1973,19 @@ struct PlayerCard: View {
         // one lighting model for every surface on this screen.
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         .position(centre)
+        // Cú hoà mờ thay cho cú bay khi giảm chuyển động — xem
+        // `setQueueFactor(to:)`. Ở chế độ thường nó là hằng số 1 và modifier
+        // này không làm gì.
+        //
+        // **Ở đây, chứ không ở ngoài `.overlay` bên dưới.** Dưới đó là
+        // `QueuePanel`, và panel đã có nhịp hiện riêng đo từ Apple Music. Bao
+        // cả hai thì panel chạy hai cú hoà mờ chồng lên nhau — cùng loại lỗi
+        // "hai đồng hồ trên một vật" mà `queueFactor` được tạo ra để tránh.
+        //
+        // Trên `.position`, nên nó bao cả bóng đổ và cả hai lớp mask/overlay
+        // phía trên: tấm bìa phải tan như **một** vật, cùng lý do
+        // `cardOpacity` được áp một lần ở ngoài cùng `body`.
+        .opacity(queueArtworkOpacity)
         // The picture takes no touches, and it must not — it now covers the
         // whole card.
         //
@@ -2435,6 +2478,92 @@ struct PlayerCard: View {
 
     // MARK: - Morph
 
+    /// Đưa `queueFactor` tới `target`, bằng **hai** đường tuỳ theo Giảm chuyển
+    /// động — cùng ranh giới, cùng cơ chế và cùng lý do như `morph(to:curve:)`
+    /// ngay bên dưới. Đọc ghi chú ấy trước; chỗ này chỉ nói phần khác.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO ĐỔI CURVE THÔI LÀ KHÔNG ĐỦ, LẦN NỮA
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `BottomBarStyle.queue` đã có nhánh phẳng, và suốt một thời gian đó là
+    /// tất cả những gì cú chuyển này nhận được. Nhưng thứ nó lái không phải
+    /// hình dáng gia tốc — nó lái `queueFactor`, mà `artworkGeometry` nội suy
+    /// **quãng đường** trên chính con số ấy: `openWidth`/`openHeight` đi từ tấm
+    /// bìa tràn màn hình (cỡ 402×874 trên iPhone 17) về ô 60 điểm ở header, và
+    /// `openCentre` kéo tâm từ giữa thẻ lên góc trên bên trái. Tức cả bức ảnh
+    /// co lại chừng 6,7 lần theo chiều ngang, 14,6 lần theo chiều dọc, rồi bay
+    /// chéo lên góc. Đó là cú chuyển động lớn nhất trong app, và một
+    /// `easeInOut` 0,29s chỉ làm nó đi theo một đường cong khác.
+    ///
+    /// Ghi chú của `BottomBarStyle.queueContentSlide` đã treo đúng câu hỏi này
+    /// lại — *"quãng đường sẽ do B3/B4 quyết có còn hay không"* — và đây là câu
+    /// trả lời: không còn.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// CÚ ĐỔI VẪN XẢY RA
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Hàng đợi vẫn mở và vẫn đóng, và tấm bìa vẫn **về đúng ô header**:
+    /// `queueFactor` vẫn tới 1, nên `artworkGeometry` vẫn cho ra đúng hình học
+    /// ở đích, `shapeProgress` vẫn về 0 và tấm bìa vẫn bo góc như một
+    /// thumbnail. Chỉ có quãng giữa là biến mất, và nó biến mất theo cách
+    /// người dùng không thấy: hình học nhảy trong một transaction `nil`, cùng
+    /// lượt ấy `queueArtworkOpacity` bị hạ về 0, rồi `withAnimation` đưa nó về
+    /// 1. Khung duy nhất có hình học mới ở độ mờ 0 là khung không vẽ ra gì.
+    ///
+    /// Cái mất, nói thẳng, giống hệt `morph(to:curve:)`: trạng thái **cũ** bị
+    /// cắt phụt chứ không tan dần. Một cú hoà mờ chéo thật sự đòi hai bản tấm
+    /// bìa cùng tồn tại ở hai `queueFactor` khác nhau, tức đúng cái tái cấu
+    /// trúc đang bị chặn ở file này.
+    ///
+    /// `queueArtworkOpacity` chỉ bao tấm bìa. Ba khối trong `QueuePanel` giữ
+    /// nguyên nhịp hiện riêng của chúng (`queueContentIn`/`queueContentOut`,
+    /// đo từ Apple Music) — đó vốn đã là hoà mờ, và HIG cho phép hoà mờ. Cái
+    /// phải bỏ ở phía panel là cú **trượt** kèm theo, và nó được bỏ ở chính
+    /// `QueuePanel.riseDistance`/`headerTextRise`.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// NĂM CHỖ, KHÔNG PHẢI MỘT
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Hàm này bỏ được đúng một quãng: quãng bay của tấm bìa. Cú chuyển hàng
+    /// đợi cưỡi lên bốn quãng nữa, và mỗi quãng được gác ở chính chỗ nó sống,
+    /// chứ không ở đây — một chỗ gác từ xa thì chỗ đọc nó không biết mình đang
+    /// bị gác. Danh sách đủ, để lần sau không phải đi tìm lại:
+    ///
+    ///   1. Tấm bìa — chính hàm này, cộng `.opacity(queueArtworkOpacity)` ở
+    ///      `artworkView`.
+    ///   2. Khối chữ của `NowPlayingContent` — `queueTitleTravel(size:topInset:)`
+    ///      trả 0 ngay ở dòng đầu.
+    ///   3. Hai khối dưới của panel — `QueuePanel.riseDistance`.
+    ///   4. Khối chữ header của panel — `QueuePanel.headerTextRise`.
+    ///   5. Mảng nền nút hàng đợi — `NowPlayingContent.queueBadgeScale`.
+    ///
+    /// Cái *không* nằm trong danh sách cũng có ý: mọi cú `.opacity` ở năm chỗ
+    /// ấy đều ở nguyên. Hàng đợi vẫn mở, vẫn đóng, và thứ tự hiện/tan của hai
+    /// khối chữ vẫn là nghịch đảo của nhau.
+    ///
+    /// `withAnimation` ở nhánh thường giữ nguyên si cú gọi cũ.
+    private func setQueueFactor(to target: Double) {
+        guard BottomBarStyle.reduceMotion else {
+            withAnimation(BottomBarStyle.queue) {
+                queueFactor = target
+            }
+            return
+        }
+
+        // `Transaction(animation: nil)` viết rõ ràng, cùng lẽ với `morph`: chỗ
+        // gọi duy nhất của hàm này nằm trong `onChange(of: showingQueue)`, và
+        // một trong hai đường tới đó — `progress` tụt xuống dưới 0.05 lúc kéo
+        // đóng thẻ — ghi `showingQueue` từ bên trong
+        // `withAnimation(BottomBarStyle.queue)` của chính nó. Không nói rõ thì
+        // cú nhảy hình học lại thành cú bay.
+        withTransaction(Transaction(animation: nil)) {
+            queueFactor = target
+            queueArtworkOpacity = 0
+        }
+
+        withAnimation(BottomBarStyle.queue) { queueArtworkOpacity = 1 }
+    }
+
     /// Đưa thẻ tới `target`, bằng một trong **hai** đường tuỳ theo Giảm chuyển
     /// động.
     ///
@@ -2674,3 +2803,4 @@ struct PlayerCard: View {
         tint = loadedColour
     }
 }
+
