@@ -12,6 +12,12 @@ import SwiftUI
 /// exactly those two together.
 ///
 /// None of this is visible in a screenshot. A still frame has no dead zone.
+/// `@MainActor` like every other test class here. The helpers under test are
+/// statics on a `View`, which `InferIsolatedConformances` makes main-actor
+/// isolated, so a nonisolated test cannot call them under Swift 6. Nothing
+/// about how these run changes — `XCTestCase` already runs them on the main
+/// thread; the annotation only writes that down.
+@MainActor
 final class DragOffsetTests: XCTestCase {
 
     // MARK: - The threshold

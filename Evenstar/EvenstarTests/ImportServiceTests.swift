@@ -6,16 +6,22 @@ final class ImportServiceTests: XCTestCase {
 
     private var tempDir: URL!
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    /// `setUp() async throws` rather than `setUpWithError()`, and `async` only
+    /// to inherit the class's isolation — nothing here awaits. The synchronous
+    /// hooks are nonisolated and an override cannot add isolation its
+    /// overridden declaration does not have, which leaves `tempDir` unreachable
+    /// from them. The `async` pair a `@MainActor` class can isolate. Same
+    /// change, same reason, as in `ReduceMotionTests` and `SetArtworkTests`.
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ImportServiceTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: tempDir)
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     private func makeSourceFile(name: String) throws -> URL {

@@ -19,7 +19,24 @@ import Foundation
 /// `pendingSeek` or a callback. Without that, a status change racing a
 /// main-thread `load()` would read a half-updated view of which item is
 /// current.
-final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
+/// `@unchecked Sendable` is that paragraph restated where the compiler can use
+/// it. `AVPlayerItem.status` KVO hands `self` to a `@Sendable` closure, so under
+/// Swift 6 this type has to be `Sendable` or the observation cannot be written
+/// at all — and it genuinely is safe, for the documented reason above and not
+/// for a vaguer one: every stored property is `private`, and the only code that
+/// reads or writes one is either already on the main thread or inside an
+/// `onMain` closure. The `unchecked` carries exactly that claim and nothing
+/// wider.
+///
+/// `@MainActor` would be the *checked* version of the same claim, and was
+/// rejected rather than overlooked: it would take away the property this class
+/// was built around. `onMain` runs its closure **synchronously** when already
+/// on the main thread, and a main-actor method cannot be called at all from the
+/// nonisolated queue AVFoundation delivers KVO on. Every entry point would have
+/// to become a `Task`, every failure would land a frame late, and every test
+/// would need an expectation — which is the trade `onMain`'s own comment was
+/// written about.
+final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol, @unchecked Sendable {
     private var player: AVPlayer?
     private var statusObservation: NSKeyValueObservation?
     /// The item every observation registered by the last `load(url:)` belongs
@@ -191,17 +208,29 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
     /// production callers, in the spirit of `PlaybackService.tickForTesting()`.
     var observedItemForTesting: AVPlayerItem? { observedItem }
 
+    // Both handlers unpack the `Notification` *before* the hop rather than
+    // inside the closure. `Notification` is not `Sendable` — `object` and
+    // `userInfo` are untyped `Any` — so carrying the whole thing across to the
+    // main thread is precisely what Swift 6 objects to, and it was never needed:
+    // what these want out of it is one object reference and one error. Reading
+    // them here is equivalent, because a delivered `Notification` is immutable.
+    // The identity check still happens after the hop, which is the part that
+    // has to: `observedItem` is main-confined and a `load()` may have replaced
+    // it while this was in flight.
+
     @objc private func itemDidFinish(_ note: Notification) {
+        let finished = note.object as? AVPlayerItem
         onMain { [weak self] in
-            guard let self, (note.object as? AVPlayerItem) === self.observedItem else { return }
+            guard let self, finished === self.observedItem else { return }
             self.didFinishCallback?()
         }
     }
 
     @objc private func itemFailedToPlayToEnd(_ note: Notification) {
+        let failed = note.object as? AVPlayerItem
+        let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
         onMain { [weak self] in
-            guard let self, (note.object as? AVPlayerItem) === self.observedItem else { return }
-            let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            guard let self, failed === self.observedItem else { return }
             self.report(error ?? URLError(.cannotLoadFromNetwork))
         }
     }
@@ -260,7 +289,13 @@ final class StreamingAudioPlayer: NSObject, AudioPlayerProtocol {
     /// these on the main thread already, and bouncing through the run loop
     /// anyway would delay a failure by a frame and make the whole class
     /// untestable without an expectation for every assertion.
-    private func onMain(_ work: @escaping () -> Void) {
+    ///
+    /// `@Sendable` on `work` because the other branch hands it to
+    /// `DispatchQueue.main.async`, which has always required it — the closure
+    /// really does cross threads there, and saying so is what lets the compiler
+    /// check the captures instead of taking them on trust. It is what turned up
+    /// the `Notification` capture in the two `@objc` handlers below.
+    private func onMain(_ work: @escaping @Sendable () -> Void) {
         if Thread.isMainThread {
             work()
         } else {

@@ -9,6 +9,12 @@ import XCTest
 /// expression a different number, and the whole claim is that the number is
 /// unchanged at both ends. These assertions are what turn that claim into
 /// something that fails out loud if it stops being true.
+/// `@MainActor` like every other test class here. The helpers under test are
+/// statics on a `View`, which `InferIsolatedConformances` makes main-actor
+/// isolated, so a nonisolated test cannot call them under Swift 6. Nothing
+/// about how these run changes — `XCTestCase` already runs them on the main
+/// thread; the annotation only writes that down.
+@MainActor
 final class ArtworkGeometryTests: XCTestCase {
 
     /// An iPhone 17 at full expansion. `artworkSide` và `artworkTop` là fixture

@@ -10,17 +10,22 @@ final class JamendoLibraryServiceTests: XCTestCase {
     /// behind for the next one.
     private var written: [String] = []
 
-    override func setUp() {
-        super.setUp()
+    /// `async` purely to inherit the class's isolation — nothing here awaits.
+    /// The synchronous `setUp()`/`tearDown()` are nonisolated and an override
+    /// cannot add isolation its overridden declaration does not have, which
+    /// leaves `written` unreachable from them. Same change, same reason, as in
+    /// `ReduceMotionTests` and `SetArtworkTests`.
+    override func setUp() async throws {
+        try await super.setUp()
         StubURLProtocol.reset()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for path in written {
             try? FileManager.default.removeItem(at: FileLocation.absoluteURL(forRelative: path))
         }
         written = []
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func makeService() throws -> (JamendoLibraryService, LibraryService) {
@@ -201,12 +206,33 @@ final class JamendoLibraryServiceTests: XCTestCase {
             .init(status: 200, body: jpeg)
         ]
 
-        async let first = service.save(catalogueTrack(id: "42"))
-        async let second = service.save(catalogueTrack(id: "42"))
-        let (firstResult, secondResult) = try await (first, second)
+        // `async let` started both calls until Swift 6, and cannot any longer:
+        // its implicit child task is nonisolated, so it would both send `self`
+        // into main-actor `save` and carry a `JamendoTrack` back out — a
+        // SwiftData `@Model`, which is not `Sendable` and must not leave the
+        // actor its context belongs to.
+        //
+        // A `Task` inside a `@MainActor` method inherits that isolation, and
+        // the test loses nothing by it: `save` is main-actor either way, so
+        // what this pins was always an interleaving at `await` points and never
+        // parallelism. Both tasks are enqueued before this function suspends,
+        // so their synchronous prefixes still race the way a double-tap does.
+        //
+        // They hand back the two `Sendable` fields the assertions read rather
+        // than the row itself, which stays on the main actor where it belongs.
+        let first = Task { @MainActor in
+            let row = try await service.save(catalogueTrack(id: "42"))
+            return (id: row.id, artwork: row.artworkRelativePath)
+        }
+        let second = Task { @MainActor in
+            let row = try await service.save(catalogueTrack(id: "42"))
+            return (id: row.id, artwork: row.artworkRelativePath)
+        }
+        let firstResult = try await first.value
+        let secondResult = try await second.value
 
-        if let path = firstResult.artworkRelativePath { written.append(path) }
-        if let path = secondResult.artworkRelativePath, path != firstResult.artworkRelativePath {
+        if let path = firstResult.artwork { written.append(path) }
+        if let path = secondResult.artwork, path != firstResult.artwork {
             written.append(path)
         }
 

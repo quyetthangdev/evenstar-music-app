@@ -14,12 +14,21 @@ final class SetArtworkTests: XCTestCase {
 
     private var written: [String] = []
 
-    override func tearDown() {
+    /// `async` purely to inherit the class's isolation — nothing here awaits.
+    /// The synchronous `tearDown()` is nonisolated and an override cannot add
+    /// isolation its overridden declaration does not have, so `@MainActor`
+    /// reaches every test method in this class and stops at that one, leaving
+    /// `written` unreachable from it. The `async` override the compiler does
+    /// let a `@MainActor` class isolate. Same change, same reason, as the four
+    /// in `ReduceMotionTests`.
+    override func tearDown() async throws {
         for path in written {
-            try? FileManager.default.removeItem(at: FileLocation.absoluteURL(forRelative: path))
+            try? FileManager.default.removeItem(
+                at: FileLocation.absoluteURL(forRelative: path)
+            )
         }
         written = []
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func makeStack() throws -> (LibraryService, Track) {

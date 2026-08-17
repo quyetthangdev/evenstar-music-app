@@ -11,6 +11,12 @@ import SwiftUI
 /// makes fast and slow releases indistinguishable again, which is the whole
 /// thing this was added to fix. None of it shows up in a build, and none of it
 /// shows up in a screenshot — a still frame cannot hold a velocity.
+/// `@MainActor` like every other test class here. The helpers under test are
+/// statics on a `View`, which `InferIsolatedConformances` makes main-actor
+/// isolated, so a nonisolated test cannot call them under Swift 6. Nothing
+/// about how these run changes — `XCTestCase` already runs them on the main
+/// thread; the annotation only writes that down.
+@MainActor
 final class SettleVelocityTests: XCTestCase {
 
     /// A phone-sized drag range, so the numbers below read like real ones.

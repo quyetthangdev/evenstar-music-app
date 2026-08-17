@@ -24,8 +24,23 @@ final class LibraryStoreTests: XCTestCase {
 
     /// Records whether an `@Observable` property actually notified, so the
     /// "does not wake its readers" claims below are tested rather than asserted.
-    private final class ChangeFlag {
-        var didChange = false
+    ///
+    /// `withObservationTracking`'s `onChange` is a `@Sendable` closure, so under
+    /// Swift 6 this flag has to be `Sendable` to be written from inside one.
+    /// Locked rather than annotated: in these tests the notification does fire
+    /// on the test's own thread, so a bare `@unchecked Sendable` would be true
+    /// today — but it would be an assertion about *when Observation calls back*,
+    /// which is not this file's to make and not one a reader could check. A lock
+    /// makes it true regardless, and a test flag is the last place where the
+    /// cost of one could matter.
+    private final class ChangeFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+
+        var didChange: Bool {
+            get { lock.withLock { value } }
+            set { lock.withLock { value = newValue } }
+        }
     }
 
     // MARK: - remove(_:)

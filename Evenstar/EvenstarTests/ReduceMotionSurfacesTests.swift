@@ -181,18 +181,31 @@ final class TabSelectionWashTravelTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    /// The `async` setup and teardown throughout this file are `async` for one
+    /// reason: to inherit the class's `@MainActor`. Nothing in them awaits.
+    ///
+    /// The synchronous `setUp()`/`tearDown()` are nonisolated, and an override
+    /// cannot add isolation the declaration it overrides does not have, so the
+    /// `@MainActor` on each class here reaches every test method and stops at
+    /// those two — which is a problem, because what they touch is `UIWindow`,
+    /// `UIViewController` and `BottomBarStyle.reduceMotion`, all main-actor.
+    /// XCTest also offers `async` versions, and those a `@MainActor` class is
+    /// allowed to isolate, so the access becomes checked rather than assumed.
+    /// `MainActor.assumeIsolated` was tried first and does not work: inside
+    /// these overrides `self` is *task*-isolated, and handing it to a
+    /// main-actor closure is a real data race rather than a formality.
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.select = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func mount(reduceMotion: Bool) {
@@ -453,18 +466,18 @@ final class ActiveGlyphTravelTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.minimise = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func mount(reduceMotion: Bool) {
@@ -627,18 +640,18 @@ final class TapHaloReducedTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.fire = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// The darkest the centre of the disc ever got over the halo's full 0.52s
@@ -693,14 +706,14 @@ final class PressFeedbackConstantsTests: XCTestCase {
 
     private var saved = false
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Both press scales go to 1 — no deformation left anywhere — and the
@@ -803,18 +816,18 @@ final class TransportPressDimTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.press = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// How blue the block's centre is, 0 for white and 255 for solid blue.
@@ -935,18 +948,18 @@ final class TransportSymbolSwapTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.flip = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Row span of the drawn glyph, and how much ink it is made of. The second
@@ -1182,12 +1195,12 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func tearDown() {
+    override func tearDown() async throws {
         window?.isHidden = true
         window = nil
         host = nil
         Harness.flip = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func rowSpan() throws -> Int {
@@ -1317,18 +1330,18 @@ final class TransportKickPixelTests: XCTestCase {
     private var window: UIWindow?
     private var host: UIViewController?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
         host = nil
         Harness.fire = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// How blue a pixel is, 0 for white and 255 for solid blue.
@@ -1459,14 +1472,14 @@ final class ReorderReducedMotionTests: XCTestCase {
 
     private var saved = false
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// The rows making way keep their travel and lose their bounce.

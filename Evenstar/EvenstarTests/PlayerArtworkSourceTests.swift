@@ -13,6 +13,12 @@ import XCTest
 /// `loaded` is `@State` written by a `.task`, so it always describes the
 /// previous track until the load finishes. Everything here is about not letting
 /// the second one decide anything.
+/// `@MainActor` like every other test class here. The helpers under test are
+/// statics on a `View`, which `InferIsolatedConformances` makes main-actor
+/// isolated, so a nonisolated test cannot call them under Swift 6. Nothing
+/// about how these run changes — `XCTestCase` already runs them on the main
+/// thread; the annotation only writes that down.
+@MainActor
 final class PlayerArtworkSourceTests: XCTestCase {
 
     private func source(hasArtwork: Bool, loaded: Bool) -> PlayerCard.ArtworkSource {

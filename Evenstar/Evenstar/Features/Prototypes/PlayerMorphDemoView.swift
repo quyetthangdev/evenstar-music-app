@@ -261,10 +261,22 @@ private final class DragProbe {
     /// khung hình đều chậm gấp đôi, tệ nhất chia trung bình vẫn ≈ 1 và bản báo
     /// cáo sẽ nói "sạch" trong khi máy đang rớt một nửa số khung. So với chính
     /// nó thì cái gì cũng bình thường.
+    ///
+    /// `assumeIsolated` chứ không phải `@MainActor`: cả ba chỗ đọc nó đều nằm
+    /// trong closure của SwiftUI nên đều ở main, nhưng gắn `@MainActor` lên đây
+    /// sẽ lan sang `isRealStall`, `isUniformlySlow` và `summary(phase:)` — mà
+    /// `summary` được gọi từ `completion:` của `withAnimation`, một closure
+    /// `@Sendable` không mang isolation. Lớp này cũng không thể là `@MainActor`
+    /// nguyên khối: `AnimationProbe` gọi `sample(progress:)` từ setter
+    /// `animatableData`, tức từ chỗ `Animatable` gọi vào, không phải từ main
+    /// actor. Nên khẳng định đứng ở đúng một dòng, và nó **được kiểm** — sai
+    /// thì trap ngay tại chỗ, chứ không im lặng.
     static var displayInterval: CFTimeInterval {
-        let fps = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.screen.maximumFramesPerSecond }
-            .max() ?? 60
+        let fps = MainActor.assumeIsolated {
+            UIApplication.shared.connectedScenes
+                .compactMap { ($0 as? UIWindowScene)?.screen.maximumFramesPerSecond }
+                .max() ?? 60
+        }
         return 1.0 / Double(max(fps, 1))
     }
 

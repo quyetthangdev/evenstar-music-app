@@ -23,12 +23,75 @@ import UIKit
 /// file can never crash a view.
 enum ArtworkStore {
 
+    /// `NSCache`, narrowed to exactly the operations Apple documents as
+    /// thread-safe.
+    ///
+    /// Under the Swift 6 language mode the three `static let` caches below are
+    /// an error — "not concurrency-safe because non-`Sendable` type
+    /// `NSCache<…>` may have shared mutable state". They were the first three
+    /// errors the compiler reached, and for a while they looked like the only
+    /// three in the app target; that turned out to be an artefact of the
+    /// compiler stopping here, and four more files needed work once it could
+    /// get past this one. Worth saying plainly, because a first probe of a
+    /// language-mode bump reports the errors it reaches, not the errors there
+    /// are.
+    ///
+    /// These caches really are safe to touch from several threads at once, and
+    /// that is not a judgement call — Apple's `NSCache` documentation says so
+    /// outright:
+    ///
+    /// > You can add, remove, and query items in the cache from different
+    /// > threads without having to lock the cache yourself.
+    ///
+    /// Note precisely what that sentence covers: *items*. It says nothing about
+    /// `name`, `delegate`, `countLimit`, `totalCostLimit`, or
+    /// `evictsObjectsWithDiscardedContent`, which are ordinary unsynchronised
+    /// properties. And the gap is deliberate rather than an oversight:
+    /// `NSCache.h` sits inside `NS_HEADER_AUDIT_BEGIN(nullability, sendability)`,
+    /// so Apple swept that header for sendability and still declined to mark the
+    /// class `NS_SWIFT_SENDABLE`. The mutable configuration properties are why.
+    ///
+    /// Hence a wrapper rather than three `nonisolated(unsafe)` annotations. That
+    /// annotation means "the compiler cannot see it, trust me", and it would
+    /// leave `images.countLimit = 3` from a background thread reachable and
+    /// unremarked — the one corner of the API the guarantee does not reach.
+    /// Exposing only `object(forKey:)` and `setObject` makes the claim
+    /// structural instead of asserted: what this type permits is exactly what
+    /// Apple promises. All configuration happens inside `init`, before the value
+    /// can be shared.
+    ///
+    /// `Value: Sendable` keeps the wrapper honest about its scope — only the
+    /// container's thread-safety is being asserted here, never the elements'.
+    /// `Key` cannot carry the same constraint: `NSString`'s `Sendable`
+    /// conformance is explicitly unavailable, because `NSMutableString`
+    /// subclasses it. That is tolerable here only because `cacheKey` builds
+    /// every key fresh and immutable and hands it straight in — worth knowing,
+    /// since a cache does not copy its keys, so a mutable one handed in and then
+    /// mutated would corrupt lookups.
+    private struct SafeCache<Key: AnyObject, Value: AnyObject & Sendable>: @unchecked Sendable {
+        private let cache = NSCache<Key, Value>()
+
+        init(configure: (NSCache<Key, Value>) -> Void) {
+            configure(cache)
+        }
+
+        func object(forKey key: Key) -> Value? {
+            cache.object(forKey: key)
+        }
+
+        func setObject(_ object: Value, forKey key: Key) {
+            cache.setObject(object, forKey: key)
+        }
+
+        func setObject(_ object: Value, forKey key: Key, cost: Int) {
+            cache.setObject(object, forKey: key, cost: cost)
+        }
+    }
+
     /// ~50 MB, as the parent design spec has required since Phase 2.
-    private static let images: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 50 * 1024 * 1024
-        return cache
-    }()
+    private static let images = SafeCache<NSString, UIImage> {
+        $0.totalCostLimit = 50 * 1024 * 1024
+    }
 
     /// The `maxPixel` each path was most recently decoded at.
     ///
@@ -45,17 +108,13 @@ enum ArtworkStore {
     /// Most recent rather than largest, deliberately: the most recent decode is
     /// the one least likely to have been evicted, and a slightly small stand-in
     /// for a few frames beats a correct one that is gone.
-    private static let decodedSizes: NSCache<NSString, NSNumber> = {
-        let cache = NSCache<NSString, NSNumber>()
-        cache.countLimit = 512
-        return cache
-    }()
+    private static let decodedSizes = SafeCache<NSString, NSNumber> {
+        $0.countLimit = 512
+    }
 
-    private static let colors: NSCache<NSString, UIColor> = {
-        let cache = NSCache<NSString, UIColor>()
-        cache.countLimit = 256
-        return cache
-    }()
+    private static let colors = SafeCache<NSString, UIColor> {
+        $0.countLimit = 256
+    }
 
     /// - Parameter maxPixel: the longest edge, in pixels, the decoded image needs.
     ///   Pass the point size multiplied by the screen scale for a crisp result.
@@ -149,8 +208,9 @@ enum ArtworkStore {
     ///
     /// Synchronous on the caller's thread by design, main included: an
     /// `NSCache` lookup is a lock and a hash, and the whole point is to have the
-    /// answer before the frame is drawn. `NSCache` is thread-safe, so this is
-    /// safe to call from anywhere — including concurrently with the writes in
+    /// answer before the frame is drawn. `NSCache` is thread-safe — see
+    /// `SafeCache` above for the documented guarantee — so this is safe to call
+    /// from anywhere, including concurrently with the writes in
     /// `image(for:maxPixel:)` above.
     static func cachedImage(for relativePath: String?, maxPixel: CGFloat) -> UIImage? {
         guard let relativePath else { return nil }

@@ -254,31 +254,7 @@ struct TransportButtonStyle: ButtonStyle {
                     isPressed ? BottomBarStyle.press : TransportButtonStyle.dimReturn,
                     value: isPressed
                 )
-                .keyframeAnimator(initialValue: Kick(), trigger: style.trigger) { view, kick in
-                    view
-                        .scaleEffect(x: kick.scaleX, y: kick.scaleY)
-                        .offset(x: kick.offset)
-                } keyframes: { _ in
-                    KeyframeTrack(\.offset) {
-                        CubicKeyframe(peak.offset, duration: TransportButtonStyle.kickDuration)
-                        SpringKeyframe(0, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
-                    }
-                    KeyframeTrack(\.scaleX) {
-                        CubicKeyframe(peak.scaleX, duration: TransportButtonStyle.kickDuration)
-                        SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
-                    }
-                    KeyframeTrack(\.scaleY) {
-                        CubicKeyframe(peak.scaleY, duration: TransportButtonStyle.kickDuration)
-                        SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
-                    }
-                    // A fourth track stood here, carrying the dim. It was the one
-                    // track that was not sprung, because a spring would
-                    // overshoot past full strength and an opacity above 1
-                    // clamps — that reason survives in `dimReturn` above, which
-                    // is where the dim went and which is a curve for it. What
-                    // did not survive is having the dim on this animator at all:
-                    // see `kickPeak`.
-                }
+                .modifier(Kicker(peak: peak, trigger: style.trigger))
                 // Outside the kick, deliberately. Inside it, the deformation
                 // would scale the disc unevenly and draw it as an ellipse, and
                 // the throw would drag it off the point that was actually
@@ -310,6 +286,62 @@ struct TransportButtonStyle: ButtonStyle {
                 .sensoryFeedback(.impact(weight: .light), trigger: presses)
                 .onChange(of: isPressed) { _, pressed in
                     if pressed { presses += 1 }
+                }
+        }
+    }
+
+    /// The kick itself, lifted out of `Interaction.body` into a modifier of its
+    /// own. The keyframes below are unchanged — same three tracks, same
+    /// durations, same springs.
+    ///
+    /// It was moved for one reason: to get `Label` out of the closure.
+    /// `keyframeAnimator`'s content closure names its `view` argument, whose
+    /// type is `PlaceholderContentView<Self>`. Written inline in
+    /// `Interaction.body`, that `Self` is `Interaction<Label>`, so the closure
+    /// captures `Label.Type` — and a metatype is `Sendable` only when its type
+    /// is. SwiftUI keeps the closure past the `body` call that built it, so
+    /// under Swift 6 that capture is a warning.
+    ///
+    /// Constraining `Label: Sendable` was the first attempt and is not
+    /// available: `makeBody` passes `configuration.label`, whose type is
+    /// `ButtonStyleConfiguration.Label`, and SwiftUI marks that type's
+    /// `Sendable` conformance explicitly *unavailable* — the compiler rejects
+    /// the constraint outright rather than merely failing to prove it. So the
+    /// choice was to assert around the capture or to remove it. This removes
+    /// it: `Self` here is `Kicker`, which has no generic parameter, so there is
+    /// no metatype to carry across and nothing left to vouch for.
+    private struct Kicker: ViewModifier {
+        /// Read in `Interaction.body` and passed in as a value, not recomputed
+        /// here — see the note at its call site about the two reads disagreeing.
+        let peak: Kick
+        let trigger: Int
+
+        func body(content: Content) -> some View {
+            content
+                .keyframeAnimator(initialValue: Kick(), trigger: trigger) { view, kick in
+                    view
+                        .scaleEffect(x: kick.scaleX, y: kick.scaleY)
+                        .offset(x: kick.offset)
+                } keyframes: { _ in
+                    KeyframeTrack(\.offset) {
+                        CubicKeyframe(peak.offset, duration: TransportButtonStyle.kickDuration)
+                        SpringKeyframe(0, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
+                    }
+                    KeyframeTrack(\.scaleX) {
+                        CubicKeyframe(peak.scaleX, duration: TransportButtonStyle.kickDuration)
+                        SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
+                    }
+                    KeyframeTrack(\.scaleY) {
+                        CubicKeyframe(peak.scaleY, duration: TransportButtonStyle.kickDuration)
+                        SpringKeyframe(1, duration: TransportButtonStyle.reboundDuration, spring: TransportButtonStyle.rebound)
+                    }
+                    // A fourth track stood here, carrying the dim. It was the one
+                    // track that was not sprung, because a spring would
+                    // overshoot past full strength and an opacity above 1
+                    // clamps — that reason survives in `dimReturn` above, which
+                    // is where the dim went and which is a curve for it. What
+                    // did not survive is having the dim on this animator at all:
+                    // see `kickPeak`.
                 }
         }
     }

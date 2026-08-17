@@ -25,8 +25,18 @@ final class SearchResultsStoreTests: XCTestCase {
 
     /// Records whether an `@Observable` property actually notified, so the
     /// "does not wake its reader" claims below are tested rather than asserted.
-    private final class ChangeFlag {
-        var didChange = false
+    ///
+    /// Locked because `withObservationTracking`'s `onChange` is `@Sendable` and
+    /// so this has to be `Sendable` to be written from inside one. See the twin
+    /// in `LibraryStoreTests` for why a lock rather than a bare annotation.
+    private final class ChangeFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+
+        var didChange: Bool {
+            get { lock.withLock { value } }
+            set { lock.withLock { value = newValue } }
+        }
     }
 
     private func watchResults(_ store: SearchResultsStore) -> ChangeFlag {

@@ -22,14 +22,28 @@ final class ReduceMotionTests: XCTestCase {
     /// would change the answers of every test that ran after it.
     private var saved = false
 
-    override func setUp() {
-        super.setUp()
+    /// The `async` overrides throughout this file are what carry the class's
+    /// `@MainActor` into setup and teardown, and that is the whole reason they
+    /// are `async` — nothing here awaits anything.
+    ///
+    /// The synchronous `setUp()`/`tearDown()` are nonisolated, and an override
+    /// cannot add isolation the declaration it overrides does not have, so the
+    /// `@MainActor` on each class here reaches every test method and stops at
+    /// those two. That matters because `BottomBarStyle.reduceMotion` and
+    /// `UIWindow` are both main-actor. XCTest also offers `async` versions, and
+    /// those the compiler does let a `@MainActor` class isolate, so the access
+    /// becomes checked rather than assumed. `MainActor.assumeIsolated` was the
+    /// first attempt and does not work here: inside these overrides `self` is
+    /// *task*-isolated, and handing it to a main-actor closure is the data race
+    /// the compiler is describing rather than a formality to wave through.
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - The springs that flatten
@@ -388,16 +402,17 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
     private var saved = false
     private var window: UIWindow?
 
-    override func setUp() {
-        super.setUp()
+    // `async` only to inherit the class's isolation: see the first `setUp` above.
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
         window?.isHidden = true
         window = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Renders a card that is collapsed and has a track, then plays a track
@@ -558,8 +573,9 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
 
     private var window: UIWindow?
 
-    override func setUp() {
-        super.setUp()
+    // `async` only to inherit the class's isolation: see the first `setUp` above.
+    override func setUp() async throws {
+        try await super.setUp()
         Trace.reset()
         Trace.apply = nil
         Trace.dip = nil
@@ -573,10 +589,10 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         self.window = window
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         window?.isHidden = true
         window = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Lets the display link tick. Nothing about an animation happens without
@@ -1118,14 +1134,15 @@ final class ReduceMotionRootViewWiringTests: XCTestCase {
 
     private var saved = false
 
-    override func setUp() {
-        super.setUp()
+    // `async` only to inherit the class's isolation: see the first `setUp` above.
+    override func setUp() async throws {
+        try await super.setUp()
         saved = BottomBarStyle.reduceMotion
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         BottomBarStyle.reduceMotion = saved
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Everything `EvenstarApp.body` supplies, with the two I/O boundaries

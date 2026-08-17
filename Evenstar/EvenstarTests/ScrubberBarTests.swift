@@ -2,6 +2,12 @@ import XCTest
 import SwiftUI
 @testable import Evenstar
 
+/// `@MainActor` like every other test class here. `ScrubberBar`'s geometry
+/// helpers are statics on a `View`, which `InferIsolatedConformances` makes
+/// main-actor isolated, so a nonisolated test cannot call them under Swift 6.
+/// Nothing about how these tests run changes — `XCTestCase` already runs them
+/// on the main thread; the annotation only writes that down.
+@MainActor
 final class ScrubberBarTests: XCTestCase {
 
     // MARK: - fillFraction

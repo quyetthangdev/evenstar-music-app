@@ -29,7 +29,15 @@ struct PlayerCard: View {
     /// apply `clearsBottomBar()`, which reaches
     /// `BottomBarMetrics.clearanceWithPlayer(bottomSafeAreaInset:)` and adds
     /// everything below the floating pill. Do not duplicate this as a literal.
-    static let collapsedHeight: CGFloat = 54
+    ///
+    /// `nonisolated` because this type is a `View`, and under
+    /// `InferIsolatedConformances` that makes the whole type — including its
+    /// static constants — main-actor isolated. A `let CGFloat` has nothing for
+    /// an actor to protect, and the isolation is not free: it stops any
+    /// nonisolated type from reading the number, which is exactly what the
+    /// paragraph above forbids solving by writing `54` again. `BottomBarMetrics`
+    /// hands out its own constants the same way, from a plain nonisolated enum.
+    nonisolated static let collapsedHeight: CGFloat = 54
 
     /// How far the collapsed pill is inset from each side of the safe area.
     ///
