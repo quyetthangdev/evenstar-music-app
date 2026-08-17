@@ -86,7 +86,7 @@ struct JamendoResultRow: View {
                     // accent was never required to say it a second time.
                     .foregroundStyle(isSaved ? AnyShapeStyle(.secondary)
                                              : AnyShapeStyle(Color.primary))
-                    .contentTransition(.symbolEffect(.replace))
+                    .symbolReplace()
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

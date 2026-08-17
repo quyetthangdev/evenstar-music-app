@@ -220,43 +220,36 @@ struct TransportButtonStyle: ButtonStyle {
                 // whole label, in both modes, and one caller's label is not
                 // inert.** `.transportToggle`'s is
                 // `Image(systemName: isPlaying ? "pause.fill" : "play.fill")`
-                // carrying `.contentTransition(.symbolEffect(.replace))`
-                // (`MiniPlayerChrome`, `NowPlayingContent`), and `isPlaying`
-                // flips in the same touch-down transaction `isPressed` does. So
-                // the symbol swap is inside this modifier's reach, and the
-                // question of whether it now runs on `press`'s 0.09s instead of
-                // its own curve is a real one.
+                // carrying a symbol replace transition (`MiniPlayerChrome`,
+                // `NowPlayingContent`), and `isPlaying` flips in the same
+                // touch-down transaction `isPressed` does. So the symbol swap is
+                // inside this modifier's reach, and the question of whether it
+                // now runs on `press`'s 0.09s instead of its own curve is a real
+                // one.
                 //
-                // **It does not bite, and it cannot.** Measured rather than
-                // reasoned about: the replace effect is timed by SF Symbols and
-                // ignores the transaction it happens in, so no ancestor's
-                // animation reaches it. `SymbolReplaceTransactionEvidenceTests`
-                // records that — one swap run bare, inside a 1.2s
-                // `withAnimation`, and under a 1.2s `.transaction` on an
-                // ancestor, all three collapsing the glyph to the same depth on
-                // the same frame.
+                // **It does not, and the reason is narrower than "it is out of
+                // reach".** The replace effect is timed by SF Symbols and
+                // ignores the *animation* of the transaction it happens in;
+                // `SymbolReplaceTransactionEvidenceTests` measures a 1.2s
+                // `withAnimation` and a 1.2s ancestor `.transaction` leaving
+                // trough depth and trough frame exactly where the bare run put
+                // them. An ancestor that sets `disablesAnimations`, on the other
+                // hand, suppresses the effect outright — the same test measures
+                // that too. So the curve cannot reach it and the off-switch can,
+                // and an earlier draft of this comment claimed the first as if
+                // it were both.
                 //
-                // The before/after was measured too, on this exact call: with
+                // The before/after was measured on this exact call as well: with
                 // this pair of modifiers and without them, `isPlaying` and
                 // `isPressed` flipping together, the glyph's row-span trace
-                // troughs at frame 21 either way in both modes. The unreduced
+                // troughs on frame 21 either way in both modes. The unreduced
                 // mode is unchanged.
                 //
-                // **What is deliberately not pinned by a test, and why.** "The
-                // press does not retime the swap" would be green against every
-                // possible edit to this file — the effect is out of reach of all
-                // of them — so a test of it could not fail and would be worse
-                // than none. The evidence test above pins the platform
-                // behaviour this paragraph rests on instead; if that goes red,
-                // this comment is wrong and the exposure is real.
-                //
-                // One consequence worth stating plainly rather than leaving to
-                // be rediscovered: the swap was *already* animating before this
-                // line existed, **including with Reduce Motion on**, and it is a
-                // scale effect. That is a real gap in this đợt and it is not
-                // this style's to close — `.contentTransition` is applied by the
-                // callers, on labels this style is only handed. It needs those
-                // call sites, which are out of B4's scope.
+                // The effect's *own* scale — 15 → 7 → 15 rows, which ran with
+                // Reduce Motion on — was a real gap, and it is closed: the
+                // callers apply `symbolReplace()` now, which swaps the
+                // transition itself rather than trying to reach it from here.
+                // `TransportSymbolSwapTests` pins the result on the pixels.
                 .animation(
                     isPressed ? BottomBarStyle.press : TransportButtonStyle.dimReturn,
                     value: isPressed

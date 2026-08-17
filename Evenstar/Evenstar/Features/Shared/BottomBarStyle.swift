@@ -654,4 +654,46 @@ extension View {
     func floatingBarShadow() -> some View {
         BottomBarStyle.floatingShadow(self)
     }
+
+    /// One glyph replacing another in place — **without the scale, when motion
+    /// is reduced.**
+    ///
+    /// Use this instead of `.contentTransition(.symbolEffect(.replace))`
+    /// anywhere an `Image(systemName:)` changes its symbol. Every site in the
+    /// app does; `grep contentTransition` should find no bare call but this one.
+    ///
+    /// **What it is fixing.** The replace effect scales the outgoing glyph down
+    /// to about half its height and scales the incoming one back up — measured
+    /// at 15 → 7 → 15 rows over roughly 0.21s, centred in the control. That ran
+    /// with Reduce Motion on, on play/pause among others, which is a scale
+    /// animation on the app's most-tapped control under the setting whose whole
+    /// purpose is removing scale animations.
+    ///
+    /// **Why a branch here rather than a curve anywhere else.** The effect is
+    /// timed by SF Symbols and ignores the animation of the transaction it
+    /// happens in — `SymbolReplaceTransactionEvidenceTests` measures a 1.2s
+    /// `withAnimation` and a 1.2s ancestor `.transaction` leaving it exactly as
+    /// it was. So no `Animation` constant in this file can reach it and none of
+    /// the thirteen above was ever going to. Only two things do: replacing the
+    /// transition, which is this, or `disablesAnimations` on an ancestor, which
+    /// would also silence everything else in the subtree.
+    ///
+    /// **The swap still happens, and that is the requirement.** `.opacity`
+    /// rather than `.identity`: where the caller has an animation in flight the
+    /// glyph cross-fades, and where it does not it cuts. Either way the glyph
+    /// changes — a play button that still reads "play" after being tapped is a
+    /// worse outcome than a scale — and neither way does anything change size.
+    /// The same trade `selectionWash(for:)` and the two `ButtonStyle`s made:
+    /// answer with opacity, not with shape.
+    ///
+    /// **One mechanism, not seven branches.** Six production sites plus the
+    /// demo reachable from Settings read this. Written per-site it would be
+    /// seven chances to miss the eighth.
+    ///
+    /// The unreduced branch is exactly the call it replaces, so nothing changes
+    /// for anyone with the setting off.
+    @MainActor
+    func symbolReplace() -> some View {
+        contentTransition(BottomBarStyle.reduceMotion ? .opacity : .symbolEffect(.replace))
+    }
 }

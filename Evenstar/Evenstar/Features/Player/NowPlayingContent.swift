@@ -346,7 +346,7 @@ struct NowPlayingContent: View {
                 // made this the only transport control with a filled backdrop.
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: Self.playGlyphSize))
-                    .contentTransition(.symbolEffect(.replace))
+                    .symbolReplace()
                     // No glyph handover: a handover says "that went somewhere",
                     // true of Previous and Next and false of this one, which
                     // toggles in place. Its own glyph already changes, which is

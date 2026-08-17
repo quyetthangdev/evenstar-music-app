@@ -320,7 +320,7 @@ struct QueuePanel: View {
                              : isOn ? AnyShapeStyle(Color.black)
                                     : AnyShapeStyle(.secondary)
                 )
-                .contentTransition(.symbolEffect(.replace))
+                .symbolReplace()
                 .frame(width: pillWidth, height: Self.pillHeight)
                 .background(
                     // Literal white, not the accent: this pill sits on the

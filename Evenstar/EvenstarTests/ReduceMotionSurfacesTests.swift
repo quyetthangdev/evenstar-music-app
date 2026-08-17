@@ -879,6 +879,211 @@ final class TransportPressDimTests: XCTestCase {
     }
 }
 
+/// **The play/pause glyph swaps without changing size when motion is reduced.**
+///
+/// This is the hole `symbolReplace()` closes, on the pixels, in the control it
+/// mattered most for. With the setting on, tapping play/pause used to scale the
+/// glyph down to about half its height and scale the replacement back up — a
+/// scale animation on the app's most-tapped button, under the setting whose
+/// whole purpose is removing them.
+///
+/// **A version of this class was written and deleted a round earlier, and the
+/// reason it was deleted was wrong.** The justification was that no edit to
+/// `TransportButtonStyle` could make it red — true, and generalised to "no edit
+/// anywhere", which was not. Swapping the transition is such an edit, and it is
+/// the one that fixes the thing. The test earns its place now: take the branch
+/// out of `symbolReplace()` and the first of these two goes red.
+///
+/// The measurement is the glyph's row span. Ink cannot be used — a press fires
+/// `TapHalo` with the setting off and the dim takes ink away with it on —
+/// and neither moves where the glyph's edges are.
+@MainActor
+final class TransportSymbolSwapTests: XCTestCase {
+
+    private enum Harness {
+        @MainActor static var flip: (() -> Void)?
+    }
+
+    /// The label exactly as `MiniPlayerChrome` writes it, rendered through the
+    /// style that wraps it, with the press flipping in the same transaction the
+    /// symbol does — which is what a real tap does.
+    private struct Probe: View {
+        @State private var playing = false
+        @State private var pressed = false
+
+        var body: some View {
+            TransportButtonStyle.Interaction(
+                label: Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.title3)
+                    .symbolReplace()
+                    .frame(width: 32, height: 32),
+                isPressed: pressed,
+                style: .transportToggle(trigger: 0)
+            )
+            .frame(width: 60, height: 60)
+            .background(Color.white)
+            .onAppear {
+                Harness.flip = {
+                    playing.toggle()
+                    pressed = true
+                }
+            }
+        }
+    }
+
+    private var saved = false
+    private var window: UIWindow?
+    private var host: UIViewController?
+
+    override func setUp() {
+        super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() {
+        BottomBarStyle.reduceMotion = saved
+        window?.isHidden = true
+        window = nil
+        host = nil
+        Harness.flip = nil
+        super.tearDown()
+    }
+
+    /// Row span of the drawn glyph, and how much ink it is made of. The second
+    /// is only used to say the glyph *changed*.
+    private func shape() throws -> (span: Int, ink: Int) {
+        let view = try XCTUnwrap(host?.view)
+        let grab = try XCTUnwrap(
+            LivePixels.grab(view, CGSize(width: 60, height: 60)),
+            "CALayer.render produced nothing"
+        )
+        var top = Int.max
+        var bottom = -1
+        var ink = 0
+        for row in 0..<grab.height {
+            for column in 0..<grab.width {
+                let value = Int(grab.data[(row * grab.width + column) * 4 + 1])
+                ink += 255 - value
+                if value < 200 {
+                    top = min(top, row)
+                    bottom = max(bottom, row)
+                }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(bottom, 0, "no glyph was drawn at all")
+        return (bottom - top, ink)
+    }
+
+    private func tap(reduceMotion: Bool) throws -> (rest: Int, trough: Int, changed: Bool) {
+        window?.isHidden = true
+        BottomBarStyle.reduceMotion = reduceMotion
+        Harness.flip = nil
+        let (window, host) = LivePixels.host(Probe())
+        self.window = window
+        self.host = host
+
+        LivePixels.pump(0.5)
+        let before = try shape()
+
+        let flip = try XCTUnwrap(Harness.flip)
+        flip()
+        var spans: [Int] = []
+        for _ in 0..<40 {
+            LivePixels.pump(0.01)
+            spans.append(try shape().span)
+        }
+        LivePixels.pump(0.6)
+        let after = try shape()
+
+        // "The glyph changed" is measured against a `pause.fill` being visibly
+        // more ink than a `play.fill` — 15% more, measured. This is the anchor:
+        // a harness that had stopped flipping anything would satisfy every
+        // other assertion in this class trivially.
+        let changed = abs(after.ink - before.ink) > before.ink / 20
+        return (before.span, try XCTUnwrap(spans.min()), changed)
+    }
+
+    /// **Reduced: the glyph never changes size**, and it still becomes the other
+    /// glyph.
+    func testTheGlyphSwapsWithoutScalingWhenMotionIsReduced() throws {
+        let (rest, trough, changed) = try tap(reduceMotion: true)
+
+        XCTAssertTrue(changed, "the symbol never actually swapped")
+        XCTAssertEqual(
+            trough, rest,
+            "the glyph still scaled: \(trough) rows at its smallest against \(rest) at rest"
+        )
+    }
+
+    /// **Full: it still scales, exactly as it always has.** The mode that was to
+    /// stay untouched, and the half that says the probe can see a scaling glyph
+    /// at all.
+    func testTheGlyphStillScalesWithTheSettingOff() throws {
+        let (rest, trough, changed) = try tap(reduceMotion: false)
+
+        XCTAssertTrue(changed, "the symbol never actually swapped")
+        XCTAssertLessThanOrEqual(
+            trough, rest - 4,
+            "the replace effect stopped scaling with Reduce Motion off: \(trough) against \(rest)"
+        )
+    }
+}
+
+/// **Every symbol swap in the app goes through `symbolReplace()`.**
+///
+/// One mechanism is only one mechanism while nothing bypasses it, and a bypass
+/// is invisible: a bare `.contentTransition(.symbolEffect(.replace))` compiles,
+/// looks ordinary, and reintroduces the scale on one control. Six sites plus the
+/// demo were converted; this is what stops the eighth from being written.
+///
+/// It reads the source rather than the running app, which is unusual here and is
+/// the point — the claim is about code that exists, not about one view's pixels.
+@MainActor
+final class SymbolReplaceCoverageTests: XCTestCase {
+
+    func testNoProductionSiteCallsTheReplaceTransitionDirectly() throws {
+        // …/Evenstar/EvenstarTests/ThisFile.swift → …/Evenstar/Evenstar
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Evenstar")
+
+        let files = try XCTUnwrap(
+            FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil),
+            "could not walk \(app.path)"
+        )
+        .compactMap { $0 as? URL }
+        .filter { $0.pathExtension == "swift" }
+
+        // The walk found the app at all. Without this the loop below is a loop
+        // over nothing and passes for the wrong reason.
+        XCTAssertGreaterThan(files.count, 20, "only found \(files.count) source files under \(app.path)")
+
+        var offenders: [String] = []
+        var adopters = 0
+        for file in files {
+            // Comment lines are dropped first, and that is not tidiness: the
+            // helper's own doc quotes the call it replaces, and `BottomBarStyle`
+            // would otherwise report itself. Excluding the file instead would
+            // leave the one file that *can* write this call unwatched.
+            let code = try String(contentsOf: file, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+                .joined(separator: "\n")
+
+            if code.contains(".contentTransition(.symbolEffect(") {
+                offenders.append(file.lastPathComponent)
+            }
+            if code.contains(".symbolReplace()") { adopters += 1 }
+        }
+
+        XCTAssertEqual(offenders, [], "these call the replace transition directly instead of symbolReplace()")
+        // The helper is actually in use, so "no offenders" cannot be satisfied
+        // by there being no symbol swaps left in the app.
+        XCTAssertGreaterThanOrEqual(adopters, 6, "only \(adopters) files call symbolReplace()")
+    }
+}
+
 /// **A `.symbolEffect(.replace)` content transition does not read the
 /// transaction it happens in.** SF Symbols times it; nothing around it can.
 ///
@@ -892,25 +1097,35 @@ final class TransportPressDimTests: XCTestCase {
 /// shipped, and Reduce Motion would gain a scale-based symbol effect through the
 /// change meant to remove scale.
 ///
-/// **This is deliberately not a test of Evenstar's code, and it cannot be made
-/// red by changing any.** That is the finding, not a shortcut around one: a test
-/// asserting "the press does not retime the swap" would be green against every
-/// possible edit to `TransportButtonStyle`, which is exactly the kind this plan
-/// has already shipped twice. What *can* go red is the platform assumption
-/// underneath, and that is what is written down here. If a future iOS starts
-/// letting the surrounding transaction drive the effect, this fails and the note
-/// at the `.animation` call site stops being true on the same day.
+/// **Not a test of Evenstar's code.** It is the platform assumption `symbolReplace()`
+/// and the note at `TransportButtonStyle`'s `.animation` both rest on. If a
+/// future iOS lets the surrounding transaction drive the effect, this fails and
+/// those two stop being true on the same day.
 ///
-/// Three runs of one swap: with no animation anywhere, inside a 1.2s
-/// `withAnimation`, and under a 1.2s `.transaction` on an ancestor. The
-/// measurement is the glyph's row span, which the effect collapses to about half
-/// and restores — 15 rows at rest, 7 at the trough, and the trough on frame 21
-/// of a 10ms sampling in all three. A 1.2s retiming would put the trough past
-/// frame 60.
+/// **Two claims, and an earlier version of this file only had the first — then
+/// stated it as if it were both.** The curve cannot reach the effect; the
+/// off-switch can. Writing "no ancestor reaches it" was wrong, and it was wrong
+/// in the direction that mattered, because `disablesAnimations` reaching it is
+/// what makes the scale closable at all.
+///
+/// Five runs of one swap. The measurement is the glyph's row span, which the
+/// effect collapses to about half and restores — 15 rows at rest, 7 at the
+/// trough, on frame 20-21 of a 10ms sampling:
+///
+///   - `bare` — nothing around it.
+///   - `withAnimation` — a 1.2s `withAnimation` around the state change.
+///   - `ancestorTransaction` — a 1.2s `.transaction` above the image.
+///   - `disabled` — `.transaction { $0.disablesAnimations = true }` above it.
+///   - `opacityTransition` — `.contentTransition(.opacity)`, which is the
+///     branch `symbolReplace()` takes when motion is reduced.
+///
+/// The first three have to agree: a 1.2s retiming would put the trough past
+/// frame 60. The last two have to *not* collapse at all — span 15 throughout —
+/// which is the half that says the fix has something to act on.
 @MainActor
 final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
 
-    enum Drive { case bare, withAnimation, ancestorTransaction }
+    enum Drive { case bare, withAnimation, ancestorTransaction, disabled, opacityTransition }
 
     private enum Harness {
         @MainActor static var flip: (() -> Void)?
@@ -926,7 +1141,9 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
         var body: some View {
             Image(systemName: playing ? "pause.fill" : "play.fill")
                 .font(.title3)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(
+                    drive == .opacityTransition ? .opacity : .symbolEffect(.replace)
+                )
                 .frame(width: 32, height: 32)
                 .modifier(Ancestor(drive: drive))
                 .frame(width: 60, height: 60)
@@ -951,9 +1168,12 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
 
         @ViewBuilder
         func body(content: Content) -> some View {
-            if drive == .ancestorTransaction {
+            switch drive {
+            case .ancestorTransaction:
                 content.transaction { $0.animation = .easeInOut(duration: 1.2) }
-            } else {
+            case .disabled:
+                content.transaction { $0.disablesAnimations = true }
+            default:
                 content
             }
         }
@@ -1013,14 +1233,18 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
         return (rest, trough, try XCTUnwrap(spans.firstIndex(of: trough)))
     }
 
+    /// **The curve cannot reach it.**
     func testTheReplaceEffectIgnoresBothWithAnimationAndAnAncestorTransaction() throws {
         let bare = try swap(.bare)
         let animated = try swap(.withAnimation)
         let transacted = try swap(.ancestorTransaction)
 
-        // It runs at all, and it is a *collapse* — otherwise the three
-        // comparisons below are three readings of a glyph that never moved.
-        XCTAssertEqual(bare.rest, 15)
+        // It runs at all, and it is a *collapse* — otherwise the comparisons
+        // below are readings of a glyph that never moved. A range rather than
+        // `== 15`: the rest height is a `.title3` glyph rendered by SF Symbols,
+        // and neither is this file's to promise. What matters is that it is a
+        // couple of dozen rows and that the effect halves it.
+        XCTAssertTrue((10...24).contains(bare.rest), "unexpected resting height \(bare.rest)")
         XCTAssertGreaterThanOrEqual(bare.rest - bare.trough, 4, "the symbol never collapsed")
 
         for (name, other) in [("withAnimation", animated), ("ancestorTransaction", transacted)] {
@@ -1031,6 +1255,31 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
             XCTAssertLessThanOrEqual(
                 abs(bare.frame - other.frame), 3,
                 "\(name) retimed the effect: bottomed out on frame \(other.frame) against \(bare.frame)"
+            )
+        }
+    }
+
+    /// **The off-switch can, and so can replacing the transition** — the two
+    /// routes to taking the scale out, and the half the first version of this
+    /// class was missing.
+    ///
+    /// `symbolReplace()` takes the second. The first is recorded because it is
+    /// the reason the absolute in the old comment was wrong, and because it is
+    /// the fallback if a transition ever has to stay `.symbolEffect`.
+    func testTheEffectIsSuppressedByDisablingAnimationsAndByAnOpacityTransition() throws {
+        let bare = try swap(.bare)
+        let disabled = try swap(.disabled)
+        let opacity = try swap(.opacityTransition)
+
+        XCTAssertGreaterThanOrEqual(
+            bare.rest - bare.trough, 4,
+            "the symbol never collapsed even bare; there is nothing to suppress"
+        )
+
+        for (name, other) in [("disablesAnimations", disabled), ("opacity transition", opacity)] {
+            XCTAssertEqual(
+                other.trough, other.rest,
+                "\(name) still collapsed the glyph, to \(other.trough) from \(other.rest)"
             )
         }
     }

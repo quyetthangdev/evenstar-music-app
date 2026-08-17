@@ -904,7 +904,11 @@ struct FloatingTabBar: View {
                 .font(.system(size: Self.symbolSize))
                 // The one glyph that changes meaning mid-animation, so it
                 // swaps on the same curve as the bar rather than popping.
-                .contentTransition(.symbolEffect(.replace))
+                //
+                // `symbolReplace()`, not `.contentTransition` directly: the
+                // replace effect scales the glyph, and no `Animation` this bar
+                // passes it can take that out. See the helper.
+                .symbolReplace()
                 .foregroundStyle(Self.tint(isCurrent: selection == .search))
                 .animation(BottomBarStyle.control, value: selection)
                 .frame(width: barHeight, height: barHeight)

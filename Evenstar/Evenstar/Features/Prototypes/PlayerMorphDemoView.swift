@@ -748,7 +748,7 @@ struct PlayerMorphDemoView: View {
 
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.title3)
-                .contentTransition(.symbolEffect(.replace))
+                .symbolReplace()
                 .frame(width: DemoMetrics.miniButton, height: DemoMetrics.miniButton)
                 .contentShape(Rectangle())
                 .onTapGesture { isPlaying.toggle() }
@@ -825,7 +825,7 @@ struct PlayerMorphDemoView: View {
                     .frame(width: DemoMetrics.transportGlyph, height: DemoMetrics.transportGlyph)
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 38))
-                    .contentTransition(.symbolEffect(.replace))
+                    .symbolReplace()
                     .frame(width: DemoMetrics.transportGlyph, height: DemoMetrics.transportGlyph)
                     .contentShape(Rectangle())
                     .onTapGesture { isPlaying.toggle() }

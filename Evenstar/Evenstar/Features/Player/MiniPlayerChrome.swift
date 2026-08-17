@@ -100,7 +100,7 @@ struct MiniPlayerChrome: View {
                 } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title3)
-                        .contentTransition(.symbolEffect(.replace))
+                        .symbolReplace()
                         .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.transportToggle(trigger: playPauseTaps))
