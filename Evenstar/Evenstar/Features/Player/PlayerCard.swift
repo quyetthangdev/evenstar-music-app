@@ -2294,6 +2294,69 @@ struct PlayerCard: View {
         let shapeProgress: Double
     }
 
+    /// Ở `progress` nào thì bề rộng tấm bìa **đuổi kịp** bề rộng thẻ, trên
+    /// đường `fullBleed == true`.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO CẦN CÓ NÓ
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Thẻ và bìa không xuất phát từ cùng một chỗ. Lề thu gọn chỉ là
+    /// `collapsedSideMargin` (21pt, hoặc `minimisedPlayerInset` khi thu nhỏ)
+    /// mỗi bên, nên **thẻ đã rộng ~92% ngay ở `progress == 0`**, trong khi bìa
+    /// bò lên từ `collapsedArtwork` — 36pt. Hai đường tuyến tính, hai điểm
+    /// xuất phát cách nhau xa như thế thì suốt gần cả hành trình còn một dải
+    /// hở bên phải mà bìa không phủ tới. Đo trên video bản Release, iPhone
+    /// 390pt: ở `progress` 0,69 thẻ rộng 380 còn bìa 273 — phủ **72%**, dải hở
+    /// 107pt, và chữ của danh sách phía dưới đọc được xuyên qua đó năm dòng.
+    /// Không phải khung rơi: 15 cú mở/đóng, 0 khung rơi. Là số học.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// CÁI BẪY — `width` VÀ `centre.x` PHẢI ĐI CÙNG MỘT ĐƯỜNG CONG
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Tăng tốc riêng `width` mà để `centre.x` chạy tuyến tính trên `progress`
+    /// là **tệ hơn hiện trạng**, không phải đỡ hơn. Ở `progress` 0,3 với thẻ
+    /// 367,6pt: tâm mới đi được tới x = 36 + (183,8 − 36)·0,3 = 80,3, còn nửa
+    /// bề rộng đã là 183,8 — dải phủ chạy từ **−103,5 tới 264,1**. Tràn trái
+    /// 103,5pt (ra ngoài mép bo của thẻ) và **vẫn hở 103,5pt bên phải**. Đúng
+    /// cái dải cũ, chỉ dịch chỗ.
+    ///
+    /// Nên `horizontalProgress` dưới kia lái **cả hai**. Khi ấy hai mép có
+    /// dạng đóng, và đó là toàn bộ chứng minh của bản sửa này — với
+    /// `queueFactor == 0`, `openWidth == cardWidth` và `openCentre.x ==
+    /// cardWidth/2`, viết `h` cho `horizontalProgress`:
+    ///
+    ///   trái  = centre.x − width/2 = collapsedArtworkInset · (1 − h)
+    ///   phải  = centre.x + width/2
+    ///         = (collapsedArtworkInset + collapsedArtwork)
+    ///           + h · (cardWidth − collapsedArtworkInset − collapsedArtwork)
+    ///
+    /// Tức trái đi 18 → 0 và phải đi 54 → `cardWidth`, **tuyến tính trên `h`,
+    /// với mọi `cardWidth`**. Hệ quả: không bao giờ tràn ra ngoài
+    /// `[0, cardWidth]`, và phủ trọn nó đúng ở `h == 1` — không sớm hơn, không
+    /// muộn hơn. `cardWidth` tự nó cũng đổi theo `progress`, và dạng đóng trên
+    /// vẫn đứng vì nó đúng ở từng giá trị `cardWidth` một.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO LÀ ⅓
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Dải bên phải **không** rỗng ở đầu hành trình: nó là chỗ ở của chrome
+    /// mini, và chrome ấy tan trên đúng cửa sổ `1 - progress * 3` — hết ở ⅓.
+    /// Nền thẻ cũng đục dần trên cùng cửa sổ ấy, `min(1, progress * 3)`. ⅓ là
+    /// ranh giới file này đã có sẵn ở hai chỗ cho cùng một ý: "viên thuốc đã
+    /// trở thành tấm thẻ". Cho bìa phủ xong đúng ở đó thì dải bên phải không
+    /// lúc nào vô chủ — chrome giữ nó tới ⅓, bìa nhận nó từ ⅓. Ba con số
+    /// thống nhất một mốc thay vì ba mốc.
+    ///
+    /// Sớm hơn thì được gì cũng phải trả bằng hình dáng: ở đúng `progress` ==
+    /// ngưỡng, bìa dẹt nhất, và tỉ lệ khung ở đó là ngưỡng 0,25 → 1,49:1;
+    /// ngưỡng ⅓ → 1,17:1. 1,17 đọc ra là một khung ảnh cắt bình thường; 1,49
+    /// bắt đầu đọc ra là một dải ngang. Muộn hơn ⅓ thì dải hở sống quá lúc
+    /// chrome đã tan hẳn — không còn gì che, và đó chính là khung 0,69 đo được.
+    ///
+    /// Đừng "đơn giản hoá" chỗ này về lại một `progress` duy nhất. Đọc lại
+    /// đoạn CÁI BẪY trước khi động vào.
+    static let artworkWidthCatchUp: Double = 1.0 / 3
+
     /// The artwork's geometry across all three states it can be in.
     ///
     /// Pure and `static` for the reason `dragOffset` and `dragThreshold` are:
@@ -2309,6 +2372,9 @@ struct PlayerCard: View {
     /// third destination the collapsed→expanded interpolation has to reach
     /// *through*, so it is applied to the expanded end before that
     /// interpolation runs.
+    ///
+    /// **Trục ngang chạy trên đường cong riêng, và nó là một bản sửa.** Xem
+    /// `artworkWidthCatchUp`.
     static func artworkGeometry(
         progress: Double,
         queueFactor: Double,
@@ -2367,14 +2433,46 @@ struct PlayerCard: View {
             y: Self.collapsedHeight / 2
         )
 
-        let width = Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * progress
+        // Trục ngang chạy trước trục dọc — xem `artworkWidthCatchUp` cho toàn
+        // bộ lý do, con số đo được và cái bẫy. `height` và `centre.y` giữ
+        // nguyên trên `progress`; chỉ `width` và `centre.x` đọc con số này, và
+        // chúng **phải** đọc cùng một con số.
+        //
+        // Hai điều kiện làm nó không chạm được vào bất cứ thứ gì đã ship:
+        //
+        //   1. **Chỉ đường `fullBleed == true`.** Đường không-bìa là khối vuông
+        //      ở giữa, và vuông là hình duy nhất morph mà không méo vì cả ba
+        //      đích đều vuông (đọc khối chú thích đầu hàm). Tách `width` khỏi
+        //      `height` ở đó là kéo giãn cái placeholder. Ở đây
+        //      `horizontalProgress == progress`, từng bit một.
+        //   2. **`queueFactor` kéo nó về lại `progress`.** Cùng thủ pháp
+        //      `openWidth`/`openCentre` ngay trên dùng: nội suy về đích hàng
+        //      đợi theo `queueFactor`. Cần thật, không phải phòng xa —
+        //      `showingQueue` chỉ tự tắt ở `progress < 0.05`, nên kéo thẻ
+        //      xuống lúc hàng đợi đang mở là cả quãng `progress` 1 → 0,05 với
+        //      `queueFactor == 1`. Ở đó đích là ô 44pt vuông trong header, và
+        //      hai trục lệch nhau sẽ biến nó thành 44×40 giữa chừng. Với
+        //      `queueFactor == 1` biểu thức này ra đúng `progress`, nên cú thu
+        //      về ô header không đổi một chút nào.
+        //
+        // Ở `progress` 0 và 1 nó ra đúng 0 và 1 với **mọi** `queueFactor`, nên
+        // hai đầu đã ship không nhúc nhích. Có test ghim cả hai.
+        let horizontalProgress: Double
+        if fullBleed {
+            let rushed = min(1, progress / Self.artworkWidthCatchUp)
+            horizontalProgress = rushed + (progress - rushed) * queueFactor
+        } else {
+            horizontalProgress = progress
+        }
+
+        let width = Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * horizontalProgress
         let height = Self.collapsedArtwork + (openHeight - Self.collapsedArtwork) * progress
 
         return ArtworkGeometry(
             width: width,
             height: height,
             centre: CGPoint(
-                x: collapsedCentre.x + (openCentre.x - collapsedCentre.x) * progress,
+                x: collapsedCentre.x + (openCentre.x - collapsedCentre.x) * horizontalProgress,
                 y: collapsedCentre.y + (openCentre.y - collapsedCentre.y) * progress
             ),
             shapeProgress: progress * (1 - queueFactor)

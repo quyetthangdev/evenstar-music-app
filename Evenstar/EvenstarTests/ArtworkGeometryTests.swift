@@ -165,6 +165,164 @@ final class ArtworkGeometryTests: XCTestCase {
         XCTAssertTrue(queued.shapeProgress < half.shapeProgress && half.shapeProgress < open.shapeProgress)
     }
 
+    // MARK: - Bìa phủ hết bề rộng thẻ, và phủ sớm
+
+    /// Bề rộng thẻ ở một `progress`, đúng như `card(size:insets:)` dựng nó:
+    /// lề thu gọn mỗi bên, nhân `(1 - progress)`. Ở đây để cú quét dưới không
+    /// kiểm một tình huống không có thật — trong app `cardSize.width` **đổi
+    /// theo `progress`**, nó không phải hằng số.
+    private func cardWidth(at progress: Double, sideMargin: CGFloat) -> CGFloat {
+        cardSize.width - 2 * sideMargin * (1 - progress)
+    }
+
+    /// **Bất biến bản sửa này tồn tại để tạo ra.**
+    ///
+    /// Trước đó `width` bò từ 36pt trong khi thẻ đã rộng ~92% ngay ở
+    /// `progress == 0`, nên suốt gần cả cú bung còn một dải hở bên phải và chữ
+    /// của danh sách phía dưới đọc được xuyên qua đó. Đo trên video bản
+    /// Release: ở `progress` 0,69 bìa mới phủ 72%.
+    ///
+    /// Hai nửa, và **cả hai đều cần**:
+    ///
+    ///   - Từ `artworkWidthCatchUp` trở đi, `centre.x ± width/2` phủ **trọn**
+    ///     `[0, cardWidth]`. Đây là thứ dải hở không còn sống sót qua được.
+    ///   - Trước đó, nó **không tràn** ra ngoài `[0, cardWidth]`. Đây là cái
+    ///     bẫy: tăng tốc riêng `width` mà để `centre.x` tuyến tính thì ở
+    ///     `progress` 0,3 dải phủ chạy từ −103,5 tới 264,1 — tràn trái và
+    ///     **vẫn** hở phải. Nửa trên một mình sẽ cho bản sửa hỏng ấy đi qua.
+    ///
+    /// Quét dày (bước 0,02) chứ không lấy vài điểm: ngưỡng là một chỗ gãy của
+    /// hàm, và lấy thưa thì đúng chỗ gãy là chỗ dễ nhảy qua nhất.
+    ///
+    /// Ba bề rộng lề: 21 là viên thuốc ở trạng thái nghỉ, 76 là lúc thu nhỏ
+    /// (thẻ hẹp hơn nhiều), 0 là biên. Dạng đóng của hai mép không phụ thuộc
+    /// `cardWidth`, và ba giá trị này là cách nói điều đó ra thành số.
+    func testTheFullBleedCoverOwnsTheWholeCardWidthFromTheCatchUpOnward() {
+        for sideMargin: CGFloat in [0, 21, 76] {
+            for step in stride(from: 0, through: 50, by: 1) {
+                let progress = Double(step) / 50
+                let width = cardWidth(at: progress, sideMargin: sideMargin)
+                let g = PlayerCard.artworkGeometry(
+                    progress: progress,
+                    queueFactor: 0,
+                    cardSize: CGSize(width: width, height: cardSize.height),
+                    fullBleed: true,
+                    artworkSide: artworkSide,
+                    artworkTop: artworkTop,
+                    queueThumbCentre: thumbCentre,
+                    queueThumbSide: thumbSide
+                )
+                let leading = g.centre.x - g.width / 2
+                let trailing = g.centre.x + g.width / 2
+                let where_ = "lề \(sideMargin), progress \(progress)"
+
+                XCTAssertGreaterThanOrEqual(
+                    leading, -0.001,
+                    "tràn trái \(-leading)pt ra ngoài mép thẻ — \(where_)"
+                )
+                XCTAssertLessThanOrEqual(
+                    trailing, width + 0.001,
+                    "tràn phải \(trailing - width)pt ra ngoài mép thẻ — \(where_)"
+                )
+
+                guard progress >= PlayerCard.artworkWidthCatchUp else { continue }
+                XCTAssertLessThanOrEqual(
+                    leading, 0.001,
+                    "hở \(leading)pt bên trái — \(where_)"
+                )
+                XCTAssertGreaterThanOrEqual(
+                    trailing, width - 0.001,
+                    "hở \(width - trailing)pt bên phải — \(where_)"
+                )
+            }
+        }
+    }
+
+    /// Ngưỡng ⅓ không phải một con số gõ đại: nó là **cùng mốc** mà chrome mini
+    /// tan trên (`1 - progress * 3`, hết ở ⅓) và nền thẻ đục trên
+    /// (`min(1, progress * 3)`, đầy ở ⅓). Dải bên phải là chỗ ở của chrome mini
+    /// tới ⅓ và của tấm bìa từ ⅓ — không lúc nào vô chủ.
+    ///
+    /// Ghim ở đây vì ba con số ấy nằm ở ba chỗ khác nhau trong `PlayerCard` và
+    /// không có gì bắt chúng đồng ý với nhau. Nếu ai đó đổi cửa sổ `* 3` kia,
+    /// dòng này là chỗ duy nhất nói rằng ngưỡng phải đi theo.
+    func testTheCatchUpLandsOnTheSameThirdTheChromeFadeUses() {
+        XCTAssertEqual(PlayerCard.artworkWidthCatchUp, 1.0 / 3, accuracy: 0.0001)
+    }
+
+    /// **Đường không-bìa không đổi một chút nào** — người dùng đã đo trên máy
+    /// thật là nó mượt, và bản sửa trước bị revert vì đụng vào thứ đang chạy
+    /// được.
+    ///
+    /// Chứng minh bằng số chứ không bằng lời: `width` và `centre.x` ở đường này
+    /// phải khớp **dạng đóng tuyến tính trên `progress`** — đúng biểu thức có
+    /// trước bản sửa — chứ không chỉ "vuông". Vuông một mình là chưa đủ: một
+    /// `horizontalProgress` rò vào cả `width` lẫn `height` vẫn vuông mà đã đi
+    /// sai đường.
+    func testTheArtworklessPathStillRunsStraightOnProgress() {
+        for step in stride(from: 0, through: 50, by: 1) {
+            let progress = Double(step) / 50
+            let g = geometry(progress: progress, queueFactor: 0, fullBleed: false)
+
+            XCTAssertEqual(
+                g.width, 36 + (artworkSide - 36) * progress,
+                accuracy: 0.001, "width ở progress \(progress)"
+            )
+            XCTAssertEqual(g.height, g.width, accuracy: 0.001,
+                           "vuông ở progress \(progress)")
+            XCTAssertEqual(
+                g.centre.x, 36 + (cardSize.width / 2 - 36) * progress,
+                accuracy: 0.001, "centre.x ở progress \(progress)"
+            )
+        }
+    }
+
+    /// **Đường hàng đợi không đổi một chút nào**, kể cả ở những `progress` giữa
+    /// chừng — và những `progress` ấy có thật.
+    ///
+    /// `showingQueue` chỉ tự tắt ở `progress < 0.05`, nên kéo thẻ xuống trong
+    /// lúc hàng đợi đang mở là cả quãng 1 → 0,05 với `queueFactor == 1`. Đích ở
+    /// đó là ô 44pt **vuông** trong header; để trục ngang chạy nhanh hơn trục
+    /// dọc ở quãng ấy là bóp nó thành 44×40 giữa chừng.
+    ///
+    /// Ghim dạng đóng tuyến tính, cùng lý do như đường không-bìa ở trên.
+    func testTheQueueSlotJourneyStillRunsStraightOnProgress() {
+        for step in stride(from: 0, through: 50, by: 1) {
+            let progress = Double(step) / 50
+            let g = geometry(progress: progress, queueFactor: 1, fullBleed: true)
+
+            XCTAssertEqual(
+                g.width, 36 + (thumbSide - 36) * progress,
+                accuracy: 0.001, "width ở progress \(progress)"
+            )
+            XCTAssertEqual(g.height, g.width, accuracy: 0.001,
+                           "ô header vuông ở progress \(progress)")
+            XCTAssertEqual(
+                g.centre.x, 36 + (thumbCentre.x - 36) * progress,
+                accuracy: 0.001, "centre.x ở progress \(progress)"
+            )
+        }
+    }
+
+    /// Hai đầu đã ship, trên đường tràn màn hình, ở **mọi** `queueFactor` — đây
+    /// là đường duy nhất bản sửa chạm vào, nên nó phải chịu đúng cái ràng buộc
+    /// mà `testTheCollapsedPillIsUnchangedByTheQueueFactor` đặt lên đường kia.
+    func testTheFullBleedEndsAreWhereTheyAlwaysWere() {
+        for factor in stride(from: 0.0, through: 1.0, by: 0.25) {
+            let collapsed = geometry(progress: 0, queueFactor: factor, fullBleed: true)
+            XCTAssertEqual(collapsed.width, 36, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.height, 36, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.centre.x, 36, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.centre.y, 27, accuracy: 0.001, "queueFactor \(factor)")
+        }
+
+        let open = geometry(progress: 1, queueFactor: 0, fullBleed: true)
+        XCTAssertEqual(open.width, cardSize.width, accuracy: 0.001)
+        XCTAssertEqual(open.height, cardSize.height, accuracy: 0.001)
+        XCTAssertEqual(open.centre.x, cardSize.width / 2, accuracy: 0.001)
+        XCTAssertEqual(open.centre.y, cardSize.height / 2, accuracy: 0.001)
+    }
+
     // MARK: - The wiring between the destination point and the panel's own padding
 
     /// `queueThumbCentre(topInset:)` computes the point the artwork flies to;
