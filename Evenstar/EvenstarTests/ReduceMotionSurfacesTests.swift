@@ -915,6 +915,9 @@ final class TransportSymbolSwapTests: XCTestCase {
 
     private enum Harness {
         @MainActor static var flip: (() -> Void)?
+        /// Lifts the finger. See `tap(reduceMotion:)` for why the anchor needs
+        /// this and never worked without it.
+        @MainActor static var release: (() -> Void)?
     }
 
     /// The label exactly as `MiniPlayerChrome` writes it, rendered through the
@@ -940,6 +943,7 @@ final class TransportSymbolSwapTests: XCTestCase {
                     playing.toggle()
                     pressed = true
                 }
+                Harness.release = { pressed = false }
             }
         }
     }
@@ -959,6 +963,7 @@ final class TransportSymbolSwapTests: XCTestCase {
         window = nil
         host = nil
         Harness.flip = nil
+        Harness.release = nil
         try await super.tearDown()
     }
 
@@ -991,6 +996,7 @@ final class TransportSymbolSwapTests: XCTestCase {
         window?.isHidden = true
         BottomBarStyle.reduceMotion = reduceMotion
         Harness.flip = nil
+        Harness.release = nil
         let (window, host) = LivePixels.host(Probe())
         self.window = window
         self.host = host
@@ -1005,6 +1011,29 @@ final class TransportSymbolSwapTests: XCTestCase {
             LivePixels.pump(0.01)
             spans.append(try shape().span)
         }
+
+        // **The finger comes off before `after` is read, and the anchor below
+        // is worthless without it.**
+        //
+        // `flip()` does two things, because a real tap does two things: it
+        // swaps the symbol *and* holds the button down. Holding it down is what
+        // the span measurement above needs — the scale it is watching for
+        // happens under the finger.
+        //
+        // But `after` was being read with the finger still down, and in the
+        // reduced mode a held press is `pressedOpacity` = 0.45 over the whole
+        // glyph. That dim alone moves ink by far more than the 5% the anchor
+        // asks for, so the anchor answered "yes, it changed" whether or not any
+        // symbol had swapped. Proven, not suspected: deleting `playing.toggle()`
+        // from the harness — so no swap happens anywhere — left the reduced test
+        // **green**. The guard written to catch a harness that had stopped
+        // flipping anything was the one thing in the class that could not catch
+        // it.
+        //
+        // Released and settled, both readings are the same button in the same
+        // resting state, and the only thing left that can move ink is which
+        // glyph is drawn.
+        try XCTUnwrap(Harness.release)()
         LivePixels.pump(0.6)
         let after = try shape()
 
@@ -1046,13 +1075,119 @@ final class TransportSymbolSwapTests: XCTestCase {
 ///
 /// One mechanism is only one mechanism while nothing bypasses it, and a bypass
 /// is invisible: a bare `.contentTransition(.symbolEffect(.replace))` compiles,
-/// looks ordinary, and reintroduces the scale on one control. Six sites plus the
-/// demo were converted; this is what stops the eighth from being written.
+/// looks ordinary, and reintroduces the scale on one control. **Five production
+/// sites in five files, plus two in the one demo file** — seven sites across six
+/// files — were converted; this is what stops the eighth from being written.
 ///
 /// It reads the source rather than the running app, which is unusual here and is
 /// the point — the claim is about code that exists, not about one view's pixels.
+///
+/// **Reading it with `contains(".contentTransition(.symbolEffect(")` was not
+/// enough, and the ways it was not enough are all ordinary.** Each of these
+/// compiles, reintroduces the scale, and got past that check:
+///
+/// ```swift
+/// .contentTransition(
+///     .symbolEffect(.replace)
+/// )
+/// .contentTransition( .symbolEffect(.replace) )
+/// .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+/// ```
+///
+/// The third is the worst of the three and the likeliest to be written: it is
+/// the per-site duplicated branch `symbolReplace()` exists to prevent, and it is
+/// **the exact form `symbolReplace()` itself is written in** at
+/// `BottomBarStyle.swift`, so it is what copy-pasting the helper's own body
+/// produces.
+///
+/// So the check balances parentheses instead of matching a spelling: any
+/// `.contentTransition(…)` whose argument mentions `symbolEffect` anywhere is an
+/// offender, however it is laid out. `symbolReplace()`'s own body is spelled
+/// `contentTransition(` with no leading dot — it is a method on `View`, called
+/// on `self` — so the one file allowed to write this call still does not report
+/// itself, and it is not excluded by name.
 @MainActor
 final class SymbolReplaceCoverageTests: XCTestCase {
+
+    /// True when `code` contains a `.contentTransition(…)` whose argument
+    /// mentions `symbolEffect`.
+    ///
+    /// A paren balance rather than a regex: the argument can itself contain
+    /// parentheses (`.symbolEffect(.replace)` has two levels, and a ternary adds
+    /// no closing bracket to anchor on), and a regex that handles one nesting
+    /// depth is a regex that a second one gets past — which is the whole reason
+    /// this function exists at all.
+    ///
+    /// It answers about the *argument*, not the whole line, so a `symbolEffect`
+    /// used as a plain `.symbolEffect(.bounce)` modifier somewhere else on the
+    /// same chain is not swept up. That modifier is a different thing: it plays
+    /// an effect on a symbol that is not changing, and nothing in this branch
+    /// touches it.
+    private func callsReplaceTransitionDirectly(_ code: String) -> Bool {
+        var search = code.startIndex
+        while let hit = code.range(of: ".contentTransition", range: search..<code.endIndex) {
+            search = hit.upperBound
+
+            // Swift lets a space sit between the name and its `(`, and that
+            // spelling was one of the ones that got through before.
+            var open = hit.upperBound
+            while open < code.endIndex, code[open].isWhitespace {
+                open = code.index(after: open)
+            }
+            guard open < code.endIndex, code[open] == "(" else { continue }
+
+            var depth = 0
+            var argument = ""
+            var i = open
+            while i < code.endIndex {
+                let character = code[i]
+                if character == "(" {
+                    depth += 1
+                } else if character == ")" {
+                    depth -= 1
+                    if depth == 0 { break }
+                }
+                argument.append(character)
+                i = code.index(after: i)
+            }
+
+            if argument.contains("symbolEffect") { return true }
+        }
+        return false
+    }
+
+    /// **The detector can fail.**
+    ///
+    /// Without this the walk below is a walk with no detector in it, and it
+    /// passes for exactly the reason the old `contains` check passed: nothing
+    /// it looks for is ever there. The four positives are the four real
+    /// spellings that got past that check; the two negatives are the two shapes
+    /// that must keep not tripping it, one of them `symbolReplace()`'s own body.
+    func testTheBypassDetectorCatchesEverySpellingThatCompiles() {
+        let bypasses = [
+            ".contentTransition(.symbolEffect(.replace))",
+            ".contentTransition(\n    .symbolEffect(.replace)\n)",
+            ".contentTransition( .symbolEffect(.replace) )",
+            ".contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))"
+        ]
+        for bypass in bypasses {
+            XCTAssertTrue(
+                callsReplaceTransitionDirectly(bypass),
+                "this bypass compiles and would go unseen:\n\(bypass)"
+            )
+        }
+
+        XCTAssertFalse(
+            callsReplaceTransitionDirectly(
+                "contentTransition(BottomBarStyle.reduceMotion ? .opacity : .symbolEffect(.replace))"
+            ),
+            "symbolReplace()'s own body must not report itself"
+        )
+        XCTAssertFalse(
+            callsReplaceTransitionDirectly(".contentTransition(.numericText()).symbolEffect(.bounce)"),
+            "a content transition that is not the symbol one, next to an unrelated symbol effect"
+        )
+    }
 
     func testNoProductionSiteCallsTheReplaceTransitionDirectly() throws {
         // …/Evenstar/EvenstarTests/ThisFile.swift → …/Evenstar/Evenstar
@@ -1084,7 +1219,7 @@ final class SymbolReplaceCoverageTests: XCTestCase {
                 .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
                 .joined(separator: "\n")
 
-            if code.contains(".contentTransition(.symbolEffect(") {
+            if callsReplaceTransitionDirectly(code) {
                 offenders.append(file.lastPathComponent)
             }
             if code.contains(".symbolReplace()") { adopters += 1 }
@@ -1093,6 +1228,11 @@ final class SymbolReplaceCoverageTests: XCTestCase {
         XCTAssertEqual(offenders, [], "these call the replace transition directly instead of symbolReplace()")
         // The helper is actually in use, so "no offenders" cannot be satisfied
         // by there being no symbol swaps left in the app.
+        //
+        // Six *files*, not six sites: five production files with one call each,
+        // and the demo file with two. `adopters` counts files, because a file
+        // that stopped calling the helper is the shape of regression this is
+        // watching for.
         XCTAssertGreaterThanOrEqual(adopters, 6, "only \(adopters) files call symbolReplace()")
     }
 }
@@ -1135,6 +1275,32 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 /// The first three have to agree: a 1.2s retiming would put the trough past
 /// frame 60. The last two have to *not* collapse at all — span 15 throughout —
 /// which is the half that says the fix has something to act on.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// THE ±3 FRAME BUDGET IS KNOWN-TIGHT. READ THIS BEFORE TRUSTING A GREEN RUN.
+/// ─────────────────────────────────────────────────────────────────────────
+/// The comparison is index-based: it asks which *sample* the trough landed on,
+/// and allows the five runs to differ by ±3. That budget is **one sample above
+/// the drift this harness shows on its own** — trough index moves by as much as
+/// 2 across same-configuration runs on the same machine, with nothing changed
+/// between them. So ±3 leaves roughly one sample of headroom, which at 10ms
+/// sampling means a real retiming of ±30–36ms could pass here unremarked.
+///
+/// That matters more than a loose budget usually would, because this class is
+/// the **sole** evidence for a claim quoted in three production comments —
+/// `BottomBarStyle.symbolReplace()`, `TransportButtonStyle.Interaction.body`,
+/// and `TransportSymbolSwapTests` — all of which say, on this test's authority,
+/// that an ancestor's animation cannot reach a symbol replace transition. A
+/// green run here is good evidence that the effect is not being retimed by
+/// *seconds*, which is what the 1.2s drives are testing and what the claim
+/// actually rests on. It is weak evidence about tens of milliseconds.
+///
+/// Left as it is, deliberately, and this note is the alternative to a bad fix.
+/// Tightening the budget makes the class flaky; the real repair is to stop
+/// comparing sample indices and compare elapsed *time* to the trough, measured
+/// against a clock rather than against a pump count — which is a rewrite of the
+/// harness, not a number change, and belongs to its own round. Until then:
+/// treat a green run as ruling out a large retiming, not a small one.
 @MainActor
 final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
 
@@ -1598,5 +1764,265 @@ final class ReorderReducedMotionTests: XCTestCase {
 
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(answers(), expected)
+    }
+}
+
+/// **With Reduce Motion off, the disabled tint still switches instantly.**
+///
+/// `Interaction.body` gained an `.animation(_:value: isPressed)` on this branch,
+/// for the press dim. Its scope is the whole label, and `.foregroundStyle(isEnabled
+/// ? .primary : .tertiary)` is inside that scope — so a change of `isEnabled`
+/// arriving in the same update as a change of `isPressed` gets carried along on
+/// `dimReturn`'s 0.20s.
+///
+/// That is not a hypothetical pairing, it is the ordinary one: tapping Next onto
+/// the last track lifts the finger (`isPressed` → false) and runs the command
+/// (`canGoNext` → false, so `isEnabled` → false) in one turn. Pre-branch the tint
+/// switched in a frame. **Behaviour with the setting off was to be identical to
+/// before the branch**, and a 0.20s tint fade is not identical.
+///
+/// **Measured with the setting off, and only there, deliberately.** With it on,
+/// `pressedOpacity` is 0.45 and lifting the finger *is* meant to animate the glyph
+/// back to full over `dimReturn` — a value that legitimately travels, which would
+/// drown out the thing being measured. Off, `pressedOpacity` is 1, so the press
+/// draws nothing at all and the only thing left that can move the pixel is the
+/// tint.
+@MainActor
+final class TransportDisabledTintTests: XCTestCase {
+
+    private enum Harness {
+        @MainActor static var down: (() -> Void)?
+        @MainActor static var up: (() -> Void)?
+    }
+
+    private struct Probe: View {
+        @State private var enabled = true
+        @State private var pressed = false
+
+        var body: some View {
+            // A bare `Rectangle()` and not a `Color`: an unfilled shape paints
+            // itself with the current foreground style, which is the one thing
+            // this test is looking at. `Color.blue` — what the sibling press-dim
+            // probe uses — carries its own fill and would ignore the tint
+            // entirely.
+            //
+            // `trigger: 0` for the life of the probe, so nothing here came from
+            // the kick.
+            TransportButtonStyle.Interaction(
+                label: Rectangle().frame(width: 20, height: 20),
+                isPressed: pressed,
+                style: .transportSkip(trigger: 0, direction: 1)
+            )
+            .disabled(!enabled)
+            .frame(width: 60, height: 40)
+            .background(Color.white)
+            .onAppear {
+                Harness.down = { pressed = true }
+                // One turn, both writes — a touch-up that also happens to be
+                // the command that disables the button. Splitting them would
+                // measure a pairing that does not occur.
+                Harness.up = {
+                    pressed = false
+                    enabled = false
+                }
+            }
+        }
+    }
+
+    private var saved = false
+    private var window: UIWindow?
+    private var host: UIViewController?
+
+    override func setUp() async throws {
+        try await super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() async throws {
+        BottomBarStyle.reduceMotion = saved
+        window?.isHidden = true
+        window = nil
+        host = nil
+        Harness.down = nil
+        Harness.up = nil
+        try await super.tearDown()
+    }
+
+    /// How dark the block's centre is: 255 for solid ink, 0 for white.
+    private func centre() throws -> Int {
+        let view = try XCTUnwrap(host?.view)
+        let grab = try XCTUnwrap(
+            LivePixels.grab(view, CGSize(width: 60, height: 40)),
+            "CALayer.render produced nothing"
+        )
+        return 255 - Int(grab.data[(20 * grab.width + 30) * 4 + 1])
+    }
+
+    func testTheDisabledTintArrivesInOneFrameWithTheSettingOff() throws {
+        BottomBarStyle.reduceMotion = false
+        Harness.down = nil
+        Harness.up = nil
+        let (window, host) = LivePixels.host(Probe())
+        self.window = window
+        self.host = host
+
+        LivePixels.pump(0.5)
+        let whileEnabled = try centre()
+
+        // Pressed and left to settle before the interesting moment, so the halo
+        // this touch-down fires has expired and cannot be mistaken for the tint
+        // moving. The halo is keyed on touch-*down* only, so lifting the finger
+        // below fires no second one.
+        try XCTUnwrap(Harness.down)()
+        LivePixels.pump(0.6)
+
+        try XCTUnwrap(Harness.up)()
+        var samples: [Int] = []
+        for _ in 0..<25 {
+            LivePixels.pump(0.01)
+            samples.append(try centre())
+        }
+        LivePixels.pump(0.6)
+        let settled = try centre()
+
+        // The anchor. Without it, a probe drawing nothing, or drawing the same
+        // grey in both states, satisfies the real assertion trivially — every
+        // sample would sit on top of a `settled` that means nothing.
+        let gap = abs(whileEnabled - settled)
+        XCTAssertGreaterThan(
+            gap, 40,
+            "the probe cannot tell the two tints apart: \(whileEnabled) enabled against \(settled) disabled"
+        )
+
+        // Every sample from the first frame after the lift onwards is already at
+        // the disabled value. A fade would put the early ones up near
+        // `whileEnabled` and walk them down; `dimReturn` is 0.20s, so 25 frames
+        // covers the whole of it with room to spare.
+        let worst = samples.map { abs($0 - settled) }.max() ?? 0
+        XCTAssertLessThanOrEqual(
+            worst, gap / 10,
+            "the disabled tint faded in instead of switching: \(samples) settling at \(settled)"
+        )
+    }
+}
+
+/// **The queue transition: every distance goes, and the transition still
+/// happens.**
+///
+/// The single largest motion in the app, and until this round the only large one
+/// with no reduced path at all. Opening the queue shrank the full-bleed cover
+/// (~402×874) onto `QueuePanel.headerArtwork`'s 60pt slot and flew it diagonally
+/// to the top-left corner — about 6.7× horizontally and 14.6× vertically — while
+/// the title block slid several hundred points behind it. `BottomBarStyle.queue`
+/// had a flat branch the whole time; a flat branch swaps the curve and leaves
+/// the *distance* exactly where it was, which is why the reduced mode still flew.
+///
+/// Five sites carried that transition, and one of them being gated is worth
+/// nothing while the other four ride along. This pins the four that are numbers
+/// — the fifth, the cover's own flight, is removed inside
+/// `PlayerCard.setQueueFactor(to:)`, which is private to a view and reachable
+/// only by rendering one.
+///
+/// **The other half is that the transition still happens**, which is the whole
+/// difference between reducing motion and breaking a feature. The distances go
+/// to zero; nothing that makes the queue *appear* is touched, and the assertions
+/// below say so in the same breath.
+@MainActor
+final class QueueTransitionDistanceTests: XCTestCase {
+
+    private var saved = false
+
+    override func setUp() async throws {
+        try await super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() async throws {
+        BottomBarStyle.reduceMotion = saved
+        try await super.tearDown()
+    }
+
+    /// Reduced: all four distances are zero. Off: all four are the measured
+    /// numbers they have always been, which is the half that says the setting
+    /// off is untouched.
+    func testEveryDistanceInTheQueueTransitionGoesToZero() {
+        BottomBarStyle.reduceMotion = false
+        XCTAssertEqual(QueuePanel.riseDistance, 55)
+        XCTAssertEqual(QueuePanel.headerTextRise, 8)
+        XCTAssertEqual(NowPlayingContent.queueBadgeScale, 0.7)
+        XCTAssertEqual(FloatingTabBar.tabRevealScale, 0.86)
+
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(QueuePanel.riseDistance, 0)
+        XCTAssertEqual(QueuePanel.headerTextRise, 0)
+        // 1, not 0: a scale's "no distance" is unity. Asserting 0 here would
+        // pin the badge to being invisible, which is the opposite of the
+        // requirement.
+        XCTAssertEqual(NowPlayingContent.queueBadgeScale, 1)
+        XCTAssertEqual(FloatingTabBar.tabRevealScale, 1)
+    }
+
+    /// **The swap still has to happen.** Reduce Motion removes travel, scale and
+    /// bounce; it does not remove the queue.
+    ///
+    /// Two things say so here. The four fade curves that make the panel and the
+    /// two title blocks appear are identical in both modes — a fade is what HIG
+    /// asks for, so there is nothing to take out of them — and the artwork's
+    /// geometry at `queueFactor` 1 is still the header slot, unchanged, because
+    /// `artworkGeometry` is pure arithmetic on that factor and reads no flag.
+    /// The reduced path cuts the journey, not the destination.
+    func testTheQueueStillOpensAndTheArtworkStillReachesTheHeaderSlot() {
+        BottomBarStyle.reduceMotion = false
+        let fadesFull = [
+            BottomBarStyle.queueContentIn,
+            BottomBarStyle.queueContentOut,
+            BottomBarStyle.queueTitleIn,
+            BottomBarStyle.queueTitleOut
+        ]
+        let openFull = Self.artworkAtFullyOpenQueue()
+
+        BottomBarStyle.reduceMotion = true
+        let fadesReduced = [
+            BottomBarStyle.queueContentIn,
+            BottomBarStyle.queueContentOut,
+            BottomBarStyle.queueTitleIn,
+            BottomBarStyle.queueTitleOut
+        ]
+        let openReduced = Self.artworkAtFullyOpenQueue()
+
+        XCTAssertEqual(fadesFull, fadesReduced, "a fade is not travel and must survive the setting")
+        XCTAssertEqual(openFull, openReduced, "the artwork's destination changed with the setting")
+
+        // And the destination is the header slot itself, not merely the same in
+        // both modes: two equal wrong answers would satisfy the line above.
+        let slot = PlayerCard.queueThumbCentre(topInset: Self.topInset)
+        XCTAssertEqual(openReduced.width, QueuePanel.headerArtwork, accuracy: 0.001)
+        XCTAssertEqual(openReduced.height, QueuePanel.headerArtwork, accuracy: 0.001)
+        XCTAssertEqual(openReduced.centre.x, slot.x, accuracy: 0.001)
+        XCTAssertEqual(openReduced.centre.y, slot.y, accuracy: 0.001)
+        // Rounded like a thumbnail rather than squared off like a full-bleed
+        // cover — the shape half of "it arrived".
+        XCTAssertEqual(openReduced.shapeProgress, 0, accuracy: 0.001)
+    }
+
+    private static let cardSize = CGSize(width: 402, height: 874)
+    private static let topInset: CGFloat = 59
+
+    /// The artwork's geometry with the card fully expanded and the queue fully
+    /// open — the end state of the transition, in both modes.
+    private static func artworkAtFullyOpenQueue() -> PlayerCard.ArtworkGeometry {
+        PlayerCard.artworkGeometry(
+            progress: 1,
+            queueFactor: 1,
+            cardSize: cardSize,
+            fullBleed: true,
+            artworkSide: cardSize.width,
+            // 0, and it makes no difference: `artworkTop` is only read on the
+            // `fullBleed == false` path, where the expanded centre is derived
+            // from the artwork's own square. This is the full-bleed cover.
+            artworkTop: 0,
+            queueThumbCentre: PlayerCard.queueThumbCentre(topInset: topInset),
+            queueThumbSide: QueuePanel.headerArtwork
+        )
     }
 }

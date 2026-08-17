@@ -301,6 +301,42 @@ final class ReduceMotionTests: XCTestCase {
 
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(full, answers())
+
+        // **The anchor, and this test ran without one.**
+        //
+        // "The two runs agree" is satisfied by four functions that all return
+        // zero, or by three that were deleted and one that was stubbed. It says
+        // the modes match; it does not say what they match *on*. Its sibling
+        // `ReorderTuningFlatDurationTests` names this exact hole in its own doc
+        // — "comparing two production values to each other says they agree;
+        // only the literal says which number they agree on" — and then supplies
+        // the literals. These are the literals for this one.
+        //
+        // One value from each of the four functions, chosen where the arithmetic
+        // is doing something rather than passing something through:
+        XCTAssertEqual(BottomBarStyle.maxSettleVelocity, 18, accuracy: 1e-9)
+        // The collapsed card pays the full 10pt to disambiguate a tap; the open
+        // one pays 2, because the tap it protects cannot fire past 0.5.
+        XCTAssertEqual(PlayerCard.dragThreshold(progress: 0), 10)
+        XCTAssertEqual(PlayerCard.dragThreshold(progress: 1), 2)
+        // The threshold comes back out of the travel, and the clamp holds a
+        // sideways-recognised drag at 0 instead of flipping its sign.
+        XCTAssertEqual(PlayerCard.dragOffset(translationHeight: 37, threshold: 10), 27)
+        XCTAssertEqual(PlayerCard.dragOffset(translationHeight: -37, threshold: 10), -27)
+        XCTAssertEqual(PlayerCard.dragOffset(translationHeight: 2, threshold: 10), 0)
+        // 420pt/s upward over 803pt of travel is 0.523 progress/s, and the
+        // remaining distance from 0 to 1 is 1, so the spring is handed 0.523.
+        XCTAssertEqual(
+            PlayerCard.settleVelocity(verticalVelocity: -420, travel: 803, from: 0, to: 1),
+            420.0 / 803.0,
+            accuracy: 1e-9
+        )
+        // …and a flick fast enough to exceed the cap is capped, not obeyed.
+        XCTAssertEqual(
+            PlayerCard.settleVelocity(verticalVelocity: -3000, travel: 803, from: 0.95, to: 1),
+            BottomBarStyle.maxSettleVelocity,
+            accuracy: 1e-9
+        )
     }
 
     // MARK: - The fade that replaces the card's morph
@@ -619,7 +655,12 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
     /// System colours rather than pure primaries, deliberately: a pure ground
     /// has nothing in its other channels to subtract, so it cannot see the
     /// ghost a negative opacity paints. See
-    /// `testANegativeOpacityIsNotInvisibleButPaintsAnInvertedGhost`.
+    /// `testViewOpacityClampsNegativesWhereColourOpacityDoesNot`, whose
+    /// `ShapeStyle.opacity` half is the one that needs the channels.
+    ///
+    /// (This pointed at `testANegativeOpacityIsNotInvisibleButPaintsAnInvertedGhost`
+    /// until that test was removed in B3's revert. The reasoning it carried
+    /// survived into the test named above; only the name was left dangling.)
     private func pixel<Ink: View>(of ink: Ink) throws -> [Int] {
         let probe = ink
             .frame(width: 40, height: 40)
@@ -646,13 +687,25 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         return [Int(bytes[0]), Int(bytes[1]), Int(bytes[2])]
     }
 
-
     func testWithAnimationDrivesIntermediateValues() throws {
         let apply = try XCTUnwrap(Trace.apply)
         Trace.reset()
 
         apply(0, .easeInOut(duration: 0.2))
-        pump(0.3)
+        // 0.7, not 0.3, and the assertions below are untouched.
+        //
+        // This was 0.3 against a 0.2s curve — 0.1s of margin — and it flaked:
+        // roughly one run in two, `rendered.last` came back at 0.0043 instead of
+        // 0, i.e. the animation was still a hair off its target when the pump
+        // returned. `RunLoop.run(until:)` gives no guarantee about how many
+        // display links it services, so the margin has to be generous rather
+        // than tight. 0.7 is what the sibling at
+        // `testASecondFadeArrivingMidFadeIsNeverPartiallyVisible` already uses
+        // for the same reason.
+        //
+        // The two `nil`-animation cases below keep 0.3: there is no curve there
+        // to settle, and their claim is that nothing was interpolated at all.
+        pump(0.7)
 
         XCTAssertFalse(
             between(Trace.interpolated).isEmpty,
@@ -818,6 +871,17 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         )
 
         // `ShapeStyle.opacity` — the same word, a different operation.
+        //
+        // **Two assertions on one value, and they are not the same assertion.**
+        // The second is the claim — a negative alpha paints *something*, and
+        // whatever it is, it is not the ground — and it says so without naming
+        // a channel, so it survives any renderer. The first pins the exact
+        // triple, and its job is different: `[255, 0, 0]` is quoted verbatim in
+        // `PlayerCard.morph(to:curve:)`'s doc comment as a measurement, and a
+        // measurement quoted in production prose with nothing executing it is
+        // how the other findings in this round happened. Keeping only the
+        // second would leave that number unpinned; keeping only the first would
+        // make the claim hostage to a device's colour handling.
         XCTAssertEqual(try pixel(of: Color.blue.opacity(-0.915)), [255, 0, 0])
         XCTAssertNotEqual(try pixel(of: Color.blue.opacity(-0.915)), ground)
 
@@ -925,8 +989,17 @@ final class SpringSettlingEvidenceTests: XCTestCase {
         for spring in springs {
             let crossing = samples(Spring(duration: spring.duration, bounce: spring.bounce))
                 .first { $0.v >= 0.98 }?.t
+            // `continue`, not `return XCTFail(…)`.
+            //
+            // `XCTFail` returns `Void`, so `return XCTFail(…)` is a legal way to
+            // spell "fail and leave" — and it leaves the *method*, not the
+            // iteration. The first spring that missed 98% therefore silently
+            // skipped the other six, and the report would name one failure where
+            // there might be seven. A table-driven test that stops at the first
+            // row is a table-driven test in name only.
             guard let crossing else {
-                return XCTFail("\(spring.name) never reached 98%")
+                XCTFail("\(spring.name) never reached 98%")
+                continue
             }
             XCTAssertEqual(
                 (crossing * 100).rounded() / 100,
@@ -970,7 +1043,15 @@ final class SpringSettlingEvidenceTests: XCTestCase {
         // against `selection`.
         XCTAssertEqual(trough(duration: 0.36, bounce: 0.24), 0.999356, accuracy: 5e-6)
 
-        // Ten times apart, which is the size of the error that was there.
+        // **6.2 times apart, and the prose used to say ten.**
+        //
+        // The ten is real but belongs elsewhere: it is the old *quoted* figure
+        // ("four hundredths") against `selection`'s true 0.4006%. The two
+        // constants themselves are 0.4006 / 0.0644 = 6.22 apart, which is what
+        // this assertion has always executed — so for a while the comment block
+        // written to fix a factor-of-ten error carried a second one, and the
+        // prose and the assertion below disagreed. Corrected in both places;
+        // `BottomBarStyle`'s block carries the same paragraph.
         XCTAssertEqual(
             (1 - trough(duration: 0.38, bounce: 0.34))
                 / (1 - trough(duration: 0.36, bounce: 0.24)),

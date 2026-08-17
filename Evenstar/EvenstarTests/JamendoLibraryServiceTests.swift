@@ -196,9 +196,11 @@ final class JamendoLibraryServiceTests: XCTestCase {
     /// survives SwiftData's unique-attribute upsert is not guaranteed to
     /// keep either caller's original `id`.
     ///
-    /// `async let` starts both calls without an `await` in between, so their
+    /// Two `Task`s started back to back, with no `await` between them, so their
     /// synchronous prefixes (the `existingRow` check and the `inFlightSaves`
-    /// check) race exactly the way a double-tap would.
+    /// check) race exactly the way a double-tap would. This was `async let`
+    /// until Swift 6 — see the note at the call site for why it could not stay,
+    /// and for what that swap costs.
     func testOverlappingSavesForTheSameTrackLeaveOneRowAndOneCoverFile() async throws {
         let (service, _) = try makeService()
         StubURLProtocol.responses = [
@@ -228,13 +230,43 @@ final class JamendoLibraryServiceTests: XCTestCase {
             let row = try await service.save(catalogueTrack(id: "42"))
             return (id: row.id, artwork: row.artworkRelativePath)
         }
-        let firstResult = try await first.value
-        let secondResult = try await second.value
 
-        if let path = firstResult.artwork { written.append(path) }
-        if let path = secondResult.artwork, path != firstResult.artwork {
-            written.append(path)
+        // **`.result`, not `try await …value`, and this is the one thing `async
+        // let` was giving away for free.**
+        //
+        // `async let` cancels and joins its still-running sibling when the first
+        // one throws. Two unstructured `Task`s do neither. Written as
+        // `try await first.value` followed by `try await second.value`, a throw
+        // from the first returns out of this method with `second` still running
+        // — and `second` goes on to write a real `jamendo-42-<uuid>.jpg` that
+        // was never appended to `written`, because both appends were below both
+        // awaits. `tearDown` deletes what is in `written`, so it cannot delete
+        // that one.
+        //
+        // The damage is not a one-off failure. The orphan stays in the
+        // simulator's artwork folder, and `matchingCoverFiles.count == 1` at the
+        // bottom of this method then fails on **every subsequent run** until
+        // somebody wipes the container — a transient failure turned permanent,
+        // and turned into one that looks like a product bug. It also outlives
+        // this test into the next `setUp`, racing `StubURLProtocol.reset()`.
+        //
+        // `.result` does not throw, so both tasks are joined before any
+        // assertion can leave. Nothing is in flight past this point, and both
+        // outcomes are on the table when the bookkeeping below runs.
+        let firstOutcome = await first.result
+        let secondOutcome = await second.result
+
+        // Registered before anything can throw, and from **both** outcomes —
+        // whichever of the two managed to write a file, `tearDown` now knows
+        // about it. Deduplicated against `written` rather than against each
+        // other, because the coalesced case has both returning the same path.
+        for outcome in [firstOutcome, secondOutcome] {
+            guard let path = try? outcome.get().artwork else { continue }
+            if !written.contains(path) { written.append(path) }
         }
+
+        let firstResult = try firstOutcome.get()
+        let secondResult = try secondOutcome.get()
 
         XCTAssertEqual(firstResult.id, secondResult.id, "both calls must resolve to the same row")
         XCTAssertEqual(try service.savedCount(), 1)
