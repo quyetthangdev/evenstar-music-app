@@ -262,15 +262,27 @@ private final class DragProbe {
     /// cáo sẽ nói "sạch" trong khi máy đang rớt một nửa số khung. So với chính
     /// nó thì cái gì cũng bình thường.
     ///
-    /// `assumeIsolated` chứ không phải `@MainActor`: cả ba chỗ đọc nó đều nằm
-    /// trong closure của SwiftUI nên đều ở main, nhưng gắn `@MainActor` lên đây
-    /// sẽ lan sang `isRealStall`, `isUniformlySlow` và `summary(phase:)` — mà
-    /// `summary` được gọi từ `completion:` của `withAnimation`, một closure
-    /// `@Sendable` không mang isolation. Lớp này cũng không thể là `@MainActor`
-    /// nguyên khối: `AnimationProbe` gọi `sample(progress:)` từ setter
-    /// `animatableData`, tức từ chỗ `Animatable` gọi vào, không phải từ main
-    /// actor. Nên khẳng định đứng ở đúng một dòng, và nó **được kiểm** — sai
-    /// thì trap ngay tại chỗ, chứ không im lặng.
+    /// `assumeIsolated` chứ không phải `@MainActor`. Lớp này không thể là
+    /// `@MainActor` nguyên khối: `AnimationProbe` gọi `sample(progress:)` từ
+    /// setter `animatableData`, tức từ chỗ `Animatable` gọi vào, không phải từ
+    /// main actor. Nên khẳng định đứng ở đúng một dòng, và nó **được kiểm** —
+    /// sai thì trap ngay tại chỗ, chứ không im lặng.
+    ///
+    /// **Lý do trước đây ghi ở đây là sai, và nó sai theo hướng dễ tin.** Câu cũ
+    /// nói rằng gắn `@MainActor` lên `displayInterval` sẽ lan sang
+    /// `summary(phase:)`, mà `summary` được gọi từ `completion:` của
+    /// `withAnimation` — "một closure `@Sendable` không mang isolation". SDK
+    /// khai `completion` là `@escaping () -> Void`, **không** `@Sendable`, nên
+    /// nó suy ra isolation của chỗ viết, tức main actor. Trở ngại được mô tả ở
+    /// đó không tồn tại.
+    ///
+    /// Nói cách khác: có một bản `@MainActor` được trình biên dịch kiểm, và câu
+    /// cũ giải thích tại sao nó không dùng được bằng một điều không đúng. Bản
+    /// `assumeIsolated` này vẫn an toàn — cả ba chỗ đọc đều nằm trong closure
+    /// của SwiftUI và đều ở main, nên trap không thể nổ — nhưng nó an toàn nhờ
+    /// một khẳng định lúc chạy, không nhờ một chứng minh lúc biên dịch. Ai đụng
+    /// vào chỗ này lần sau: `@MainActor` là hướng đúng, và cái chặn nó là
+    /// `animatableData` ở đoạn trên, không phải `completion:`.
     static var displayInterval: CFTimeInterval {
         let fps = MainActor.assumeIsolated {
             UIApplication.shared.connectedScenes

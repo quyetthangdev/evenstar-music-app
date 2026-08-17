@@ -59,6 +59,23 @@ enum BottomBarStyle {
     /// already in flight when the user flips the setting finishes on the curve
     /// it started with — retargeting mid-flight would be a visible seam, and
     /// the next one is already correct.
+    ///
+    /// **Neither of those two is how this feature mostly reads the flag, and
+    /// this paragraph used to stop before saying so.** The dominant mechanism
+    /// is a **structural branch**: a `body` that asks `reduceMotion` and returns
+    /// a *different view* — `selectionWash(for:)`, `tabSlotGlyph`,
+    /// `restoreGlyph`, `TapHalo.body`, `symbolReplace()`. That case is not
+    /// covered by the argument above, because there is no `v` and no
+    /// `withAnimation` to re-read anything: it depends on SwiftUI re-evaluating
+    /// the `body` at all after the flag changes, which is a different claim.
+    ///
+    /// It holds, and it is measured rather than assumed — the flag is written
+    /// from `RootView`, which re-renders the tree, so the first render that can
+    /// see the new value is also the one that picks the new structure. Pinned at
+    /// `ReduceMotionSurfacesTests.testTheFirstTabChangeAfterTheFlagArrivesDoesNotTravelEither`,
+    /// which builds with the flag off, publishes it, and changes tab — the
+    /// switch of structure and the switch of selection in one transaction, which
+    /// is the tightest version of the case.
     @MainActor static var reduceMotion = false
 
     // Where the `…Flat` durations below come from — none of them is invented.
@@ -79,9 +96,17 @@ enum BottomBarStyle {
     // That figure read "four hundredths" until B3, and it was wrong by a
     // factor of ten for the one case it names. Sampled the same way as the
     // table: `selection`, the bounciest, troughs at 99.5994% — 0.4006% under —
-    // and `morph` at 99.9356%, 0.0644% under. Six hundredths of a percent is
-    // `morph`'s number, quoted against the constant it is ten times too small
-    // for. The trough depth is a function of the damping ratio *alone* —
+    // and `morph` at 99.9356%, 0.0644% under. So the old "four hundredths" was
+    // roughly `morph`'s number wearing `selection`'s name, and against
+    // `selection`'s real 0.4006% it is the factor of ten above.
+    //
+    // **`morph` and `selection` are 6.2 times apart, not ten.** 0.4006 / 0.0644
+    // = 6.22, and that ratio — not ten — is what
+    // `ReduceMotionTests.testTheSecondUndershootIsFourTenthsOfAPercentForTheBounciest`
+    // executes. The ten belongs only to the *quoted* figure against the
+    // constant it was quoted for; the two constants themselves were never ten
+    // apart, and a block written to fix a factor-of-ten error should not leave a
+    // second one behind it. The trough depth is a function of the damping ratio *alone* —
     // `e^(−2πζ/√(1−ζ²))` with `ζ = 1 − bounce` — which is why it ranks by
     // bounce, why `selection` is the worst case, and why no duration from the
     // table appears in it. `queue` and `queueContentSlide`, at bounce 0, have
@@ -572,11 +597,26 @@ enum BottomBarStyle {
     /// Mốc cũ 0.10 → 0.17 là ước lượng đọc bằng mắt trên một tấm ghép khung, và
     /// nó muộn hơn thật một khung rưỡi.
     ///
-    /// `easeOut` chứ không `easeIn`, và đó là chuyện của **mối nối**. `easeIn`
-    /// kết thúc ở vận tốc lớn nhất: chữ đứng gần như đủ sáng rồi tắt phụt. Cú
-    /// hiện tiếp sau là một lò xo, khởi động từ vận tốc 0. Nối một cái đang lao
-    /// vào một cái đang đứng yên là một chỗ gãy. `easeOut` về 0 với vận tốc
-    /// cũng gần 0, nên hai đầu khớp nhau về đạo hàm chứ không chỉ về thời điểm.
+    /// `easeIn` chứ không `easeOut`, và **chính con số đo ở trên đã nói ra
+    /// điều đó**: 963 → 957 → 925 → 872 → 633 → 0 là hai khung gần như phẳng
+    /// rồi một cú sập — bước cuối lớn hơn bước đầu cả trăm lần. Đó là hình dáng
+    /// của `easeIn`. Một `easeOut` sẽ cho dãy ngược lại: mất nhiều nhất ở khung
+    /// đầu rồi bò dần về 0.
+    ///
+    /// **Ở đây từng có một đoạn lập luận ngược hẳn, và nó sai theo một kiểu
+    /// đáng ghi lại.** Đoạn ấy nói phải là `easeOut` chứ không `easeIn`, vì
+    /// `easeIn` kết thúc ở vận tốc lớn nhất còn cú hiện tiếp sau — một lò xo —
+    /// khởi động từ vận tốc 0, nên nối một cái đang lao vào một cái đang đứng
+    /// yên là một chỗ gãy. Lập luận nghe xuôi, và nó đã sống sót qua nhiều lượt
+    /// đọc, nhưng nó tả một dòng mã **không tồn tại**: dòng ngay dưới vẫn luôn
+    /// là `easeIn`, và `ReduceMotionTests` vẫn luôn ghim nó là `easeIn`.
+    ///
+    /// Cái làm nó vô hại là điều mà chính nó bỏ sót: hai cú này **không nối
+    /// nhau**. `queueTitleIn` có `delay(0.13)` và chạy ở 0.23 → 0.33, còn cú
+    /// tan này xong ở 0.10. Giữa hai đầu là 0.13s không có gì cả, nên không có
+    /// mối nối nào để mà khớp đạo hàm — vấn đề mà đoạn văn ấy giải chưa bao giờ
+    /// có mặt. Xem ghi chú của `queueTitleIn`: khe ấy tồn tại để hai khối chữ
+    /// không bao giờ cùng đọc được, và đó mới là ràng buộc thật ở đây.
     ///
     /// **Viết thành thời gian chứ không phải cửa sổ trên `queueFactor`, và đó
     /// là điều bắt buộc.** Một cửa sổ trên `factor` chạy ngược khi đóng, nên nó
@@ -587,9 +627,15 @@ enum BottomBarStyle {
     /// Giảm chuyển động: **giữ nguyên**, xem ghi chú chung ở đầu phần này. Chỉ
     /// là lượng mực của một khối chữ đi về 0 — không dịch chuyển, không phóng
     /// to. Cả `delay(0.04)` cũng giữ: nó là dàn cảnh chứ không phải chuyển
-    /// động, và lập luận về **mối nối** ở trên (`easeOut` về 0 với vận tốc gần
-    /// 0 để khớp đạo hàm với cú hiện tiếp sau) vẫn đúng nguyên si khi cú hiện
-    /// tiếp sau đổi từ lò xo sang curve — curve cũng khởi động từ vận tốc 0.
+    /// động, và cái nó dàn ra — khe 0.13s trước khi khối chữ kia quay lại —
+    /// không phụ thuộc vào việc cú hiện tiếp sau là lò xo hay curve. Thứ tự vẫn
+    /// là thứ tự.
+    ///
+    /// (Chỗ này trước đây viết rằng "lập luận về mối nối ở trên (`easeOut` về 0
+    /// với vận tốc gần 0…) vẫn đúng nguyên si". Nó tái khẳng định đúng cái lập
+    /// luận sai vừa nói ở trên, và đợt này thêm nó vào — một câu mới dựng trên
+    /// một tiền đề sai. Cái đúng cần giữ ở đây chỉ là: nhánh giảm chuyển động
+    /// không đổi gì, và không có gì trong đợt này làm nó phải đổi.)
     @MainActor static var queueTitleOut: Animation { reduceMotion ? queueTitleOutFlat : queueTitleOutFull }
     private static let queueTitleOutFull = Animation.easeIn(duration: 0.06).delay(0.04)
     private static let queueTitleOutFlat = queueTitleOutFull
@@ -634,9 +680,17 @@ enum BottomBarStyle {
     /// shape has to be re-derived from the blurred content behind it every
     /// frame. Removing all three brought it to 0.0 ms/s, against Apple's
     /// 10 ms/s "bad" threshold, and `FloatingTabBar.swift` no longer calls
-    /// `floatingBarShadow()` anywhere. `PlayerCard`'s call (~line 1176) is
-    /// still standing and still **unmeasured** — its fate is a separate
-    /// decision, not something to infer from the tab bar's number.
+    /// `floatingBarShadow()` anywhere. `PlayerCard`'s one call — on the card
+    /// itself, in `card(size:insets:)`, just above the `.offset` that positions
+    /// it horizontally — is still standing and still **unmeasured**; its fate is
+    /// a separate decision, not something to infer from the tab bar's number.
+    ///
+    /// (That used to read "~line 1176". It was 1240 by the end of the branch and
+    /// is elsewhere again now. Line numbers in a 2,800-line file are a pointer
+    /// that goes stale on the next commit and gives no sign of having done so,
+    /// so it is named by what it is attached to instead — `grep -n
+    /// floatingBarShadow Features/Player/PlayerCard.swift` finds it in one
+    /// step and cannot rot.)
     private static let shadowColor = Color.black.opacity(0.15)
     private static let shadowRadius: CGFloat = 10
     private static let shadowOffsetY: CGFloat = 4
@@ -686,9 +740,16 @@ extension View {
     /// The same trade `selectionWash(for:)` and the two `ButtonStyle`s made:
     /// answer with opacity, not with shape.
     ///
-    /// **One mechanism, not seven branches.** Six production sites plus the
-    /// demo reachable from Settings read this. Written per-site it would be
+    /// **One mechanism, not seven branches.** Five production sites, one each in
+    /// five files, plus two sites in the one demo file reachable from Settings —
+    /// seven sites across six files — read this. Written per-site it would be
     /// seven chances to miss the eighth.
+    ///
+    /// (The count used to read "six production sites plus the demo". It was
+    /// never right; it is written out in full here so the next reader can check
+    /// it against `grep -rn symbolReplace\(\)` in one pass rather than
+    /// recounting from a summary. `SymbolReplaceCoverageTests` holds the
+    /// executable half.)
     ///
     /// The unreduced branch is exactly the call it replaces, so nothing changes
     /// for anyone with the setting off.

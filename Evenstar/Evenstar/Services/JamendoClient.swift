@@ -205,11 +205,24 @@ struct JamendoClient {
             // type mismatch — e.g. "key 'artist_name' expected String, found
             // number" — which describes the *shape* of Jamendo's JSON against
             // `Row`, not any value inside it. `JSONDecoder` does not embed the
-            // actual decoded content in that description, so nothing a user
-            // has (a track's real title, say) can appear here. That is a
-            // fact about a third-party API contract and this file's own
-            // `Row`, not about the person holding the phone, which is what
-            // the redact-by-default rule exists to protect.
+            // actual decoded content in that description, so for a type or key
+            // mismatch nothing a user has (a track's real title, say) can
+            // appear here. That is a fact about a third-party API contract and
+            // this file's own `Row`, not about the person holding the phone,
+            // which is what the redact-by-default rule exists to protect.
+            //
+            // **One case is not fully ruled out, and `AppLog`'s own note on
+            // this site says so — this one used to not.** A `.dataCorrupted`
+            // error raised from malformed low-level bytes (bad UTF-8, say)
+            // rather than from a type or key mismatch carries a
+            // `debugDescription` produced inside `JSONDecoder`, which this
+            // project cannot inspect and therefore cannot call provably free of
+            // raw content. The two notes were written in the same branch and
+            // only one of them hedged; a reader who found this one first would
+            // have come away with a firmer guarantee than the project actually
+            // has. Judged worth keeping `.public` anyway: a decode failure that
+            // cannot be read is a decode failure that cannot be fixed, and the
+            // case is narrow. Read as a weighed trade, not as a proof.
             AppLog.jamendo.fault("JamendoClient: failed to decode response — \(String(describing: error), privacy: .public)")
             throw JamendoError.decodingFailed
         }

@@ -23,10 +23,26 @@ import Foundation
 /// it. `AVPlayerItem.status` KVO hands `self` to a `@Sendable` closure, so under
 /// Swift 6 this type has to be `Sendable` or the observation cannot be written
 /// at all — and it genuinely is safe, for the documented reason above and not
-/// for a vaguer one: every stored property is `private`, and the only code that
-/// reads or writes one is either already on the main thread or inside an
-/// `onMain` closure. The `unchecked` carries exactly that claim and nothing
-/// wider.
+/// for a vaguer one: every stored property this class touches on its own is
+/// `private`, and the only code that reads or writes one is either already on
+/// the main thread or inside an `onMain` closure. The `unchecked` carries
+/// exactly that claim and nothing wider.
+///
+/// **Two are not private, and the sentence above used to say all of them were.**
+/// `didFinishCallback` and `didFailCallback` are internal `var`s because
+/// `AudioPlayerProtocol` declares them settable, so they cannot be narrowed to
+/// `private` or `private(set)` without changing the protocol. In practice their
+/// only writer is `PlaybackService`, on the main actor, once at wiring time —
+/// which is why this has never been a live race.
+///
+/// It stopped being purely a documentation matter the moment `@unchecked Sendable`
+/// went on, though, and that is the reason to say it out loud: before, sending
+/// this type across an isolation boundary did not compile, so
+/// `Task.detached { player.didFailCallback = nil }` was rejected on the concrete
+/// type. Now it compiles, and nothing but this paragraph stands between it and
+/// somebody writing it. The claim `unchecked` is making is about the private
+/// state; it is **not** making one about these two, and a future writer of them
+/// off the main actor is on their own.
 ///
 /// `@MainActor` would be the *checked* version of the same claim, and was
 /// rejected rather than overlooked: it would take away the property this class
