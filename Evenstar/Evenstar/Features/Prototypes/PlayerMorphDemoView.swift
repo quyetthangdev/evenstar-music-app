@@ -31,6 +31,12 @@
 //  Khác biệt duy nhất còn cố ý: dữ liệu giả, và không phát được gì.
 //
 
+// `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16 synced folders, nên
+// loại một file khỏi target đòi sửa `.pbxproj` — việc bị cấm với agent. Bọc
+// toàn file để nó biên dịch ở Debug (vẫn tra cứu được) và biến mất khỏi
+// Release.
+#if DEBUG
+
 import SwiftUI
 import UIKit
 
@@ -1142,3 +1148,5 @@ struct DemoLibraryList: View, Equatable {
 #Preview("Viên thuốc") { PlayerMorphDemoView() }
 #Preview("Giữa chừng") { PlayerMorphDemoView(initialProgress: 0.5) }
 #Preview("Mở hết") { PlayerMorphDemoView(initialProgress: 1) }
+
+#endif

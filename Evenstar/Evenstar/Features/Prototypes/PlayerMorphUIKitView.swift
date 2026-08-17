@@ -37,6 +37,12 @@
 //     thì không diễn đạt được bằng một animator duy nhất.
 //
 
+// `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16 synced folders, nên
+// loại một file khỏi target đòi sửa `.pbxproj` — việc bị cấm với agent. Bọc
+// toàn file để nó biên dịch ở Debug (vẫn tra cứu được) và biến mất khỏi
+// Release.
+#if DEBUG
+
 import SwiftUI
 import UIKit
 
@@ -503,3 +509,5 @@ private extension UIFont {
         return UIFont(descriptor: d, size: 0)
     }
 }
+
+#endif

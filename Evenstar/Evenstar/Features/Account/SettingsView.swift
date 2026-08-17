@@ -24,10 +24,16 @@ struct SettingsView: View {
     @AppStorage(JamendoLicencePolicy.storageKey) private var commercialOnly =
         JamendoLicencePolicy.defaultCommercialOnly
 
+    // `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16 synced
+    // folders, nên loại một file khỏi target đòi sửa `.pbxproj` — việc bị
+    // cấm với agent. Bọc thay vì xoá để mục "Bản thử" biến mất khỏi Release
+    // mà bốn bản thử vẫn mở được ở Debug.
+    #if DEBUG
     @State private var showingMorphDemo = false
     @State private var showingUIKitDemo = false
     @State private var showingZoomDemo = false
     @State private var showingReorderDemo = false
+    #endif
 
     var body: some View {
         List {
@@ -105,6 +111,12 @@ struct SettingsView: View {
                 Text("Nhiều bài trên Jamendo mang giấy phép NC: nghe cá nhân thì thoải mái, nhưng cấm dùng trong sản phẩm có thu tiền. Bật để giấu chúng khỏi màn Khám phá. Tắt thì có nhiều nhạc hơn để chọn, và bạn tự chịu trách nhiệm về giấy phép.")
             }
 
+            // `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16
+            // synced folders, nên loại một file khỏi target đòi sửa
+            // `.pbxproj` — việc bị cấm với agent. Cả `Section` nằm trong
+            // khối này, kể cả header, vì một mục "Bản thử" rỗng còn tệ hơn
+            // một mục có nội dung.
+            #if DEBUG
             Section {
                 // `verbatim` khắp mục này, khác với mọi mục khác trong màn
                 // hình: đây là bản thử sẽ bị xoá, và `Text("…")` là
@@ -133,9 +145,15 @@ struct SettingsView: View {
                 // đối với người dùng, kể cả khi nó nằm sâu trong Cài đặt.
                 Text(verbatim: "Hai player rời, dữ liệu giả, cùng hình dáng nhưng khác động cơ chuyển động: một bằng SwiftUI, một bằng UIViewPropertyAnimator. Không ảnh hưởng gì tới nhạc đang phát.")
             }
+            #endif
         }
         .navigationTitle("Cài đặt")
         .navigationBarTitleDisplayMode(.inline)
+        // `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16 synced
+        // folders, nên loại một file khỏi target đòi sửa `.pbxproj` — việc
+        // bị cấm với agent. Các chú thích bên dưới giải thích mã sắp không
+        // tồn tại ở Release, nên phải nằm trong cùng khối này.
+        #if DEBUG
         // `fullScreenCover`, không phải `NavigationLink`: bản thử tự dựng cả
         // thanh tab và mini player của riêng nó, nên nó cần cả màn hình. Đẩy
         // nó vào navigation stack thì hai thanh tab chồng lên nhau.
@@ -159,6 +177,7 @@ struct SettingsView: View {
         .fullScreenCover(isPresented: $showingReorderDemo) {
             PlaylistReorderDemo { showingReorderDemo = false }
         }
+        #endif
     }
 }
 
