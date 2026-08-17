@@ -375,6 +375,228 @@ final class TabSelectionWashTravelTests: XCTestCase {
     }
 }
 
+/// **The active tab's glyph must not fly to the minimised circle when motion is
+/// reduced.**
+///
+/// The second and third `matchedGeometryEffect` sites in `FloatingTabBar`, which
+/// the first pass through B4 left alone. Same claim as the wash's and so the
+/// same kind of probe: find the stretch of bar that holds no ink in *either*
+/// resting state — expanded, and minimised — and watch it for the whole
+/// collapse. A glyph travelling from the Account slot to the circle at the
+/// leading edge has to cross it. A glyph that fades out where it is, while
+/// another fades in inside the circle, never touches it.
+///
+/// The stretch is measured rather than computed, so this file needs to know
+/// nothing about slot widths, `sideMargin`, or where SwiftUI decides to put a
+/// 15pt symbol.
+@MainActor
+final class ActiveGlyphTravelTests: XCTestCase {
+
+    private enum Harness {
+        @MainActor static var minimise: ((Bool) -> Void)?
+    }
+
+    /// **Account, the last of the four slots**, so the trip to the circle is the
+    /// longest the bar can produce and the corridor being watched is at its
+    /// widest.
+    ///
+    /// `hasTrack: true` keeps the bar out of the merged layout: with nothing
+    /// playing the whole thing collapses to one centred capsule instead, and the
+    /// circle would not be at the leading edge for the glyph to travel to.
+    ///
+    /// `withAnimation(BottomBarStyle.morph)` is what `RootView` and the file's
+    /// own preview both wrap this binding in — the bar does not own this
+    /// transition's timing the way it owns `isSearching`'s.
+    private struct Bar: View {
+        @State private var selection: LibraryTab = .account
+        @State private var isSearching = false
+        @State private var query = ""
+        @State private var isEditing = false
+        @State private var isMinimised = false
+
+        var body: some View {
+            FloatingTabBar(
+                selection: $selection,
+                isSearching: $isSearching,
+                query: $query,
+                isEditing: $isEditing,
+                isMinimised: $isMinimised,
+                hasTrack: true,
+                onOpenSearch: {},
+                onCloseSearch: { _ in },
+                onRestore: {}
+            )
+            .background(Color.white)
+            .onAppear {
+                Harness.minimise = { value in
+                    withAnimation(BottomBarStyle.morph) { isMinimised = value }
+                }
+            }
+        }
+    }
+
+    /// The rows a 15pt glyph occupies in a 54pt bar, with room to spare on
+    /// either side. Deliberately a band rather than one row: the glyph is small,
+    /// and a single row can miss the thin part of a symbol entirely.
+    private static let glyphRows = 6..<30
+    private static let barWidth: CGFloat = 390
+    /// `BottomBarStyle.morph` is a 0.36s spring that carries on to 102.5% and
+    /// spends a further third of a second coming back — same measurement the
+    /// wash test's own settling time is taken from.
+    private static let settlingTime: TimeInterval = 1.0
+    /// A column with nothing drawn in it reads 255 — the bar's `.regularMaterial`
+    /// over white renders as white here, measured, so there is no material floor
+    /// to allow for. Glyph ink comes in between 0 and 151.
+    private static let unmarked = 250
+
+    private var saved = false
+    private var window: UIWindow?
+    private var host: UIViewController?
+
+    override func setUp() {
+        super.setUp()
+        saved = BottomBarStyle.reduceMotion
+    }
+
+    override func tearDown() {
+        BottomBarStyle.reduceMotion = saved
+        window?.isHidden = true
+        window = nil
+        host = nil
+        Harness.minimise = nil
+        super.tearDown()
+    }
+
+    private func mount(reduceMotion: Bool) {
+        window?.isHidden = true
+        BottomBarStyle.reduceMotion = reduceMotion
+        Harness.minimise = nil
+        let (window, host) = LivePixels.host(Bar())
+        self.window = window
+        self.host = host
+    }
+
+    /// The longest unbroken stretch of columns holding any ink at all.
+    private static func widestInkRun(in row: [Int]) -> Range<Int>? {
+        var best: Range<Int>?
+        var start: Int?
+        for column in 0...row.count {
+            let inked = column < row.count && row[column] < unmarked
+            if inked, start == nil { start = column }
+            if !inked, let from = start {
+                if best == nil || column - from > best!.count { best = from..<column }
+                start = nil
+            }
+        }
+        return best
+    }
+
+    /// The darkest pixel in each column, over the glyph band.
+    private func band() throws -> [Int] {
+        let view = try XCTUnwrap(host?.view)
+        let grab = try XCTUnwrap(
+            LivePixels.grab(view, CGSize(width: Self.barWidth, height: BottomBarMetrics.tabBarHeight)),
+            "CALayer.render produced nothing"
+        )
+        return (0..<grab.width).map { column in
+            Self.glyphRows.map { row in
+                Int(grab.data[(row * grab.width + column) * 4 + 1])
+            }.min() ?? 255
+        }
+    }
+
+    /// The darkest anything got, anywhere in the corridor, at any point in the
+    /// collapse.
+    ///
+    /// The corridor is every column that is unmarked in **both** resting states
+    /// and lies between the two ends of the trip: after the last ink in the
+    /// minimised circle, and before the selected slot the glyph starts from.
+    /// Bounding it that way is what stops the empty right-hand end of the bar —
+    /// which no glyph ever visits in either mode — from being counted as
+    /// evidence.
+    ///
+    /// The far end is found as the **widest** unbroken run of ink in the
+    /// expanded bar, which is the selection wash: it is some sixty columns wide
+    /// where a 15pt glyph is a dozen, so there is nothing else it can be
+    /// mistaken for. The near end cannot be found the same way — the Songs
+    /// glyph sits immediately beside the minimised circle, so "the first ink to
+    /// the right of the circle" is a column or two away and bounds nothing.
+    private func corridorDuringMinimise() throws -> (width: Int, darkest: Int) {
+        let minimise = try XCTUnwrap(Harness.minimise)
+
+        minimise(false)
+        LivePixels.pump(Self.settlingTime)
+        let expanded = try band()
+
+        minimise(true)
+        LivePixels.pump(Self.settlingTime)
+        let minimised = try band()
+
+        minimise(false)
+        LivePixels.pump(Self.settlingTime)
+
+        // The circle's own glyph, at the leading edge. Unwrapping this is also
+        // the assertion that the reduced mode still *draws* the mark it stopped
+        // moving: with the setting on and the bar minimised, there has to be ink
+        // in the circle or there is nothing saying which tab you are in.
+        let circleRight = try XCTUnwrap(
+            (0..<minimised.count).last { $0 < 120 && minimised[$0] < Self.unmarked },
+            "nothing is drawn in the minimised circle at all"
+        )
+        let slotLeft = try XCTUnwrap(
+            Self.widestInkRun(in: expanded)?.lowerBound,
+            "the expanded bar drew no selection wash to start from"
+        )
+        XCTAssertGreaterThan(
+            slotLeft - circleRight, 50,
+            "the gap between the circle and the selected slot is too narrow to be evidence of travel"
+        )
+
+        let corridor = ((circleRight + 1)..<slotLeft).filter {
+            expanded[$0] >= Self.unmarked && minimised[$0] >= Self.unmarked
+        }
+        XCTAssertGreaterThan(corridor.count, 20, "no corridor to watch")
+
+        minimise(true)
+        var darkest = 255
+        for _ in 0..<45 {
+            LivePixels.pump(0.01)
+            let frame = try band()
+            for column in corridor { darkest = min(darkest, frame[column]) }
+        }
+        return (corridor.count, darkest)
+    }
+
+    /// **The one that fails if the glyph still flies.** With the setting on, the
+    /// bar between the circle and the tabs stays exactly as empty during the
+    /// collapse as it is at either end of it.
+    func testTheActiveGlyphNeverCrossesTheBarWhenMotionIsReduced() throws {
+        mount(reduceMotion: true)
+
+        let (width, darkest) = try corridorDuringMinimise()
+
+        XCTAssertGreaterThanOrEqual(
+            darkest, Self.unmarked,
+            "something crossed \(width) columns of empty bar, darkening one to \(darkest)"
+        )
+    }
+
+    /// **And with the setting off it does fly**, which is what says the probe can
+    /// see a travelling glyph at all. Without this half, a capture that had
+    /// silently stopped working would report the feature as implemented — the
+    /// specific failure this file's header calls out.
+    func testTheActiveGlyphStillCrossesThatBarWithTheSettingOff() throws {
+        mount(reduceMotion: false)
+
+        let (width, darkest) = try corridorDuringMinimise()
+
+        XCTAssertLessThan(
+            darkest, 200,
+            "nothing ever crossed the \(width) empty columns; darkest was \(darkest)"
+        )
+    }
+}
+
 // MARK: - Việc 2 — the tap halo
 
 /// **The halo does not bloom when motion is reduced.**

@@ -215,6 +215,10 @@ struct FloatingTabBar: View {
     /// nothing to match. The minimise trip is unaffected, because
     /// `restoreButton` asks for the *selected* tab's id — still exactly one
     /// source and one destination.
+    ///
+    /// Claimed **only on the travelling branch**, exactly like
+    /// `selectionGeometryID`. With Reduce Motion on neither site hands this out
+    /// at all — see `tabSlotGlyph(for:)` and `restoreGlyph`.
     private static func activeGlyphID(for tab: LibraryTab) -> String {
         "active-tab-glyph-\(tab.rawValue)"
     }
@@ -508,6 +512,66 @@ struct FloatingTabBar: View {
             .font(.system(size: Self.symbolSize))
     }
 
+    /// The glyph in a tab's own slot, in the three states it can be in.
+    ///
+    /// **The same forced shape as `selectionWash(for:)`, for the same reason.**
+    /// `matchedGeometryEffect` cannot be switched off: two views claiming one id
+    /// in one namespace stay matched whatever is passed to the modifier, so "the
+    /// glyph does not fly to the circle" is not something a flag on it can
+    /// express. The only way to stop the travel is for the id never to be
+    /// claimed, which means two structures rather than one with a parameter.
+    ///
+    /// **Travelling (the default).** The selected tab's glyph claims the id, and
+    /// while the bar is minimised it steps aside for `restoreGlyph`, which
+    /// claims the same one — leaving a hidden copy behind so the label below it
+    /// does not lurch upward mid-collapse. Exactly one site holds the id at a
+    /// time, which is what the `hidden()` branch is for.
+    ///
+    /// **Reduced.** Every slot draws a plain glyph, always, and nothing here
+    /// ever claims an id. There is no hidden branch either: with nothing to
+    /// travel, the placeholder would be a gap where an icon belongs. The row is
+    /// already at `opacity(0)` by the time the bar is minimised, so the glyph it
+    /// draws in that state is not visible — it fades out where it sits while
+    /// `restoreGlyph` fades in where *it* sits, and nothing crosses the bar.
+    ///
+    /// The glyph stays, exactly as the wash stays: what Reduce Motion removes
+    /// here is the journey, not the mark. A tab bar whose icons travel across it
+    /// is the specific thing the note on `activeGlyphID(for:)` calls unusable
+    /// without looking, and this is the same objection raised by an
+    /// accessibility setting rather than by a bug.
+    @ViewBuilder
+    private func tabSlotGlyph(for tab: LibraryTab) -> some View {
+        if BottomBarStyle.reduceMotion || selection != tab {
+            glyph(for: tab)
+        } else if isMinimised {
+            glyph(for: tab).hidden()
+        } else {
+            glyph(for: tab).matchedGeometryEffect(
+                id: Self.activeGlyphID(for: tab),
+                in: glyphNamespace
+            )
+        }
+    }
+
+    /// The other end of that trip: the glyph inside the minimised circle.
+    ///
+    /// Reduced, it is the same image with no id on it, so it simply appears in
+    /// the circle when `restoreButton`'s `if isMinimised` inserts it and goes
+    /// when that is removed. Both branches draw the identical view — see
+    /// `washInk` for why one description of the ink is the surest way to make
+    /// the two modes indistinguishable at rest.
+    @ViewBuilder
+    private var restoreGlyph: some View {
+        if BottomBarStyle.reduceMotion {
+            glyph(for: selection)
+        } else {
+            glyph(for: selection).matchedGeometryEffect(
+                id: Self.activeGlyphID(for: selection),
+                in: glyphNamespace
+            )
+        }
+    }
+
     /// Holds the active tab's glyph while the bar is minimised. The glyph is
     /// the *same* one the pill had — shared geometry travels it here as the
     /// capsule closes, and back to its slot as the capsule opens, so it slides
@@ -519,11 +583,7 @@ struct FloatingTabBar: View {
             } label: {
                 Group {
                     if isMinimised {
-                        glyph(for: selection)
-                            .matchedGeometryEffect(
-                                id: Self.activeGlyphID(for: selection),
-                                in: glyphNamespace
-                            )
+                        restoreGlyph
                     }
                 }
                 .foregroundStyle(Self.tint(isCurrent: false))
@@ -702,17 +762,12 @@ struct FloatingTabBar: View {
                         // The placeholder keeps the `VStack`'s height while it
                         // is away, so the label beneath does not lurch upward
                         // mid-collapse.
-                        if selection == tab && isMinimised {
-                            glyph(for: tab).hidden()
-                        } else if selection == tab {
-                            glyph(for: tab)
-                                .matchedGeometryEffect(
-                                    id: Self.activeGlyphID(for: tab),
-                                    in: glyphNamespace
-                                )
-                        } else {
-                            glyph(for: tab)
-                        }
+                        //
+                        // All three of those states, and the fourth the reduced
+                        // mode adds, now live in `tabSlotGlyph(for:)` — the
+                        // branch has to be structural, so it cannot be a
+                        // modifier applied here.
+                        tabSlotGlyph(for: tab)
 
                         Text(tab.label)
                             .font(.caption2)
