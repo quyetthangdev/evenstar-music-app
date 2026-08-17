@@ -199,6 +199,52 @@ struct TransportButtonStyle: ButtonStyle {
             let peak = style.kickPeak
             return label
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                // **The tint is not motion, and this line is what keeps it from
+                // becoming motion.**
+                //
+                // The `.animation(_:value: isPressed)` further down scopes the
+                // whole label. An `isEnabled` change landing in the *same*
+                // update as an `isPressed` change is therefore carried on
+                // `dimReturn`'s 0.20s along with the dim — and that pairing is
+                // the ordinary one, not a corner: tapping Next onto the last
+                // track lifts the finger and disables the button in one turn.
+                // Pre-branch the tint switched in a frame, and with Reduce
+                // Motion **off** it has to keep switching in a frame; the whole
+                // branch's contract is that the setting off looks exactly as it
+                // did.
+                //
+                // Measured at
+                // `TransportDisabledTintTests.testTheDisabledTintArrivesInOneFrameWithTheSettingOff`:
+                // without this line the centre pixel walks
+                // 247 → 231 → 215 → … → 58 over eighteen frames; with it, 58 on
+                // the first frame and every frame after.
+                //
+                // ─────────────────────────────────────────────────────────────
+                // TWO THINGS THAT LOOK LIKE THEY WOULD WORK AND DO NOT
+                // ─────────────────────────────────────────────────────────────
+                // Both were measured on the trace above, both fade exactly as
+                // before, and both are the obvious next guess — so they are
+                // written down rather than left to be re-tried:
+                //
+                //   - **Moving `.foregroundStyle` below the `.animation`**, so
+                //     it is applied outside that modifier. It still fades. A
+                //     `ShapeStyle` resolves at the *leaf*, and the leaf is
+                //     inside the scope no matter what height the style is
+                //     attached from.
+                //   - **Putting this `.animation(nil, value: isEnabled)` below
+                //     the `.animation(_:value: isPressed)`** instead of above
+                //     it. It still fades. Nesting resolves innermost-first, so
+                //     from out there it loses to the scope it is trying to
+                //     override.
+                //
+                // Which is why it sits *here*, one line under the style it
+                // guards and inside everything else: it is the nearest scope to
+                // the leaf, so it is the one that wins.
+                //
+                // Keyed on `isEnabled`, so it does nothing at all on any update
+                // where the button's enablement did not change — the press dim
+                // below keeps its animation, and so does everything else.
+                .animation(nil, value: isEnabled)
                 // **The contact-time answer, and the only one this style has
                 // left with the setting on.** Keyed on `isPressed`, which flips
                 // the instant the finger lands and back when it lifts *or* when
@@ -250,6 +296,15 @@ struct TransportButtonStyle: ButtonStyle {
                 // callers apply `symbolReplace()` now, which swaps the
                 // transition itself rather than trying to reach it from here.
                 // `TransportSymbolSwapTests` pins the result on the pixels.
+                //
+                // **The label was not the only thing in reach, and the other
+                // one was not immune.** `.foregroundStyle(isEnabled ? …)` is in
+                // this scope too, and unlike the symbol effect it takes the
+                // transaction's animation and fades. That is fixed at the style
+                // itself — see the `.animation(nil, value: isEnabled)` above —
+                // rather than by narrowing this scope, because narrowing it is
+                // what does not work: the two ways of doing that are written
+                // out up there, both measured, both failing.
                 .animation(
                     isPressed ? BottomBarStyle.press : TransportButtonStyle.dimReturn,
                     value: isPressed
