@@ -24,7 +24,7 @@
 
 Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warning.
 
-- [ ] **A1 — Chốt bản C: gỡ ba cái bóng khỏi thanh tab**
+- [x] **A1 — Chốt bản C: gỡ ba cái bóng khỏi thanh tab**
 
   Working tree đang có thay đổi thử nghiệm với chú thích `// A/B: tam thoi bo bong` ở [FloatingTabBar.swift](../../../Evenstar/Evenstar/Features/Shared/FloatingTabBar.swift) dòng 375, 455, 567. **Hoàn tác nó trước** (`git checkout`), rồi làm lại tử tế.
 
@@ -44,7 +44,7 @@ Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warni
 
   *Xong khi:* `grep -c floatingBarShadow FloatingTabBar.swift` trả về `0`, và chú thích ở `BottomBarStyle` nêu con số 87.6 → 0.0.
 
-- [ ] **A2 — `displayScale` thay `UIScreen.main.scale`**
+- [x] **A2 — `displayScale` thay `UIScreen.main.scale`**
 
   Ba chỗ: [ArtworkThumbnail.swift:73](../../../Evenstar/Evenstar/Features/Library/ArtworkThumbnail.swift#L73), [JamendoResultRow.swift:209](../../../Evenstar/Evenstar/Features/Jamendo/JamendoResultRow.swift#L209), [PlayerCard.swift:2401](../../../Evenstar/Evenstar/Features/Player/PlayerCard.swift#L2401).
 
@@ -56,7 +56,7 @@ Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warni
 
   *Xong khi:* `grep -rn "UIScreen.main" Evenstar/Evenstar` trả về rỗng.
 
-- [ ] **A3 — Sửa bug target chết câm, xoá mã chết trong `SystemVolumeSlider`**
+- [x] **A3 — Sửa bug target chết câm, xoá mã chết trong `SystemVolumeSlider`**
 
   Hai việc trong một file, làm chung vì cùng chạm một vùng.
 
@@ -70,7 +70,7 @@ Tổng dưới hai giờ. Đóng vấn đề Critical nặng nhất và ba Warni
 
   *Xong khi:* `grep -n "isObservingSliderTouches\|static let trackImage" SystemVolumeSlider.swift` trả về rỗng, và có test mới đỏ trước khi sửa.
 
-- [ ] **A4 — `Logger` thay năm chỗ `print`**
+- [x] **A4 — `Logger` thay năm chỗ `print`**
 
   `grep "import os|Logger(|os_log"` hiện trả về **0**. `print()` không tới được Console.app trên máy người dùng, cũng không vào sysdiagnose — nghĩa là lỗi ngoài thực địa không truy được.
 
@@ -96,7 +96,7 @@ Việc lớn nhất về giá trị trong cả kế hoạch, và là mục duy n
 
 HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuyển, phóng to, xoay, nảy**. Mờ dần (cross-fade) là thứ được phép giữ.
 
-- [ ] **B1 — Đường dẫn đọc, một chỗ duy nhất**
+- [x] **B1 — Đường dẫn đọc, một chỗ duy nhất**
 
   `@Environment(\.accessibilityReduceMotion)` đọc ở [RootView](../../../Evenstar/Evenstar/App/RootView.swift), ghi vào một chỗ mà `BottomBarStyle` đọc được.
 
@@ -106,7 +106,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
   *Xong khi:* bật/tắt Giảm chuyển động trong Cài đặt → Trợ năng, giá trị đổi mà không cần khởi động lại app.
 
-- [ ] **B2 — Biến thể phẳng cho mọi hằng số trong `BottomBarStyle`**
+- [x] **B2 — Biến thể phẳng cho mọi hằng số trong `BottomBarStyle`**
 
   Mười hằng số chuyển động ở [BottomBarStyle.swift:37-286](../../../Evenstar/Evenstar/Features/Shared/BottomBarStyle.swift#L37-L286): `morph`, `selection`, `press`, `content`, `settle`, `expand`, `control`, `queue`, `queueContentIn/Slide/Out`, `queueTitleIn/Out`.
 
@@ -118,7 +118,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
   *Xong khi:* mọi hằng số chuyển động trong file có hai nhánh.
 
-- [ ] **B3 — `PlayerCard`: cú morph thành mờ dần**
+- [x] **B3 — `PlayerCard`: cú morph thành mờ dần**
 
   Đây là chỗ khó nhất và cũng là chỗ người dùng nhạy cảm chuyển động thấy rõ nhất — mở player hiện phóng từ viên thuốc ra toàn màn hình, và nền thụt lùi sau nó.
 
@@ -130,7 +130,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
   *Xong khi:* bật Giảm chuyển động, mở player không thấy phóng to, không thấy nền thu nhỏ, và vuốt đóng vẫn hoạt động.
 
-- [ ] **B4 — Bốn chỗ còn lại**
+- [x] **B4 — Bốn chỗ còn lại**
 
   - `matchedGeometryEffect` của vệt tab đang chọn — [FloatingTabBar.swift:505, 631, 673](../../../Evenstar/Evenstar/Features/Shared/FloatingTabBar.swift#L505). Vệt *trượt* giữa các tab; ở chế độ giảm chuyển động nó phải **đổi opacity tại chỗ**, không trượt.
   - `TapHalo` ([TapHalo.swift:32](../../../Evenstar/Evenstar/Features/Shared/TapHalo.swift#L32)) — vòng sáng phóng ra từ điểm chạm. Tắt hẳn; nó thuần trang trí.
@@ -145,7 +145,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
 ## Đợt C — Prototype ra khỏi bản Release
 
-- [ ] **C1 — `#if DEBUG` bọc bốn bản thử và bốn lối vào**
+- [x] **C1 — `#if DEBUG` bọc bốn bản thử và bốn lối vào**
 
   `Features/Prototypes/` chứa 2.393 dòng: `PlayerMorphDemoView` (1.144), `PlayerMorphUIKitView` (505), `PlayerZoomDemoView` (273), `PlaylistReorderDemo` (471). Cả bốn đang biên dịch vào binary sản phẩm và mở được từ [SettingsView.swift:142-159](../../../Evenstar/Evenstar/Features/Account/SettingsView.swift#L142-L159) qua bốn `fullScreenCover`.
 
@@ -163,7 +163,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
 `SWIFT_VERSION = 5.0` hiện tại, dù `SWIFT_APPROACHABLE_CONCURRENCY = YES` và `SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated` đã bật. Nghĩa là toàn bộ kỷ luật `@MainActor` trong dự án là **thủ công, không được compiler kiểm**. Chú thích ở [PlaybackService.swift:121](../../../Evenstar/Evenstar/Services/PlaybackService.swift#L121) thừa nhận đúng điều đó: *"safe by construction rather than by assertion"*.
 
-- [ ] **D1 — Sửa cho sạch dưới Swift 6, không đụng `.pbxproj`**
+- [x] **D1 — Sửa cho sạch dưới Swift 6, không đụng `.pbxproj`**
 
   Chìa khoá: `xcodebuild` nhận build setting đè từ dòng lệnh, nên tìm và sửa được hết lỗi mà không sửa file dự án nào.
 
@@ -193,7 +193,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
 ## Đợt E — Cần người dùng, không tự làm được
 
-- [ ] **E1 — Deployment target cấp dự án `26.0` → `18.6`**
+- [x] **E1 — Deployment target cấp dự án `26.0` → `18.6`**
 
   `.pbxproj` dòng 270 và 328 đặt `IPHONEOS_DEPLOYMENT_TARGET = 26.0` ở cấp **dự án**; ba target đè xuống `18.6`. Target mới thêm sau này sẽ thừa kế 26.0 và không chạy trên máy người dùng — một quả mìn hẹn giờ, hiện chưa gây hại.
 
