@@ -879,6 +879,163 @@ final class TransportPressDimTests: XCTestCase {
     }
 }
 
+/// **A `.symbolEffect(.replace)` content transition does not read the
+/// transaction it happens in.** SF Symbols times it; nothing around it can.
+///
+/// Evidence, in the shape of `SwiftUIAnimationTransactionEvidenceTests` and for
+/// the same reason: a production decision rests on this, and reasoning about it
+/// was not good enough. `TransportButtonStyle.Interaction` applies
+/// `.animation(_:value: isPressed)` over the whole label, and one caller's label
+/// is `Image(systemName: isPlaying ? …)` carrying that effect, with `isPlaying`
+/// flipping in the same touch-down transaction. If an ancestor's animation
+/// reached the effect, the unreduced mode would stop being identical to what
+/// shipped, and Reduce Motion would gain a scale-based symbol effect through the
+/// change meant to remove scale.
+///
+/// **This is deliberately not a test of Evenstar's code, and it cannot be made
+/// red by changing any.** That is the finding, not a shortcut around one: a test
+/// asserting "the press does not retime the swap" would be green against every
+/// possible edit to `TransportButtonStyle`, which is exactly the kind this plan
+/// has already shipped twice. What *can* go red is the platform assumption
+/// underneath, and that is what is written down here. If a future iOS starts
+/// letting the surrounding transaction drive the effect, this fails and the note
+/// at the `.animation` call site stops being true on the same day.
+///
+/// Three runs of one swap: with no animation anywhere, inside a 1.2s
+/// `withAnimation`, and under a 1.2s `.transaction` on an ancestor. The
+/// measurement is the glyph's row span, which the effect collapses to about half
+/// and restores — 15 rows at rest, 7 at the trough, and the trough on frame 21
+/// of a 10ms sampling in all three. A 1.2s retiming would put the trough past
+/// frame 60.
+@MainActor
+final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
+
+    enum Drive { case bare, withAnimation, ancestorTransaction }
+
+    private enum Harness {
+        @MainActor static var flip: (() -> Void)?
+    }
+
+    /// The label exactly as `MiniPlayerChrome` and `NowPlayingContent` write it,
+    /// with no button style anywhere near it — the claim is about the effect,
+    /// not about Evenstar.
+    private struct Probe: View {
+        @State private var playing = false
+        let drive: Drive
+
+        var body: some View {
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.title3)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 32, height: 32)
+                .modifier(Ancestor(drive: drive))
+                .frame(width: 60, height: 60)
+                .background(Color.white)
+                .onAppear {
+                    Harness.flip = {
+                        if drive == .withAnimation {
+                            SwiftUI.withAnimation(.easeInOut(duration: 1.2)) { playing.toggle() }
+                        } else {
+                            playing.toggle()
+                        }
+                    }
+                }
+        }
+    }
+
+    /// A separate modifier because `.transaction` has to be *above* the image in
+    /// the chain to stand for the real arrangement, where the animation is
+    /// applied by a button style wrapping a label it did not write.
+    private struct Ancestor: ViewModifier {
+        let drive: Drive
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if drive == .ancestorTransaction {
+                content.transaction { $0.animation = .easeInOut(duration: 1.2) }
+            } else {
+                content
+            }
+        }
+    }
+
+    private var window: UIWindow?
+    private var host: UIViewController?
+
+    override func tearDown() {
+        window?.isHidden = true
+        window = nil
+        host = nil
+        Harness.flip = nil
+        super.tearDown()
+    }
+
+    private func rowSpan() throws -> Int {
+        let view = try XCTUnwrap(host?.view)
+        let grab = try XCTUnwrap(
+            LivePixels.grab(view, CGSize(width: 60, height: 60)),
+            "CALayer.render produced nothing"
+        )
+        var top = Int.max
+        var bottom = -1
+        for row in 0..<grab.height {
+            for column in 0..<grab.width
+            where Int(grab.data[(row * grab.width + column) * 4 + 1]) < 200 {
+                top = min(top, row)
+                bottom = max(bottom, row)
+                break
+            }
+        }
+        XCTAssertGreaterThanOrEqual(bottom, 0, "no glyph was drawn at all")
+        return bottom - top
+    }
+
+    /// 70 frames — long enough that a 1.2s retiming would still be on its way
+    /// down at the end.
+    private func swap(_ drive: Drive) throws -> (rest: Int, trough: Int, frame: Int) {
+        window?.isHidden = true
+        Harness.flip = nil
+        let (window, host) = LivePixels.host(Probe(drive: drive))
+        self.window = window
+        self.host = host
+
+        LivePixels.pump(0.5)
+        let rest = try rowSpan()
+
+        let flip = try XCTUnwrap(Harness.flip)
+        flip()
+        var spans: [Int] = []
+        for _ in 0..<70 {
+            LivePixels.pump(0.01)
+            spans.append(try rowSpan())
+        }
+        let trough = try XCTUnwrap(spans.min())
+        return (rest, trough, try XCTUnwrap(spans.firstIndex(of: trough)))
+    }
+
+    func testTheReplaceEffectIgnoresBothWithAnimationAndAnAncestorTransaction() throws {
+        let bare = try swap(.bare)
+        let animated = try swap(.withAnimation)
+        let transacted = try swap(.ancestorTransaction)
+
+        // It runs at all, and it is a *collapse* — otherwise the three
+        // comparisons below are three readings of a glyph that never moved.
+        XCTAssertEqual(bare.rest, 15)
+        XCTAssertGreaterThanOrEqual(bare.rest - bare.trough, 4, "the symbol never collapsed")
+
+        for (name, other) in [("withAnimation", animated), ("ancestorTransaction", transacted)] {
+            XCTAssertLessThanOrEqual(
+                abs(bare.trough - other.trough), 1,
+                "\(name) changed how far the symbol collapsed: \(other.trough) against \(bare.trough)"
+            )
+            XCTAssertLessThanOrEqual(
+                abs(bare.frame - other.frame), 3,
+                "\(name) retimed the effect: bottomed out on frame \(other.frame) against \(bare.frame)"
+            )
+        }
+    }
+}
+
 /// **The kick, on the pixels.** The constants above say what the peak is; this
 /// says the keyframes are aimed at it.
 ///

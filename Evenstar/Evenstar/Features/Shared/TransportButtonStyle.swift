@@ -216,6 +216,47 @@ struct TransportButtonStyle: ButtonStyle {
                 // arrangement as `QueueToggleStyle` and `TabPressStyle`, so the
                 // whole decision stays in `BottomBarStyle`.
                 .opacity(isPressed ? BottomBarStyle.pressedOpacity : 1)
+                // **This `.animation` scopes an implicit animation over the
+                // whole label, in both modes, and one caller's label is not
+                // inert.** `.transportToggle`'s is
+                // `Image(systemName: isPlaying ? "pause.fill" : "play.fill")`
+                // carrying `.contentTransition(.symbolEffect(.replace))`
+                // (`MiniPlayerChrome`, `NowPlayingContent`), and `isPlaying`
+                // flips in the same touch-down transaction `isPressed` does. So
+                // the symbol swap is inside this modifier's reach, and the
+                // question of whether it now runs on `press`'s 0.09s instead of
+                // its own curve is a real one.
+                //
+                // **It does not bite, and it cannot.** Measured rather than
+                // reasoned about: the replace effect is timed by SF Symbols and
+                // ignores the transaction it happens in, so no ancestor's
+                // animation reaches it. `SymbolReplaceTransactionEvidenceTests`
+                // records that — one swap run bare, inside a 1.2s
+                // `withAnimation`, and under a 1.2s `.transaction` on an
+                // ancestor, all three collapsing the glyph to the same depth on
+                // the same frame.
+                //
+                // The before/after was measured too, on this exact call: with
+                // this pair of modifiers and without them, `isPlaying` and
+                // `isPressed` flipping together, the glyph's row-span trace
+                // troughs at frame 21 either way in both modes. The unreduced
+                // mode is unchanged.
+                //
+                // **What is deliberately not pinned by a test, and why.** "The
+                // press does not retime the swap" would be green against every
+                // possible edit to this file — the effect is out of reach of all
+                // of them — so a test of it could not fail and would be worse
+                // than none. The evidence test above pins the platform
+                // behaviour this paragraph rests on instead; if that goes red,
+                // this comment is wrong and the exposure is real.
+                //
+                // One consequence worth stating plainly rather than leaving to
+                // be rediscovered: the swap was *already* animating before this
+                // line existed, **including with Reduce Motion on**, and it is a
+                // scale effect. That is a real gap in this đợt and it is not
+                // this style's to close — `.contentTransition` is applied by the
+                // callers, on labels this style is only handed. It needs those
+                // call sites, which are out of B4's scope.
                 .animation(
                     isPressed ? BottomBarStyle.press : TransportButtonStyle.dimReturn,
                     value: isPressed
