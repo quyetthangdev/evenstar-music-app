@@ -165,9 +165,33 @@ enum ReorderTuning {
     ///
     /// Trùng với `press` ngay dưới, và trùng thật chứ không phải nhầm: hai thứ
     /// đo ra cùng một con số vì cùng là "nhanh, không nảy" ở cùng một cỡ.
+    ///
+    /// Hai con số của lò xo tách thành hằng số, và `partSpring` là **cùng lò xo
+    /// ấy** chứ không phải bản chép lại — cả hai dựng từ đúng một cặp số.
+    ///
+    /// Để `internal` là cố ý, và lý do nằm ở test.
+    /// `ReorderTuningFlatDurationTests` phải lấy mẫu chính lò xo ấy để tính ra
+    /// 0.14, mà `Animation` thì không trả lại `Spring` bên trong nó. Trước vòng
+    /// soát này test gõ lại `Spring(response: 0.28, dampingRatio: 0.68)` thành
+    /// hằng số của riêng nó, nên nửa test ấy khẳng định một tính chất của lò xo
+    /// do **chính test** dựng lên: đổi số ở đây không làm nó đỏ được. Mở rộng
+    /// phạm vi truy cập là cái giá để test đọc vào mã sản phẩm.
+    ///
+    /// `partFull` vẫn dựng bằng `Animation.spring(response:dampingFraction:)`
+    /// chứ không bằng `Animation.spring(partSpring)`, và đó không phải chuyện
+    /// văn phong: đi vòng qua `Spring` rồi ra lại làm `dampingFraction` thành
+    /// 0.6800000000000002. Không ai thấy được hai phần mười tỉ tỉ, nhưng đây là
+    /// vòng sửa lỗi soát bài — mã sản phẩm không đổi lấy một bit là điều kiểm
+    /// được, còn "chắc là không sao" thì không.
     @MainActor static var part: Animation { BottomBarStyle.reduceMotion ? partFlat : partFull }
-    private static let partFull = Animation.spring(response: 0.28, dampingFraction: 0.68)
-    private static let partFlat = Animation.easeInOut(duration: 0.14)
+    static let partResponse = 0.28
+    static let partDampingRatio = 0.68
+    static let partSpring = Spring(response: partResponse, dampingRatio: partDampingRatio)
+    private static let partFull = Animation.spring(response: partResponse, dampingFraction: partDampingRatio)
+    private static let partFlat = Animation.easeInOut(duration: partFlatDuration)
+    /// Cùng lý do như `partSpring`: `Animation` không trả lại thời lượng bên
+    /// trong nó, nên test không có cách nào hỏi `partFlat` dài bao nhiêu.
+    static let partFlatDuration = 0.14
 
     /// Nền hiện ra lúc chạm. Nhanh và không nảy: đây là biên nhận, không phải
     /// chuyển động.
@@ -193,7 +217,9 @@ enum ReorderTuning {
     /// chính cái cảm giác mà triệu chứng tiền đình phản ứng với. Hàng vẫn về
     /// đúng ô mà ngón tay chỉ tới — `targetIndex` tính ở `liftMoved` và không
     /// đổi — chỉ có cách nó tới là đổi.
-    static let settleFlat = Animation.easeInOut(duration: 0.19)
+    static let settleFlat = Animation.easeInOut(duration: settleFlatDuration)
+    /// Cùng lý do như `partFlatDuration` ở trên.
+    static let settleFlatDuration = 0.19
 
     static let corner: CGFloat = 12
 }

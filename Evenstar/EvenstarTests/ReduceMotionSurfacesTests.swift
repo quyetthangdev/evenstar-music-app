@@ -1009,15 +1009,28 @@ final class ReorderTuningFlatDurationTests: XCTestCase {
     }
 
     /// 0.14 and 0.19 are measurements, not choices.
+    ///
+    /// **Both sides come from production now.** `ReorderTuning.partSpring` used
+    /// to be private and the spring was re-typed here as a literal, so this half
+    /// asserted a property of a spring *this file* had built: changing
+    /// `partFull` could not make it red. The spring is `internal` for exactly
+    /// this — see its own note in `ReorderableStack.swift`.
+    ///
+    /// The flat durations are pinned to literals separately below. Comparing two
+    /// production values to each other says they agree; only the literal says
+    /// which number they agree on.
     func testBothFlatDurationsAreTheirSpringsFirstCrossingOf98Percent() throws {
         XCTAssertEqual(
-            try flatDuration(of: Spring(response: 0.28, dampingRatio: 0.68)),
-            0.14, accuracy: 1e-9
+            try flatDuration(of: ReorderTuning.partSpring),
+            ReorderTuning.partFlatDuration, accuracy: 1e-9
         )
         XCTAssertEqual(
             try flatDuration(of: ReorderTuning.settleSpring),
-            0.19, accuracy: 1e-9
+            ReorderTuning.settleFlatDuration, accuracy: 1e-9
         )
+
+        XCTAssertEqual(ReorderTuning.partFlatDuration, 0.14, accuracy: 1e-9)
+        XCTAssertEqual(ReorderTuning.settleFlatDuration, 0.19, accuracy: 1e-9)
     }
 
     /// And both springs really do overshoot, so there is a bounce to remove.
@@ -1025,7 +1038,7 @@ final class ReorderTuningFlatDurationTests: XCTestCase {
     /// nothing and the doc comments would be describing a bounce that is not
     /// there.
     func testBothSpringsOvershootTheirTarget() {
-        let part = samples(Spring(response: 0.28, dampingRatio: 0.68)).map(\.v).max() ?? 0
+        let part = samples(ReorderTuning.partSpring).map(\.v).max() ?? 0
         let settle = samples(ReorderTuning.settleSpring).map(\.v).max() ?? 0
 
         XCTAssertEqual(part, 1.054, accuracy: 5e-4)
@@ -1051,7 +1064,15 @@ final class ReorderReducedMotionTests: XCTestCase {
     }
 
     /// The rows making way keep their travel and lose their bounce.
+    ///
+    /// The literals stay literals here, and they are the only place the two
+    /// numbers appear outside production: `ReorderTuningFlatDurationTests` now
+    /// samples `ReorderTuning.partSpring` rather than a spring of its own, so
+    /// without this pin nothing would say *which* spring both sides agree on.
     func testTheRowsMakingWayFlattenButKeepTheirTravel() {
+        XCTAssertEqual(ReorderTuning.partResponse, 0.28, accuracy: 1e-9)
+        XCTAssertEqual(ReorderTuning.partDampingRatio, 0.68, accuracy: 1e-9)
+
         BottomBarStyle.reduceMotion = false
         XCTAssertEqual(ReorderTuning.part, .spring(response: 0.28, dampingFraction: 0.68))
 
@@ -1137,10 +1158,26 @@ final class ReorderReducedMotionTests: XCTestCase {
                 + [model.dragOffset, CGFloat(model.targetIndex), CGFloat(model.sourceIndex)]
         }
 
+        // **The anchor, and it is what makes the comparison below mean
+        // anything.** Two runs compared only to each other would be green if
+        // `offset(at:)` had started returning zeros in both modes — the
+        // arithmetic could stop working entirely and this would still pass.
+        //
+        // Worked from the source rather than recorded from a run: the finger
+        // lands at y=27, which is `floor(27/54) = 0`, so `sourceIndex` is 0 and
+        // `liftOriginY` 27. It moves to 147, so `dragOffset` is 120 and
+        // `(120/54).rounded()` is 2 — `targetIndex` 2, two slots down and the
+        // remaining 12pt short of a third. Row 0 is the lifted one and carries
+        // the whole 120. Rows 1 and 2 lie between the source and the hole and
+        // step one slot *up*, −54 each. Row 3 is past the hole and does not
+        // move.
+        let expected: [CGFloat] = [120, -54, -54, 0, 120, 2, 0]
+
         BottomBarStyle.reduceMotion = false
         let full = answers()
+        XCTAssertEqual(full, expected)
 
         BottomBarStyle.reduceMotion = true
-        XCTAssertEqual(full, answers())
+        XCTAssertEqual(answers(), expected)
     }
 }
