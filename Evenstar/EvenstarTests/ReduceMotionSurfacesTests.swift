@@ -165,6 +165,16 @@ final class TabSelectionWashTravelTests: XCTestCase {
     /// 3pt into the wash, which is 5pt in from the top of a 54pt bar. Above the
     /// glyph-over-label stack, so no ink but the wash's own is ever sampled.
     private static let sampleRow = 8
+
+    /// Long enough for a tab change to be **completely** finished.
+    ///
+    /// Measured rather than picked: 0.6s was not, and this test failed
+    /// intermittently by up to 6/255 at a wash edge because of it.
+    /// `BottomBarStyle.selection` is a 0.38s spring, and its own doc records it
+    /// overshooting to 106.3% and taking a further third of a second to come
+    /// back down — so a resting sample needs the far side of ~0.71s, not the
+    /// near side of it.
+    private static let settlingTime: TimeInterval = 1.0
     private static let barWidth: CGFloat = 390
 
     private var saved = false
@@ -220,11 +230,11 @@ final class TabSelectionWashTravelTests: XCTestCase {
         let select = try XCTUnwrap(Harness.select)
 
         select(.songs)
-        LivePixels.pump(0.6)
+        LivePixels.pump(Self.settlingTime)
         let songs = try row()
 
         select(.albums)
-        LivePixels.pump(0.6)
+        LivePixels.pump(Self.settlingTime)
         let albums = try row()
 
         let onSongs = (0..<songs.count).filter { songs[$0] < albums[$0] - 5 }
@@ -244,7 +254,7 @@ final class TabSelectionWashTravelTests: XCTestCase {
         let select = try XCTUnwrap(Harness.select)
 
         select(.songs)
-        LivePixels.pump(0.6)
+        LivePixels.pump(Self.settlingTime)
         let rest = try row()[column]
 
         select(.albums)
@@ -286,6 +296,49 @@ final class TabSelectionWashTravelTests: XCTestCase {
         )
     }
 
+    /// **The first tab change of a session that launched with the setting
+    /// already on**, which is the one ordering the structural branch could get
+    /// wrong.
+    ///
+    /// `RootView` publishes the flag from `.onChange(of:initial:true)`, and
+    /// `SwiftUIOnChangeOrderingEvidenceTests` measures that SwiftUI runs that
+    /// action *after* the first `body` of every view below it. So the bar's
+    /// first evaluation reads `false` and builds the travelling structure, even
+    /// for the user the setting is for. `BottomBarStyle.reduceMotion`'s doc
+    /// calls that harmless, and its argument is about curves: `withAnimation`
+    /// re-reads the constant when it fires. B4 put a *structure* behind the same
+    /// flag, and that argument does not cover a structure — so it is measured
+    /// rather than assumed.
+    ///
+    /// The sequence here is exactly the app's: build with the flag off, publish
+    /// it, then change tab. The change is the first render that can see the new
+    /// value, so it is both the switch of structure and the switch of selection
+    /// in one transaction.
+    func testTheFirstTabChangeAfterTheFlagArrivesDoesNotTravelEither() throws {
+        mount(reduceMotion: false)
+
+        let column = try gapColumn()
+        let select = try XCTUnwrap(Harness.select)
+        select(.songs)
+        LivePixels.pump(Self.settlingTime)
+        let rest = try row()[column]
+
+        BottomBarStyle.reduceMotion = true
+        select(.albums)
+
+        var trace: [Int] = []
+        for _ in 0..<50 {
+            LivePixels.pump(0.01)
+            trace.append(try row()[column])
+        }
+        let darkest = try XCTUnwrap(trace.min())
+
+        XCTAssertGreaterThan(
+            darkest, rest - 5,
+            "the first change after the flag arrived still crossed the gap: \(darkest) against \(rest); trace \(trace)"
+        )
+    }
+
     /// The wash still says which tab is current in the reduced mode, and says
     /// it in exactly the same place, with exactly the same ink.
     ///
@@ -297,7 +350,7 @@ final class TabSelectionWashTravelTests: XCTestCase {
             let select = try XCTUnwrap(Harness.select)
             return try LibraryTab.pillTabs.map { tab in
                 select(tab)
-                LivePixels.pump(0.6)
+                LivePixels.pump(Self.settlingTime)
                 return try row()
             }
         }
