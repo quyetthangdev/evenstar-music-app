@@ -244,14 +244,7 @@ struct PlayerCard: View {
     /// the same five points over a third more screen makes each segment longer
     /// and every joint sharper. The count follows the span rather than being a
     /// number that was once right.
-    ///
-    /// **`progress` 0 collapses every stop onto location 1**, which makes the
-    /// whole mask opaque white — an identity mask. That is not an accident of
-    /// the arithmetic, it is the property the suppression in `ArtworkEffects`
-    /// stands on: at strength 0 the dissolve draws nothing, so taking it away
-    /// there cannot be seen. Pinned in `ArtworkEffectStrengthTests`, which is
-    /// also why this is no longer `private`.
-    static func dissolveStops(progress: Double) -> [Gradient.Stop] {
+    private static func dissolveStops(progress: Double) -> [Gradient.Stop] {
         let span = Self.artworkFadeFraction * progress
         let start = 1 - span
         // Bảy điểm được chọn khi vệt tan dài 55% chiều cao bìa; ở 25% cùng
@@ -340,53 +333,6 @@ struct PlayerCard: View {
     /// Với Giảm chuyển động tắt, giá trị này không bao giờ bị ghi và
     /// `.opacity(1)` là một modifier không làm gì.
     @State private var queueArtworkOpacity: Double = 1
-
-    /// Hai lớp hiệu ứng của tấm bìa — lớp sương gradient và cú tan ở mép dưới —
-    /// được phép dựng tới đâu: 1 là dựng đủ, 0 là **không nằm trong cây view**.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// VÌ SAO CẦN NÓ
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Người dùng thử tay trên máy thật: mở player một bài **có ảnh bìa** thì
-    /// giật nhẹ suốt cú bung, bài **không bìa** thì mượt. Hai lớp ấy là hai
-    /// thứ duy nhất trong `artworkView` chỉ bật khi có bìa, và chúng nằm trên
-    /// đúng cái view vừa di chuyển vừa đổi kích thước mỗi khung. Nội dung
-    /// **sau** lớp sương không đổi suốt cú bung — chỉ kích thước đổi — nên cả
-    /// hai đang được tính lại từng khung để cho ra cùng một kết quả ở tỉ lệ
-    /// khác. Xem `ArtworkEffects` cho phần dựng, và ghi chú ở
-    /// `artworkEffectsAreInert(shapeProgress:)` cho phần *khi nào* được gỡ.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// MỘT CỜ TƯỜNG MINH, VÌ `body` KHÔNG CHẠY MỖI KHUNG
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Không thể hỏi "thẻ có đang chuyển động không" từ trong `body`. `progress`
-    /// là computed property và SwiftUI **không** nội suy nó — nó nội suy các
-    /// thuộc tính mà `body` sinh ra. Trong một cú bung bằng chạm, `body` chạy
-    /// đúng **một lần**, với `progress` đã là 1, rồi CoreAnimation lo phần còn
-    /// lại. Một phép thử kiểu `progress > 0 && progress < 1` chỉ bắt được
-    /// đường kéo tay và bỏ sót hoàn toàn đường chạm. Đo ở
-    /// `ArtworkEffectEvidenceTests.testBodyIsEvaluatedOnceWhileSwiftUIDrivesManyFrames`:
-    /// một lần `body`, hàng chục khung nội suy.
-    ///
-    /// Nên nó là một cờ đặt trước khi animation bắt đầu và xoá trong
-    /// `completion:` — cùng mẫu `withAnimation(_:completion:)` mà chỗ mở hàng
-    /// đợi đã dùng.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// MỘT SỐ, KHÔNG PHẢI MỘT `Bool`
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Nó nhân vào `shapeProgress` và cái tích ấy là thứ `ArtworkEffects` vẽ
-    /// theo, nên cú **hiện lại** ở cuối là một cú hoà mờ do SwiftUI nội suy
-    /// chứ không phải một cú bật. Đúng ràng buộc mà ghi chú ở cú tan đã ghi:
-    /// "with no view inserted or removed mid-morph to pop".
-    ///
-    /// **Rơi mất một `completion` thì hỏng cái gì.** Giá trị kẹt ở 0 nghĩa là
-    /// thẻ đang mở thiếu lớp sương và mép dưới bìa cứng lại — xấu, nhìn thấy
-    /// được, nhưng không phải một player chết: cú morph kế tiếp phục hồi nó, và
-    /// không có cú chạm nào rơi vào khoảng không. Đó là lý do chỗ này chịu được
-    /// một `completion` trong khi `cardOpacity` thì không — xem ghi chú của
-    /// `morph(to:curve:)`.
-    @State private var artworkEffectsReveal: Double = 1
 
     /// Ba khối trong `QueuePanel` hiện ra tới đâu: 0 chưa có gì, 1 đã tới nơi.
     ///
@@ -1913,21 +1859,95 @@ struct PlayerCard: View {
             }
         }
         .frame(width: width, height: height)
-        // The frost and the bottom-edge dissolve, both of them — see
-        // `ArtworkEffects`, which is where their two comment blocks moved with
-        // the code they describe.
+        // Frosts the picture progressively as it descends, so one photograph
+        // goes from sharp at the top to soft at the bottom rather than being
+        // sharp everywhere and then simply ending.
         //
-        // The strength handed over is the product of the two questions that
-        // decide whether either layer draws anything: how much the artwork
-        // currently looks like a full-bleed cover (`shapeProgress`), and
-        // whether the card is standing still (`artworkEffectsReveal`). One
-        // number rather than two, because it is the number that has to be
-        // interpolated — see `ArtworkEffects.animatableData`.
-        .modifier(
-            ArtworkEffects(
-                hasArtwork: hasArtwork,
-                strength: geometry.shapeProgress * artworkEffectsReveal
-            )
+        // **A gradient-masked material, not `.blur(radius:)`.** A real blur is
+        // an offscreen pass over this view on every frame, and this is the one
+        // view in the card that moves *and* resizes on every frame of a drag —
+        // the same argument that stopped its shadow being interpolated, and the
+        // same class of cost that had `AmbientMesh` removed after Instruments
+        // traced 81% of the app's dropped frames to it. A material is composited
+        // by the same machinery that draws the system's own chrome, and masking
+        // it costs a gradient.
+        //
+        // Clear until 0.30 so the top of the cover is untouched, fully frosted
+        // by 0.72 — before the dissolve below begins in earnest, so the two read
+        // as one continuous softening rather than two effects taking turns.
+        //
+        // `shapeProgress`, so the collapsed pill's thumbnail and the queue's
+        // 54pt slot are not frosted: both are small, sharp objects, and this is
+        // a treatment for a picture the size of a screen.
+        .overlay {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.30),
+                            .init(color: .white.opacity(0.55), location: 0.52),
+                            .init(color: .white, location: 0.72)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                // Cùng lý do cú tan ở mép dưới đã được gác bằng `hasArtwork`:
+                // đây là cách xử lý cho một **bức ảnh** cỡ màn hình, không cho
+                // một mảng màu phẳng. Trên khối vuông placeholder nó chỉ là một
+                // dải sương chạy dọc — một gradient trên thứ đáng ra không có
+                // gradient nào, và là thứ duy nhất còn sót lại làm ô bìa mặc
+                // định trông không phẳng.
+                .opacity(hasArtwork ? geometry.shapeProgress : 0)
+                .allowsHitTesting(false)
+        }
+        // Dissolves the artwork's bottom edge into the background colour
+        // beneath it as the card opens.
+        //
+        // An overlay, deliberately, and not a `.mask`. A mask forces an
+        // offscreen pass over this view every frame, and this is the one view
+        // in the card that moves *and* resizes on every frame of a drag — the
+        // same reason its shadow had to stop being interpolated. Painting the
+        // background's own colour on top costs nothing and is
+        // indistinguishable, because the colour is the same on both sides of
+        // the seam: `background` holds `tintColour` flat down to
+        // `backgroundTintHold`, which is below where the artwork ends.
+        //
+        // A mask, so the artwork genuinely becomes transparent at its bottom
+        // and the drifting colour field behind it shows through.
+        //
+        // This was an overlay painting flat `tintColour`, chosen because an
+        // overlay costs nothing while a mask forces an offscreen pass. That
+        // reasoning held only while the thing underneath was a single colour a
+        // vertical gradient could reproduce. The mesh behind it varies
+        // horizontally as well, and no vertical gradient can match it — an
+        // overlay would paint a uniform band across a field that is not
+        // uniform, and put back a visible edge on the other side of the seam.
+        //
+        // The cost is real and accepted: one offscreen pass over the artwork
+        // per frame during the drag. It buys the only thing that removes the
+        // crease. If it ever measures badly, the answer is to stop compositing
+        // this per frame — not to go back to painting over it.
+        //
+        // Every stop collapses to location 1 at progress 0, making the whole
+        // mask opaque white — so the collapsed pill's thumbnail is untouched,
+        // with no view inserted or removed mid-morph to pop.
+        // Cú tan chỉ thuộc về đường tràn màn hình: nó tồn tại để hoà mép dưới
+        // vào nền. Khối vuông có mép rõ, không có gì để hoà, và một cú tan
+        // trên nó chỉ làm bìa trông như bị mờ.
+        .mask(
+            Group {
+                if hasArtwork {
+                    LinearGradient(
+                        stops: Self.dissolveStops(progress: geometry.shapeProgress),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                } else {
+                    Color.white
+                }
+            }
         )
         // Interpolates to a square corner as it opens: the expanded artwork is
         // full-bleed, and a rounded corner floating against the screen's own
@@ -2357,20 +2377,8 @@ struct PlayerCard: View {
                 x: collapsedCentre.x + (openCentre.x - collapsedCentre.x) * progress,
                 y: collapsedCentre.y + (openCentre.y - collapsedCentre.y) * progress
             ),
-            shapeProgress: Self.shapeProgress(progress: progress, queueFactor: queueFactor)
+            shapeProgress: progress * (1 - queueFactor)
         )
-    }
-
-    /// The single number the mask and the corner radius answer "thumbnail or
-    /// full-bleed cover?" from — `ArtworkGeometry.shapeProgress`, named so the
-    /// three places that ask cannot drift apart.
-    ///
-    /// Chỗ thứ ba là `artworkEffectsAreInert(shapeProgress:)`, gọi từ `morph`
-    /// và từ đầu cú kéo tay: cả hai phải hỏi **đúng** con số mà tấm bìa đang
-    /// vẽ theo, chứ không phải một bản chép lại tình cờ đang khớp. Cùng lý do
-    /// `queuePanelTop` tồn tại — xem ghi chú ở đó, và cái lỗi 12 điểm nó kể.
-    static func shapeProgress(progress: Double, queueFactor: Double) -> Double {
-        progress * (1 - queueFactor)
     }
 
     /// The panel's own top offset from the safe area — exactly what
@@ -2413,23 +2421,7 @@ struct PlayerCard: View {
                 // Guarded rather than assigned unconditionally: this fires on
                 // every touch move, and a redundant `@State` write would
                 // invalidate the view again for nothing.
-                if !isDragging {
-                    isDragging = true
-                    // Cùng một câu hỏi như ở `morph(to:curve:)`, hỏi ở đầu cú
-                    // kéo thay vì đầu cú animate: kéo lên từ viên thuốc thì hai
-                    // lớp đang không vẽ gì và gỡ được ngay, còn kéo xuống từ
-                    // thẻ đang mở thì không. Cú thả tay đi qua `morph` và
-                    // `completion` ở đó là chỗ dựng lại — kể cả khi cú kéo kết
-                    // thúc đúng chỗ nó bắt đầu.
-                    if Self.artworkEffectsAreInert(
-                        shapeProgress: Self.shapeProgress(
-                            progress: progress,
-                            queueFactor: queueFactor
-                        )
-                    ) {
-                        artworkEffectsReveal = 0
-                    }
-                }
+                if !isDragging { isDragging = true }
                 // Written here rather than from an `onChange` on `progress` —
                 // see the note on `expansion`.
                 // `animation: nil` — trong lúc kéo, mỗi khung là một giá trị
@@ -2706,41 +2698,12 @@ struct PlayerCard: View {
     /// này đạt yêu cầu của HIG; nó chỉ chưa phải bản êm nhất có thể có.
     private func morph(to target: Double, curve: Animation) {
         guard BottomBarStyle.reduceMotion else {
-            // Gỡ hai lớp hiệu ứng của tấm bìa trước khi cú bung bắt đầu, và chỉ
-            // khi gỡ được mà không ai thấy — xem
-            // `artworkEffectsAreInert(shapeProgress:)`. Viết ngoài
-            // `withAnimation` bên dưới là cố ý và cũng không quan trọng: ở chỗ
-            // gỡ được, tích `shapeProgress × reveal` bằng 0 ở **cả hai** đầu,
-            // nên không có gì để nội suy dù transaction nào đang mở.
-            if Self.artworkEffectsAreInert(
-                shapeProgress: Self.shapeProgress(progress: progress, queueFactor: queueFactor)
-            ) {
-                artworkEffectsReveal = 0
-            }
             withAnimation(curve) {
                 settled = target
                 dragDelta = 0
                 expansion.set(progress: target, animation: curve)
-            } completion: {
-                // Dựng lại và cho hiện dần, bằng chính đường cong vừa chạy.
-                //
-                // Có rào vì `completion` này nổ sau **mọi** cú morph, kể cả
-                // những cú không gỡ gì — và một cú hoà mờ "1 tới 1" thì không
-                // thấy được, nhưng nó vẫn là một lượt cập nhật cho một view rất
-                // lớn, đúng vào lúc thẻ vừa đứng yên.
-                if artworkEffectsReveal != 1 {
-                    withAnimation(curve) { artworkEffectsReveal = 1 }
-                }
             }
             return
-        }
-
-        // Nhánh giảm chuyển động không gỡ gì: ở đây hình học **nhảy**, không có
-        // khung nào phải vẽ tấm bìa ở một kích thước trung gian, nên không có
-        // gì để tiết kiệm. Chỉ phục hồi, phòng khi một cú kéo tay vừa gỡ chúng
-        // rồi người dùng thả tay trong lúc Giảm chuyển động đang bật.
-        if artworkEffectsReveal != 1 {
-            withAnimation(curve) { artworkEffectsReveal = 1 }
         }
 
         // Hỏi trước khi `settled` đổi: `progress` là chỗ xuất phát, và sau
@@ -2799,47 +2762,6 @@ struct PlayerCard: View {
     /// Xem `morphNeedsFade(from:to:)`.
     static let morphFadeMinimumTravel: Double = 0.02
 
-    /// Hai lớp hiệu ứng của tấm bìa có đang **không vẽ ra gì** không — tức có
-    /// gỡ chúng khỏi cây view ngay lúc này mà không ai thấy được không.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// VÌ SAO CÂU HỎI LẠI LÀ CÂU HỎI NÀY
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Không có cách nào cho một lớp đắt tiền biến mất **vừa miễn phí vừa
-    /// không pop**, trừ khi ngay lúc ấy nó đã vô hình sẵn. Muốn nó tan dần thì
-    /// phải vẽ nó thêm mấy khung nữa — mà mấy khung ấy chính là mấy khung đang
-    /// giật. Nên chỗ duy nhất gỡ được là chỗ nó đang không vẽ gì.
-    ///
-    /// Cả hai lớp đều tắt hẳn ở `shapeProgress` 0, và tắt theo hai đường khác
-    /// nhau nhưng cùng một mốc: lớp sương ở `.opacity(0)`, còn cú tan thì mọi
-    /// stop dồn về location 1 nên mask là một mảng trắng đục — xem
-    /// `dissolveStops(progress:)`. Đó là chỗ viên thuốc thu nhỏ đứng yên, tức
-    /// **đầu cú bung**. Đúng cú mà người dùng báo là giật.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// CÚ THU THÌ KHÔNG, VÀ ĐÓ LÀ MỘT LỰA CHỌN CÓ Ý THỨC
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Đầu cú thu, hai lớp đang hiện đủ. Gỡ chúng ở đó là mép dưới tấm bìa
-    /// cứng đanh lại trong một khung, giữa lúc bìa còn tràn cả màn hình — đúng
-    /// cú pop mà ghi chú ở cú tan cấm. Cho chúng tan nhanh hơn cú thu cũng
-    /// không được: cả hai đi chung một `animatableData`, và khi hai state cùng
-    /// đẩy nó trong một lượt, một đường cong nhanh viết sau **không** thắng —
-    /// đo ở
-    /// `ArtworkEffectEvidenceTests.testALaterFasterCurveDoesNotSpeedUpAPairedAnimatable`.
-    /// Nên cú thu giữ nguyên như cũ: hai lớp mờ dần theo chính cú thu và rời
-    /// cây khi `shapeProgress` về 0. Rẻ hơn được nửa hành trình, không phải cả
-    /// hai.
-    ///
-    /// Ngưỡng chứ không phải `== 0`: `shapeProgress` là một tích của hai số
-    /// động (`progress * (1 - queueFactor)`), và một phần vạn của cú bung thì
-    /// không có pixel nào để mà thấy.
-    static func artworkEffectsAreInert(shapeProgress: Double) -> Bool {
-        shapeProgress <= artworkEffectInertThreshold
-    }
-
-    /// Xem `artworkEffectsAreInert(shapeProgress:)`.
-    static let artworkEffectInertThreshold: Double = 0.001
-
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
     ///   actually draw. See F2.
@@ -2890,179 +2812,6 @@ struct PlayerCard: View {
             refreshCachedCover(for: path, owner: artworkIdentity)
         }
         tint = loadedColour
-    }
-}
-
-/// The artwork's two effect layers — the frost and the bottom-edge dissolve —
-/// and the one number that decides whether either is built at all.
-///
-/// ─────────────────────────────────────────────────────────────────────────
-/// WHY THIS IS A TYPE AND NOT TWO MODIFIERS IN THE CHAIN
-/// ─────────────────────────────────────────────────────────────────────────
-/// It is `Animatable`, and that is the whole reason. `strength` read in
-/// `PlayerCard.body` is the animation's *target* — during a touch expand the
-/// body runs once, with the card already at its destination, and everything
-/// after that is CoreAnimation interpolating properties. A layer that has to
-/// leave the view tree at the moment it stops being visible therefore cannot
-/// be gated on anything `body` can see; only `animatableData` knows what is
-/// actually on screen. Same argument, same shape, as `PresentedOpacity` below,
-/// and measured in `ArtworkEffectEvidenceTests`.
-///
-/// Gating on the presented value is also what makes the layers leave without a
-/// pop in the two cases nobody sets a flag for: the queue opening, which walks
-/// `shapeProgress` to 0 as the cover shrinks onto the header slot, and a close.
-/// In both, `strength` fades to 0 on its own and the layers are gone the frame
-/// it arrives.
-///
-/// ─────────────────────────────────────────────────────────────────────────
-/// AN `if`, NOT AN OPACITY — AND ONLY WHERE AN `if` IS SAFE
-/// ─────────────────────────────────────────────────────────────────────────
-/// The note at `background`'s frosted layer already says it, from a
-/// measurement: *"A material is a live blur of everything behind it,
-/// recomputed every frame, and it costs the same at opacity 0.01 as at 1."*
-/// `ArtworkEffectEvidenceTests.testAMaterialAtOpacityZeroIsStillBuiltAndAnIfRemovesIt`
-/// pins the structural half — at opacity 0 the material is still built and
-/// still in the tree; behind an `if` it is not. So the frost is behind an `if`.
-///
-/// The dissolve is not, and the difference is not an oversight. Taking a
-/// `.mask` *off* a view forks it between "modifier applied" and "modifier not
-/// applied", and a fork is a new identity: measured at
-/// `ArtworkEffectEvidenceTests.testForkingAModifierOnAndOffMidAnimationDestroysTheAnimationInsideIt`,
-/// where flipping the fork mid-flight drives **zero** intermediate values —
-/// the artwork would snap to its final size instead of morphing to it. So the
-/// `.mask` stays applied at all times and only its content changes, down to
-/// the all-white identity mask `dissolveStops` collapses to at strength 0. The
-/// `.overlay` gets the `if` because its content is not the artwork: forking
-/// there costs a layer that is invisible at that instant anyway.
-///
-/// What that leaves on the table is honest to write down: at strength 0 the
-/// artwork still carries one mask pass. That is the same pass the artworkless
-/// card carries — the branch the user measured as smooth — while the frost,
-/// the layer whose cost grows with the area it blurs, is gone.
-private struct ArtworkEffects: ViewModifier, Animatable {
-    /// Whether the song has a real cover. Not animated: it changes when the
-    /// track changes, never in the middle of a morph.
-    let hasArtwork: Bool
-
-    /// `shapeProgress × artworkEffectsReveal` — see the call site.
-    var strength: Double
-
-    var animatableData: Double {
-        get { strength }
-        set { strength = newValue }
-    }
-
-    /// The presented value, clamped.
-    ///
-    /// `strength`'s two ends are both inside 0…1, but the springs that carry it
-    /// there have bounce, so what is on screen mid-flight is not. A negative
-    /// here would run `dissolveStops` past location 1 and hand `LinearGradient`
-    /// stops in descending order; above 1 it would start the dissolve inside
-    /// the picture. Neither end is worth reasoning about further up.
-    private var drawn: Double { min(max(strength, 0), 1) }
-
-    func body(content: Content) -> some View {
-        content
-            // Frosts the picture progressively as it descends, so one photograph
-            // goes from sharp at the top to soft at the bottom rather than being
-            // sharp everywhere and then simply ending.
-            //
-            // **A gradient-masked material, not `.blur(radius:)`.** A real blur is
-            // an offscreen pass over this view on every frame, and this is the one
-            // view in the card that moves *and* resizes on every frame of a drag —
-            // the same argument that stopped its shadow being interpolated, and the
-            // same class of cost that had `AmbientMesh` removed after Instruments
-            // traced 81% of the app's dropped frames to it. A material is composited
-            // by the same machinery that draws the system's own chrome, and masking
-            // it costs a gradient.
-            //
-            // Clear until 0.30 so the top of the cover is untouched, fully frosted
-            // by 0.72 — before the dissolve below begins in earnest, so the two read
-            // as one continuous softening rather than two effects taking turns.
-            //
-            // `shapeProgress`, so the collapsed pill's thumbnail and the queue's
-            // 54pt slot are not frosted: both are small, sharp objects, and this is
-            // a treatment for a picture the size of a screen.
-            .overlay {
-                // Cùng lý do cú tan ở mép dưới đã được gác bằng `hasArtwork`:
-                // đây là cách xử lý cho một **bức ảnh** cỡ màn hình, không cho
-                // một mảng màu phẳng. Trên khối vuông placeholder nó chỉ là một
-                // dải sương chạy dọc — một gradient trên thứ đáng ra không có
-                // gradient nào, và là thứ duy nhất còn sót lại làm ô bìa mặc
-                // định trông không phẳng.
-                //
-                // An `if` where that used to read `.opacity(hasArtwork ? … : 0)`,
-                // and the artworkless card is the case that gains most from the
-                // change: it was paying for a full live blur to draw nothing.
-                if hasArtwork && drawn > 0 {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .mask(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0.30),
-                                    .init(color: .white.opacity(0.55), location: 0.52),
-                                    .init(color: .white, location: 0.72)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .opacity(drawn)
-                        .allowsHitTesting(false)
-                }
-            }
-            // Dissolves the artwork's bottom edge into the background colour
-            // beneath it as the card opens.
-            //
-            // An overlay, deliberately, and not a `.mask`. A mask forces an
-            // offscreen pass over this view every frame, and this is the one view
-            // in the card that moves *and* resizes on every frame of a drag — the
-            // same reason its shadow had to stop being interpolated. Painting the
-            // background's own colour on top costs nothing and is
-            // indistinguishable, because the colour is the same on both sides of
-            // the seam: `background` holds `tintColour` flat down to
-            // `backgroundTintHold`, which is below where the artwork ends.
-            //
-            // A mask, so the artwork genuinely becomes transparent at its bottom
-            // and the drifting colour field behind it shows through.
-            //
-            // This was an overlay painting flat `tintColour`, chosen because an
-            // overlay costs nothing while a mask forces an offscreen pass. That
-            // reasoning held only while the thing underneath was a single colour a
-            // vertical gradient could reproduce. The mesh behind it varies
-            // horizontally as well, and no vertical gradient can match it — an
-            // overlay would paint a uniform band across a field that is not
-            // uniform, and put back a visible edge on the other side of the seam.
-            //
-            // The cost is real and accepted: one offscreen pass over the artwork
-            // per frame during the drag. It buys the only thing that removes the
-            // crease. If it ever measures badly, the answer is to stop compositing
-            // this per frame — not to go back to painting over it.
-            //
-            // Every stop collapses to location 1 at progress 0, making the whole
-            // mask opaque white — so the collapsed pill's thumbnail is untouched,
-            // with no view inserted or removed mid-morph to pop.
-            // Cú tan chỉ thuộc về đường tràn màn hình: nó tồn tại để hoà mép dưới
-            // vào nền. Khối vuông có mép rõ, không có gì để hoà, và một cú tan
-            // trên nó chỉ làm bìa trông như bị mờ.
-            //
-            // It is that last paragraph the suppression rides: while the card is
-            // in motion `drawn` is 0, the stops collapse onto location 1, and
-            // this is the same all-white mask the collapsed pill already had.
-            .mask(
-                Group {
-                    if hasArtwork {
-                        LinearGradient(
-                            stops: PlayerCard.dissolveStops(progress: drawn),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    } else {
-                        Color.white
-                    }
-                }
-            )
     }
 }
 
