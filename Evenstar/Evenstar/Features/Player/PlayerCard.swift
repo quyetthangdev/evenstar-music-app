@@ -924,7 +924,18 @@ struct PlayerCard: View {
         // thì **không**: nó nhân thẳng vào alpha của màu và một alpha âm vẽ ra
         // một bóng ma âm bản. Hai thứ trùng tên và khác hẳn nhau. Đo ở
         // `SwiftUIAnimationTransactionEvidenceTests.testViewOpacityClampsNegativesWhereColourOpacityDoesNot`.
-        .opacity(cardOpacity)
+        //
+        // Qua `PresentedOpacity` chứ không phải `.opacity(cardOpacity)` trần,
+        // và cái nó thêm vào là hit testing, không phải cách vẽ: một view ở độ
+        // mờ 0 trong SwiftUI **vẫn ăn chạm**, nên tấm thẻ tràn màn hình vô hình
+        // suốt 0,37s của cú hoà mờ sẽ nuốt cú chạm vào một hàng thư viện mà
+        // người dùng vẫn còn trông thấy. Phải là `Animatable` vì `cardOpacity`
+        // đọc trong `body` đã là 1 rồi — chỉ giá trị SwiftUI đang nội suy mới
+        // biết thẻ đang mờ tới đâu. Cả lý lẽ nằm ở ghi chú của kiểu ấy.
+        //
+        // Vẫn là `View.opacity` bên trong, nên đoạn văn ngay trên còn nguyên
+        // hiệu lực.
+        .modifier(PresentedOpacity(opacity: cardOpacity))
         .opacity(playback.currentTrack == nil ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
@@ -2804,3 +2815,71 @@ struct PlayerCard: View {
     }
 }
 
+/// Áp một độ mờ **và** cho hit testing đi theo đúng giá trị đang được *vẽ*.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO CẦN MỘT KIỂU RIÊNG, KHI `.allowsHitTesting` LÀ MỘT DÒNG
+/// ─────────────────────────────────────────────────────────────────────────
+/// Trong SwiftUI, khác với `alpha` của UIKit, một view ở `opacity` 0 **vẫn
+/// nhận chạm**. Nhánh giảm chuyển động của `PlayerCard.morph(to:curve:)` nhảy
+/// hình học tới toàn màn hình rồi hạ `cardOpacity` về 0 và hoà mờ về 1 trong
+/// `expandFlat` = 0,37s, nên suốt quãng ấy có một tấm player tràn màn hình
+/// không nhìn thấy nằm chắn trên thư viện. Chạm một hàng bài mình vẫn còn
+/// trông thấy thì cú chạm rơi vào tấm player vô hình. Trước đợt này thẻ đục
+/// suốt cú mở, nên **cái vẽ ra luôn khớp với cái chạm được**; đây là chỗ khôi
+/// phục điều đó.
+///
+/// `.allowsHitTesting(cardOpacity > 0)` viết thẳng trong `body` **không chữa
+/// được gì**, và lý do đáng ghi lại: `cardOpacity` trong `body` là giá trị
+/// trong *state*, không phải giá trị đang vẽ. Nó nhảy về 1 ngay trong lượt
+/// `withAnimation` ấy — chỉ có cái SwiftUI nội suy mới đi từ 0 lên. Muốn đọc
+/// được giá trị đang vẽ thì phải là `animatableData`, và `animatableData` chỉ
+/// tồn tại trên một `Animatable`.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// NGƯỠNG 0,5 LÀ **CHỌN**, KHÔNG PHẢI ĐO
+/// ─────────────────────────────────────────────────────────────────────────
+/// Cùng loại quyết định với `PlayerCard.morphFadeMinimumTravel`, và cùng nên
+/// nói thẳng ra. Giữa chừng cú hoà mờ, cả hai lớp đều nhìn thấy được một
+/// phần, nên không có câu trả lời đúng tuyệt đối — chỉ có hai kiểu lệch:
+///
+///   - Ngưỡng quá thấp: thẻ ăn chạm khi nó gần như vô hình. Đó đúng là lỗi
+///     đang chữa, chỉ ngắn hơn.
+///   - Ngưỡng quá cao: thẻ đã hiện rõ mà chạm vẫn xuyên qua xuống thư viện —
+///     tệ theo chiều ngược lại, và tệ hơn, vì cú chạm ấy đổi bài đang phát.
+///
+/// Nửa đường chia đôi hai kiểu lệch ấy: lớp nào đang đục hơn thì lớp ấy nhận
+/// chạm. Không có con số đo được nào tốt hơn nửa đường ở đây.
+///
+/// Với `cardOpacity` xuất phát từ số **âm** — xem `morph(to:curve:)`, cú morph
+/// đè lên một cú hoà mờ đang chạy — ngưỡng này chỉ kéo dài thêm chính khoảng
+/// trống mà ghi chú ấy đã ghi lại và chấp nhận. Không có trạng thái mới nào.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// GIẢM CHUYỂN ĐỘNG TẮT: KHÔNG ĐỔI MỘT DÒNG NÀO
+/// ─────────────────────────────────────────────────────────────────────────
+/// `cardOpacity` chỉ được ghi trong nhánh giảm chuyển động của `morph`. Khi
+/// tắt, nó là hằng số 1 từ lúc dựng, `animatableData` không bao giờ nội suy,
+/// nên `opacity >= 0.5` luôn đúng và modifier này là `.opacity(1)` cộng một
+/// `.allowsHitTesting(true)` — đúng bằng dòng `.opacity(cardOpacity)` nó thay.
+///
+/// `content.opacity(_:)` là `View.opacity`, **không** phải `ShapeStyle.opacity`
+/// — cả chuỗi lập luận về số âm ở `morph(to:curve:)` đứng trên chỗ ấy, nên
+/// đừng đổi nó thành một `Color` có alpha.
+private struct PresentedOpacity: ViewModifier, Animatable {
+    var opacity: Double
+
+    var animatableData: Double {
+        get { opacity }
+        set { opacity = newValue }
+    }
+
+    /// Xem ghi chú của kiểu này: chọn, không đo.
+    static let hitTestThreshold: Double = 0.5
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .allowsHitTesting(opacity >= Self.hitTestThreshold)
+    }
+}
