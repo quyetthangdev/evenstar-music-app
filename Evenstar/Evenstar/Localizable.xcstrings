@@ -1,0 +1,2184 @@
+{
+  "sourceLanguage" : "vi",
+  "strings" : {
+    "%lld bài đã thêm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld added"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bài đã thêm"
+          }
+        }
+      }
+    },
+    "%lld bài hát" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld song"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld songs"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bài hát"
+          }
+        }
+      }
+    },
+    "%lld bài lỗi" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld failed"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bài lỗi"
+          }
+        }
+      }
+    },
+    "%lld bài trùng, đã bỏ qua" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld duplicates skipped"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bài trùng, đã bỏ qua"
+          }
+        }
+      }
+    },
+    "• %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• %@"
+          }
+        }
+      }
+    },
+    "+%lld lỗi khác" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld more"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld lỗi khác"
+          }
+        }
+      }
+    },
+    "1. Mở ứng dụng Google Drive, giữ vào thư mục nhạc." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Open the Google Drive app and press and hold your music folder."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Mở ứng dụng Google Drive, giữ vào thư mục nhạc."
+          }
+        }
+      }
+    },
+    "2. Chọn **Chia sẻ** → **Quản lý quyền truy cập**, đổi thành **Bất kỳ ai có đường liên kết**." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Choose **Share** → **Manage access**, then set it to **Anyone with the link**."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Chọn **Chia sẻ** → **Quản lý quyền truy cập**, đổi thành **Bất kỳ ai có đường liên kết**."
+          }
+        }
+      }
+    },
+    "3. Bấm **Sao chép đường liên kết**, rồi quay lại đây và dán vào ô trên." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3. Tap **Copy link**, come back here and paste it into the field above."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3. Bấm **Sao chép đường liên kết**, rồi quay lại đây và dán vào ô trên."
+          }
+        }
+      }
+    },
+    "Album" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Albums"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Album"
+          }
+        }
+      }
+    },
+    "Ẩn nhạc hạn chế thương mại" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide non-commercial licences"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ẩn nhạc hạn chế thương mại"
+          }
+        }
+      }
+    },
+    "Bài hát" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Songs"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bài hát"
+          }
+        }
+      }
+    },
+    "Bài hát, nghệ sĩ, album" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Songs, artists, albums"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bài hát, nghệ sĩ, album"
+          }
+        }
+      }
+    },
+    "Cách lấy link" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to get the link"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cách lấy link"
+          }
+        }
+      }
+    },
+    "Cài đặt" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt"
+          }
+        }
+      }
+    },
+    "Chế độ" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chế độ"
+          }
+        }
+      }
+    },
+    "Chép file thất bại: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy failed: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chép file thất bại: %@"
+          }
+        }
+      }
+    },
+    "Chưa cấu hình API key cho Google Drive." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Google Drive API key has been configured."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa cấu hình API key cho Google Drive."
+          }
+        }
+      }
+    },
+    "Chưa cấu hình client ID cho Jamendo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo client ID isn’t configured."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa cấu hình client ID cho Jamendo."
+          }
+        }
+      }
+    },
+    "Chưa có album" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No albums yet"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa có album"
+          }
+        }
+      }
+    },
+    "Chưa có bài hát nào" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No music yet"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa có bài hát nào"
+          }
+        }
+      }
+    },
+    "Chưa có nghệ sĩ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No artists yet"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa có nghệ sĩ"
+          }
+        }
+      }
+    },
+    "Chưa có thư mục nào" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No folders yet"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa có thư mục nào"
+          }
+        }
+      }
+    },
+    "Chưa lưu bài nào từ Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No saved Jamendo tracks"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa lưu bài nào từ Jamendo"
+          }
+        }
+      }
+    },
+    "Chưa quét" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not scanned"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa quét"
+          }
+        }
+      }
+    },
+    "Cổ điển" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classical"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cổ điển"
+          }
+        }
+      }
+    },
+    "Đã liên kết" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã liên kết"
+          }
+        }
+      }
+    },
+    "Đã lưu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã lưu"
+          }
+        }
+      }
+    },
+    "Đã nhập xong" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import complete"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã nhập xong"
+          }
+        }
+      }
+    },
+    "Đã quét" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanned"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã quét"
+          }
+        }
+      }
+    },
+    "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Google Drive quota has been used up. Try again in a few minutes."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã vượt hạn ngạch truy cập Google Drive. Thử lại sau ít phút."
+          }
+        }
+      }
+    },
+    "Dán link thư mục Drive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste a Drive folder link"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dán link thư mục Drive"
+          }
+        }
+      }
+    },
+    "Đang lưu %lld bài…" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saving %lld song…"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saving %lld songs…"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang lưu %lld bài…"
+          }
+        }
+      }
+    },
+    "Đang nhập %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing %lld of %lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang nhập %lld/%lld"
+          }
+        }
+      }
+    },
+    "Đang quét thư mục…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning folder…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang quét thư mục…"
+          }
+        }
+      }
+    },
+    "Đang quét…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang quét…"
+          }
+        }
+      }
+    },
+    "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That isn’t a Drive folder link. Open the folder in Drive, tap Share, then copy the link."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đây không phải link thư mục Drive. Mở thư mục trên Drive, bấm Chia sẻ và sao chép liên kết."
+          }
+        }
+      }
+    },
+    "Để trống Nghệ sĩ hoặc Album thì bài hát sẽ được xếp vào nhóm chưa rõ." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave Artist or Album blank and the song is grouped under unknown."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Để trống Nghệ sĩ hoặc Album thì bài hát sẽ được xếp vào nhóm chưa rõ."
+          }
+        }
+      }
+    },
+    "Điện tử" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Electronic"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Điện tử"
+          }
+        }
+      }
+    },
+    "Định dạng không hỗ trợ: .%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported format: .%@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Định dạng không hỗ trợ: .%@"
+          }
+        }
+      }
+    },
+    "Đổi ảnh bìa" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change artwork"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đổi ảnh bìa"
+          }
+        }
+      }
+    },
+    "Đóng tìm kiếm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close search"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đóng tìm kiếm"
+          }
+        }
+      }
+    },
+    "Drive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drive"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drive"
+          }
+        }
+      }
+    },
+    "Dung lượng" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dung lượng"
+          }
+        }
+      }
+    },
+    "Dừng phát" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dừng phát"
+          }
+        }
+      }
+    },
+    "Giao diện" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giao diện"
+          }
+        }
+      }
+    },
+    "Giấy phép khác" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other licence"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giấy phép khác"
+          }
+        }
+      }
+    },
+    "Gỡ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlink"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gỡ"
+          }
+        }
+      }
+    },
+    "Google Drive trả về lỗi %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Drive returned error %lld."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Drive trả về lỗi %lld."
+          }
+        }
+      }
+    },
+    "Hàng đợi" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queue"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hàng đợi"
+          }
+        }
+      }
+    },
+    "Hiện thanh điều hướng" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the tab bar"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiện thanh điều hướng"
+          }
+        }
+      }
+    },
+    "Hiển thị" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiển thị"
+          }
+        }
+      }
+    },
+    "Huỷ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huỷ"
+          }
+        }
+      }
+    },
+    "Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo"
+          }
+        }
+      }
+    },
+    "Jamendo đang giới hạn số lượt truy cập. Thử lại sau ít phút." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo is rate-limiting requests. Try again in a few minutes."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo đang giới hạn số lượt truy cập. Thử lại sau ít phút."
+          }
+        }
+      }
+    },
+    "Jamendo là kho nhạc Creative Commons miễn phí." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo is a free library of Creative Commons music."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamendo là kho nhạc Creative Commons miễn phí."
+          }
+        }
+      }
+    },
+    "Kết quả" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Results"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết quả"
+          }
+        }
+      }
+    },
+    "Khám phá" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discover"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khám phá"
+          }
+        }
+      }
+    },
+    "Khám phá Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explore Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khám phá Jamendo"
+          }
+        }
+      }
+    },
+    "Không có bài hát nào trong thư mục đã liên kết. Kéo xuống để quét lại, hoặc mở ⋯ để thêm thư mục khác." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No songs in the linked folder. Pull down to rescan, or open ⋯ to add another folder."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có bài hát nào trong thư mục đã liên kết. Kéo xuống để quét lại, hoặc mở ⋯ để thêm thư mục khác."
+          }
+        }
+      }
+    },
+    "Không có bài hát, nghệ sĩ hay album nào khớp với “%@”." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing matches “%@” — no song, artist or album."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có bài hát, nghệ sĩ hay album nào khớp với “%@”."
+          }
+        }
+      }
+    },
+    "Không có bài nào hợp với cài đặt giấy phép. Tắt “Ẩn nhạc hạn chế thương mại” trong Cài đặt để xem thêm." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No tracks match your licence setting. Turn off “Hide non-commercial licences” in Settings to see more."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có bài nào hợp với cài đặt giấy phép. Tắt “Ẩn nhạc hạn chế thương mại” trong Cài đặt để xem thêm."
+          }
+        }
+      }
+    },
+    "Không có kết nối mạng." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No network connection."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có kết nối mạng."
+          }
+        }
+      }
+    },
+    "Không còn bài nào tiếp theo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing up next"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không còn bài nào tiếp theo"
+          }
+        }
+      }
+    },
+    "Không đặt được ảnh bìa" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t set the artwork"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không đặt được ảnh bìa"
+          }
+        }
+      }
+    },
+    "Không đọc được ảnh đã chọn." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read the selected image."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không đọc được ảnh đã chọn."
+          }
+        }
+      }
+    },
+    "Không đọc được dữ liệu Google Drive trả về." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read what Google Drive returned."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không đọc được dữ liệu Google Drive trả về."
+          }
+        }
+      }
+    },
+    "Không đọc được dữ liệu từ Jamendo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read the data from Jamendo."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không đọc được dữ liệu từ Jamendo."
+          }
+        }
+      }
+    },
+    "Không đọc được thông tin bài hát." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read the track’s metadata."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không đọc được thông tin bài hát."
+          }
+        }
+      }
+    },
+    "Không lưu được" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không lưu được"
+          }
+        }
+      }
+    },
+    "Không lưu được ảnh bìa: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save the artwork: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không lưu được ảnh bìa: %@"
+          }
+        }
+      }
+    },
+    "Không lưu được thay đổi: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save the changes: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không lưu được thay đổi: %@"
+          }
+        }
+      }
+    },
+    "Không lưu được vào thư viện: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save to the library: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không lưu được vào thư viện: %@"
+          }
+        }
+      }
+    },
+    "Không mở được %@. File có thể đã bị di chuyển hoặc xoá." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t open %@. It may have been moved or deleted."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không mở được %@. File có thể đã bị di chuyển hoặc xoá."
+          }
+        }
+      }
+    },
+    "Không mở được file" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t open those files"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không mở được file"
+          }
+        }
+      }
+    },
+    "Không phát được" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t play"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không phát được"
+          }
+        }
+      }
+    },
+    "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t play this track. The file may have been removed from Drive, or the folder is no longer shared."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không phát được bài này. Tệp có thể đã bị xoá khỏi Drive hoặc thư mục không còn được chia sẻ."
+          }
+        }
+      }
+    },
+    "Không tải được" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tải được"
+          }
+        }
+      }
+    },
+    "Không tải được ảnh đã chọn: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load the selected image: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tải được ảnh đã chọn: %@"
+          }
+        }
+      }
+    },
+    "Không tải được ảnh đã chọn." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load the selected image."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tải được ảnh đã chọn."
+          }
+        }
+      }
+    },
+    "Không thể kết nối tới Google Drive. Vui lòng thử lại sau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t reach Google Drive. Please try again later."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể kết nối tới Google Drive. Vui lòng thử lại sau."
+          }
+        }
+      }
+    },
+    "Không thể kết nối tới Jamendo. Vui lòng thử lại sau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t reach Jamendo. Please try again later."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể kết nối tới Jamendo. Vui lòng thử lại sau."
+          }
+        }
+      }
+    },
+    "Không tìm thấy bài này trên Jamendo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That track isn’t on Jamendo any more."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy bài này trên Jamendo."
+          }
+        }
+      }
+    },
+    "Không tìm thấy kết quả" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy kết quả"
+          }
+        }
+      }
+    },
+    "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder not found. The link may be wrong, or the folder was deleted."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy thư mục. Link có thể sai hoặc thư mục đã bị xoá."
+          }
+        }
+      }
+    },
+    "Lặp lại" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lặp lại"
+          }
+        }
+      }
+    },
+    "Liên kết" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liên kết"
+          }
+        }
+      }
+    },
+    "Lưu" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lưu"
+          }
+        }
+      }
+    },
+    "Lưu vào thư viện" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save to library"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lưu vào thư viện"
+          }
+        }
+      }
+    },
+    "Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screens the system provides — the photo picker, the file importer, the volume control — stay in your device’s language."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Màn hình do hệ thống cung cấp — chọn ảnh, chọn tệp, điều khiển âm lượng — vẫn theo ngôn ngữ của máy."
+          }
+        }
+      }
+    },
+    "Máy đã hết dung lượng." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your device is out of storage."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máy đã hết dung lượng."
+          }
+        }
+      }
+    },
+    "Nghệ sĩ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artists"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nghệ sĩ"
+          }
+        }
+      }
+    },
+    "Ngôn ngữ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ngôn ngữ"
+          }
+        }
+      }
+    },
+    "Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The language is changed in iOS Settings. If you don’t see it there, add a second language under General → Language & Region."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ngôn ngữ được đổi trong Cài đặt của iOS. Nếu không thấy mục đó, thêm một ngôn ngữ nữa vào Cài đặt chung → Ngôn ngữ & Vùng."
+          }
+        }
+      }
+    },
+    "Nguồn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nguồn"
+          }
+        }
+      }
+    },
+    "Nguồn nhạc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music sources"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nguồn nhạc"
+          }
+        }
+      }
+    },
+    "Nhạc trên Drive được phát trực tiếp, không tốn dung lượng máy. Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”, nghĩa là ai có link cũng xem được." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drive music streams, so it uses no space on your device. The folder has to be shared as “anyone with the link” — which means anyone who has the link can see what is in it."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhạc trên Drive được phát trực tiếp, không tốn dung lượng máy. Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”, nghĩa là ai có link cũng xem được."
+          }
+        }
+      }
+    },
+    "Nhập file nhạc từ ứng dụng Tệp để bắt đầu." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import audio files from the Files app to get started."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập file nhạc từ ứng dụng Tệp để bắt đầu."
+          }
+        }
+      }
+    },
+    "Nhập nhạc để thấy album ở đây." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import music to see albums here."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập nhạc để thấy album ở đây."
+          }
+        }
+      }
+    },
+    "Nhập nhạc để thấy nghệ sĩ ở đây." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import music to see artists here."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập nhạc để thấy nghệ sĩ ở đây."
+          }
+        }
+      }
+    },
+    "Nhiều bài trên Jamendo mang giấy phép NC: nghe cá nhân thì thoải mái, nhưng cấm dùng trong sản phẩm có thu tiền. Bật để giấu chúng khỏi màn Khám phá. Tắt thì có nhiều nhạc hơn để chọn, và bạn tự chịu trách nhiệm về giấy phép." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Many Jamendo tracks carry an NC licence: free to listen to, but not allowed in anything that charges money. Turn this on to hide them from Discover. Turn it off for a wider catalogue, and licence compliance becomes yours."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhiều bài trên Jamendo mang giấy phép NC: nghe cá nhân thì thoải mái, nhưng cấm dùng trong sản phẩm có thu tiền. Bật để giấu chúng khỏi màn Khám phá. Tắt thì có nhiều nhạc hơn để chọn, và bạn tự chịu trách nhiệm về giấy phép."
+          }
+        }
+      }
+    },
+    "OK" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "Phát ngẫu nhiên" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shuffle"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phát ngẫu nhiên"
+          }
+        }
+      }
+    },
+    "Phiên bản" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiên bản"
+          }
+        }
+      }
+    },
+    "Playlist" : {
+      "comment" : "The title of the view.",
+      "isCommentAutoGenerated" : true
+    },
+    "Quét lại" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rescan"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quét lại"
+          }
+        }
+      }
+    },
+    "Sáng" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sáng"
+          }
+        }
+      }
+    },
+    "Sửa thông tin" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit details"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sửa thông tin"
+          }
+        }
+      }
+    },
+    "Tài khoản" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tài khoản"
+          }
+        }
+      }
+    },
+    "Tên album" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Album"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên album"
+          }
+        }
+      }
+    },
+    "Tên bài hát" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên bài hát"
+          }
+        }
+      }
+    },
+    "Tên bài hát không được để trống." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The title can’t be empty."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên bài hát không được để trống."
+          }
+        }
+      }
+    },
+    "Tên hiển thị (không bắt buộc)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display name (optional)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên hiển thị (không bắt buộc)"
+          }
+        }
+      }
+    },
+    "Tên nghệ sĩ" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artist"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên nghệ sĩ"
+          }
+        }
+      }
+    },
+    "Thêm nhạc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add music"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thêm nhạc"
+          }
+        }
+      }
+    },
+    "Thêm thư mục" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add folder"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thêm thư mục"
+          }
+        }
+      }
+    },
+    "Theo hệ thống" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Theo hệ thống"
+          }
+        }
+      }
+    },
+    "Thịnh hành" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trending"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thịnh hành"
+          }
+        }
+      }
+    },
+    "Thử lại" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thử lại"
+          }
+        }
+      }
+    },
+    "Thư mục Drive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drive folders"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thư mục Drive"
+          }
+        }
+      }
+    },
+    "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder isn’t shared publicly. On Drive, change access to “anyone with the link”."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thư mục này chưa được chia sẻ công khai. Trên Drive, đổi quyền thành “bất kỳ ai có liên kết”."
+          }
+        }
+      }
+    },
+    "Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The folder has to be shared as “anyone with the link”. That means anyone who has the link can see the music in it."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”. Nghĩa là bất kỳ ai có link đều xem được nhạc trong đó."
+          }
+        }
+      }
+    },
+    "Thư viện" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thư viện"
+          }
+        }
+      }
+    },
+    "Tiếp theo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up Next"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiếp theo"
+          }
+        }
+      }
+    },
+    "Tìm kiếm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm kiếm"
+          }
+        }
+      }
+    },
+    "Tìm theo tên bài hát, nghệ sĩ hoặc album." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search by song, artist or album."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm theo tên bài hát, nghệ sĩ hoặc album."
+          }
+        }
+      }
+    },
+    "Tìm trên Jamendo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Jamendo"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm trên Jamendo"
+          }
+        }
+      }
+    },
+    "Tìm trong thư viện" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search your library"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm trong thư viện"
+          }
+        }
+      }
+    },
+    "Tối" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tối"
+          }
+        }
+      }
+    },
+    "Trên máy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On device"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trên máy"
+          }
+        }
+      }
+    },
+    "Tự phát tiếp" : {
+      "comment" : "Label for the \"Autoplay\" toggle in the queue panel.",
+      "isCommentAutoGenerated" : true
+    },
+    "Ứng dụng" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ứng dụng"
+          }
+        }
+      }
+    },
+    "Về %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Về %@"
+          }
+        }
+      }
+    },
+    "Vị trí phát" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playback position"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vị trí phát"
+          }
+        }
+      }
+    },
+    "Xoá" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xoá"
+          }
+        }
+      }
+    },
+    "Xong" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xong"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.1"
+}

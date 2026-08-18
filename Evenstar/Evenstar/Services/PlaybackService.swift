@@ -1,73 +1,1156 @@
 import Foundation
 import Observation
 import AVFoundation
+import UIKit
+import SwiftUI
+import OSLog
 
 @Observable
+@MainActor
 final class PlaybackService {
+    // MARK: - Observable state
     private(set) var isPlaying: Bool = false
     private(set) var currentTrackTitle: String?
     private(set) var currentMetadata: TrackMetadata?
     private(set) var position: TimeInterval = 0
-    var duration: TimeInterval { player.duration }
+    /// Holds `Track` and `DriveTrack` side by side — see `Playable`. Nothing
+    /// below this line may re-introduce a source-specific assumption about the
+    /// element type; the whole point is that repeat, restore, play counting and
+    /// the lock-screen push are written once.
+    private(set) var queue: [any Playable] = []
+    private(set) var queueIndex: Int = 0
+    private(set) var repeatMode: RepeatMode = .off
 
+    /// Hết hàng đợi thì nối thêm từ thư viện thay vì dừng.
+    ///
+    /// Tương đương Autoplay của Apple Music, và chỉ có nghĩa ở đúng một chỗ:
+    /// `handleFinish` khi `repeatMode == .off` và không còn bài kế. Không đụng
+    /// tới nút Next — bấm Next ở bài cuối vẫn là "hết rồi", vì đó là một câu
+    /// hỏi người dùng vừa đặt chứ không phải một lượt phát không ai trông.
+    private(set) var isAutoplay = false
+    /// Whether everything after the playing track is in random order.
+    ///
+    /// Only the *tail* — see `toggleShuffle()`. Read by the pill in
+    /// `QueuePanel` and persisted alongside `repeatMode`.
+    private(set) var isShuffled: Bool = false
+
+    /// The queue as it stood before shuffling, so the toggle can be undone.
+    ///
+    /// Empty whenever `isShuffled` is false. Not derived on demand from the
+    /// shuffled queue, because a shuffle is not invertible: the original order
+    /// is information, and the only place it exists is here.
+    private(set) var unshuffledQueue: [any Playable] = []
+    /// How many times the user has explicitly picked a track to play.
+    ///
+    /// Incremented by `play(_:in:)` and by nothing else. That method is the only
+    /// entry point a *deliberate choice* comes through — a row tapped in a list.
+    /// Next, Previous, auto-advance at the end of a track, the lock screen and
+    /// session restore all reach playback through `advance(to:)` or
+    /// `loadCurrentAndPlay()` and leave this untouched.
+    ///
+    /// A count rather than a flag or a `Bool` that has to be reset: two taps on
+    /// the same row are two separate events, and a consumer that only reacts to
+    /// `false -> true` would miss the second. A count rather than a `Date` so a
+    /// test can assert on it without a clock.
+    ///
+    /// This is a playback fact, not a UI one: it says a selection happened, not
+    /// what should be shown. `PlayerCard` is what decides that a selection opens
+    /// the full-screen player, and it is the only reader.
+    private(set) var explicitSelections: Int = 0
+
+    /// The last playback failure, for the UI to show.
+    ///
+    /// Cleared when a track actually *starts playing* — the end of the
+    /// `autoPlay` branch of `loadCurrentAndPlay()`. Not cleared by `resume()`,
+    /// and deliberately so: after a failure `hasLoaded` is false, so `resume()`
+    /// returns early and there is nothing successful to clear the error on
+    /// behalf of. Playing something is what makes the banner stale, and playing
+    /// something is what removes it.
+    private(set) var lastPlaybackError: Error?
+
+    /// The failure the user is *currently stuck on*, as opposed to one that has
+    /// already been recovered from.
+    ///
+    /// `lastPlaybackError` answers "what was the last thing that went wrong",
+    /// which is what the Drive list's banner wants: a track skipped past because
+    /// its file is gone from Drive should still say so while the next one plays
+    /// — the spec's "Skip to next, note it". The player surfaces want the
+    /// narrower question. They put the message where the artist line goes, and a
+    /// track that is playing perfectly well must not be captioned with the
+    /// failure of the one before it.
+    ///
+    /// `hasLoaded` is exactly that distinction and needs no new state to track
+    /// it: `handleFailure` clears it, and any load that succeeds — including the
+    /// one a skip performs — sets it again.
+    var stalledPlaybackError: Error? { hasLoaded ? nil : lastPlaybackError }
+
+    var duration: TimeInterval { player.duration }
+    var currentTrack: (any Playable)? {
+        queue.indices.contains(queueIndex) ? queue[queueIndex] : nil
+    }
+
+    /// Whether Next has anywhere to go.
+    ///
+    /// Derived here rather than in the views because two of them ask. Both the
+    /// expanded player and the mini player used to compute
+    /// `queueIndex >= queue.count - 1` for themselves, which was correct only
+    /// while the end of the queue was always the end of playback. With a repeat
+    /// mode armed it no longer is, and one rule living in two files is how a
+    /// half-applied fix ships.
+    var canGoNext: Bool {
+        !queue.isEmpty && (queueIndex + 1 < queue.count || repeatMode != .off)
+    }
+
+    // MARK: - Dependencies
     private let player: AudioPlayerProtocol
     private let nowPlaying: NowPlayingPublisher
+    private let library: LibraryService
+
+    // MARK: - Internal state
     private var hasLoaded: Bool = false
     private var sessionActivated: Bool = false
+    /// Where interruption and route-change notifications are listened for.
+    ///
+    /// Injected so a test can post into a centre of its own. Posting an
+    /// `AVAudioSession` notification into `NotificationCenter.default` from a
+    /// test would be heard by every other live service in the process — and by
+    /// the real audio session's own observers.
+    private let notificationCentre: NotificationCenter
+    /// The observer tokens, held only so `deinit` can hand them back.
+    ///
+    /// `nonisolated(unsafe)` because `deinit` is not on the main actor and
+    /// cannot read a main-actor property. Safe by construction rather than by
+    /// assertion: it is written exactly once, from `init`, and read exactly
+    /// once, from `deinit` — two points that cannot overlap with each other or
+    /// with anything else.
+    ///
+    /// `@ObservationIgnored` is what makes that annotation mean anything.
+    /// Without it `@Observable` rewrites this into a computed property over
+    /// `_$observationRegistrar`, the annotation lands on the wrapper rather
+    /// than on any storage, and the compiler says so ("has no effect").
+    /// Nothing observes a list of observer tokens anyway.
+    @ObservationIgnored private nonisolated(unsafe) var sessionObservers: [NSObjectProtocol] = []
+    /// Whether the interruption currently in progress took playback away from
+    /// the user, as opposed to arriving while they already had it paused.
+    ///
+    /// `.ended` carries `.shouldResume` whenever the *session* may be taken
+    /// back, which is not the same question. Without this, a call that arrived
+    /// during a pause would end with the app starting to play on its own.
+    private var shouldResumeAfterInterruption: Bool = false
     private var positionTimer: Timer?
+    private var playCountedForCurrent: Bool = false
+    private var lastPersistAt: Date = .distantPast
+    private let persistInterval: TimeInterval
+    /// The URL most recently handed to `player.load(url:)`.
+    ///
+    /// The identity an asynchronous failure is checked against. A streaming
+    /// load can fail seconds after it was asked for, by which time the user may
+    /// have started something else; without this, that stale failure would
+    /// pause the track they are actually listening to. Nothing can retract a
+    /// callback already delivered, so the only defence is to recognise it as
+    /// stale on arrival.
+    private var lastRequestedURL: URL?
+    /// The track a failure interrupted, and how far into it the user had got.
+    ///
+    /// **What makes a failure survivable.** A failed `AVPlayerItem` is
+    /// terminal — `AVPlayer` does not resume one — so `handleFailure` clears
+    /// `hasLoaded` and the only way back is to load the track again. But every
+    /// load goes through `loadCurrentAndPlay()`, which starts at 0 and then
+    /// persists that 0 over the saved position. Without this pair, a
+    /// three-second network blip forty minutes into a track costs the user the
+    /// forty minutes, permanently and with no undo.
+    ///
+    /// Deliberately *not* a general memory of where each track was left. It is
+    /// consumed by the next successful load and cleared by any load of a
+    /// different track, so it is scoped to a retry — the recovery it exists
+    /// for — and cannot resurrect a stale position much later.
+    private var interruptedTrackID: UUID?
+    private var interruptedPosition: TimeInterval = 0
+    /// The `duration` the last `pushNowPlaying()` actually published, or `nil`
+    /// when nothing has been pushed since the last `stopPlayback()`.
+    ///
+    /// **Exists because a streaming duration arrives after the push that should
+    /// have carried it.** `AVAudioPlayer` knows its duration the instant
+    /// `load(url:)` returns, so publishing `player.duration` from
+    /// `loadCurrentAndPlay()` is correct for a local file. `AVPlayer` does not:
+    /// `StreamingAudioPlayer.duration` reports 0 until the item resolves one,
+    /// and the push that follows `player.play()` happens squarely inside that
+    /// window. Nothing re-pushed afterwards, so `MPMediaItemPropertyPlayback
+    /// Duration` stayed 0.0 for the whole track — the lock-screen progress bar
+    /// sat at zero and its scrubber, enabled in Phase 1, had no range to drag.
+    ///
+    /// Recorded here rather than re-pushing on every tick because assigning
+    /// `nowPlayingInfo` ships the payload across XPC to the media server twice a
+    /// second for the life of every track. Comparing costs nothing and fires
+    /// once, when the number actually changes.
+    private var pushedDuration: TimeInterval?
+    /// How many tracks the current run of "Drive refused to serve this file"
+    /// failures has already skipped past, without anything having played in
+    /// between.
+    ///
+    /// **The bound on an otherwise unbounded loop.** `handleFailure` skipping
+    /// forward means the next track loads, and a streaming load reports its own
+    /// failure asynchronously — straight back into `handleFailure`. With a
+    /// repeat mode armed, `canGoNext` is true forever, so a folder whose sharing
+    /// was revoked wholesale would circle its own queue issuing requests until
+    /// the user force-quit. Capping the run at `queue.count` means each position
+    /// is tried at most once per run, exactly the bound `loadCurrentAndPlay()`'s
+    /// skip loop uses for the synchronous version of the same problem.
+    ///
+    /// Reset when playback actually gets somewhere — a fresh `play(_:in:)`, or a
+    /// tick that finds the position past 0 — rather than when a track merely
+    /// starts. Starting is not evidence: on the streaming path a track starts
+    /// and *then* fails, so resetting there would clear the counter before every
+    /// failure and restore the unbounded loop.
+    private var failureSkipRun: Int = 0
+    /// How the tail is randomised. Injected so tests get an exact expected
+    /// order instead of asserting against whatever a seed produced.
+    ///
+    /// A closure rather than an injected `RandomNumberGenerator`:
+    /// `Array.shuffled(using:)` takes its generator `inout` and is generic over
+    /// it, and Swift will not implicitly open an existential for an `inout`
+    /// generic parameter — seeding would have meant making the whole service
+    /// generic over the generator to make one array call testable.
+    private let shuffleTail: ([any Playable]) -> [any Playable]
 
-    init(player: AudioPlayerProtocol, nowPlaying: NowPlayingPublisher) {
+    init(player: AudioPlayerProtocol,
+         nowPlaying: NowPlayingPublisher,
+         library: LibraryService,
+         notificationCentre: NotificationCenter = .default,
+         persistInterval: TimeInterval = 5,
+         shuffleTail: @escaping ([any Playable]) -> [any Playable] = { $0.shuffled() }) {
         self.player = player
         self.nowPlaying = nowPlaying
+        self.library = library
+        self.notificationCentre = notificationCentre
+        self.persistInterval = persistInterval
+        self.shuffleTail = shuffleTail
         self.player.didFinishCallback = { [weak self] in
-            self?.handleFinish()
+            Task { @MainActor in self?.handleFinish() }
+        }
+        self.player.didFailCallback = { [weak self] error, url in
+            Task { @MainActor in self?.handleFailure(error, url: url) }
+        }
+        observeAudioSession()
+    }
+
+    deinit {
+        for observer in sessionObservers {
+            notificationCentre.removeObserver(observer)
         }
     }
 
-    func load(url: URL, metadata: TrackMetadata) throws {
-        try player.load(url: url)
-        currentMetadata = metadata
-        currentTrackTitle = metadata.title
-        isPlaying = false
-        position = 0
-        hasLoaded = true
-        pushNowPlaying()
+    // MARK: - Public
+
+    func play(_ track: any Playable, in queueTracks: [any Playable]) {
+        queue = queueTracks
+        queueIndex = queueTracks.firstIndex(where: { $0.id == track.id }) ?? 0
+        // With shuffle armed, a new queue arrives shuffled. Tapping one track of
+        // an album and having the rest follow at random is the behaviour being
+        // copied; without this, choosing a song would silently switch shuffle
+        // off. `unshuffledQueue` is set from the argument, not from `queue`,
+        // because `applyShuffleToTail` is about to overwrite the latter.
+        if isShuffled {
+            unshuffledQueue = queueTracks
+            applyShuffleToTail()
+        }
+        // A deliberate tap starts a new run: whatever the last one skipped past
+        // has nothing to do with what the user just asked for.
+        failureSkipRun = 0
+        explicitSelections += 1
+        loadCurrentAndPlay()
+        persistImmediately()
     }
 
-    func play() {
-        guard hasLoaded, !isPlaying else { return }
-        activateSessionIfNeeded()
-        player.play()
-        isPlaying = true
-        startPositionUpdates()
-        pushNowPlaying()
+    /// Ends playback and clears the queue, at the user's request.
+    ///
+    /// A thin wrapper on `stopPlayback()`, which until now only ever ran for
+    /// reasons the user did not ask for — the queue running out, or the playing
+    /// track being deleted. There was no way to *say* stop, so the collapsed
+    /// pill stayed on screen for the rest of the session no matter what.
+    ///
+    /// It really does discard the queue and the position rather than just
+    /// hiding the pill. That is what stopping means, and it is why the control
+    /// that calls this is behind a long press rather than a swipe: losing your
+    /// place should take a deliberate gesture, not a mistaken one.
+    ///
+    /// Apple Music has no equivalent — its mini player persists and pause is the
+    /// end state — and the HIG says nothing either way. This is a departure
+    /// made on purpose, not an oversight corrected.
+    func stop() {
+        stopPlayback()
+    }
+
+    func togglePlayPause() {
+        if isPlaying { pause() } else { resume() }
+    }
+
+    /// Advances the repeat button through off → all → one → off.
+    ///
+    /// The mode change is applied inline, not deferred. For a mode button the
+    /// state change *is* the feedback — the glyph and its tint both read from
+    /// `repeatMode` — so deferring it would push the very thing being
+    /// acknowledged a turn later, which is the mistake that made play/pause
+    /// feel slow. Only the disk write is deferred.
+    func cycleRepeatMode() {
+        repeatMode = repeatMode.cycled
+        deferPersist()
+    }
+
+    /// Randomises everything after the playing track, or puts it back.
+    ///
+    /// **The tail only.** The head — what has already played, and what is
+    /// playing right now — never moves. Three things follow from that, and each
+    /// is why it was chosen over shuffling the whole array:
+    ///
+    /// - It is what Apple Music shows. The list that reorders under its shuffle
+    ///   button is "Continue Playing", which is exactly this tail.
+    /// - `queueIndex` does not move, so no reindexing is needed and the whole
+    ///   class of off-by-one bugs that would come with it never arises.
+    /// - `previous()` keeps its meaning. Shuffling the head would randomise the
+    ///   history the back button walks.
+    ///
+    /// Turning it off has to *search* for the playing track rather than simply
+    /// restoring the index: playback continued through the shuffled tail, so by
+    /// now that track sits somewhere else entirely in the original order.
+    func toggleShuffle() {
+        if isShuffled {
+            let restored = unshuffledQueue
+            isShuffled = false
+            unshuffledQueue = []
+            if !restored.isEmpty {
+                let playingID = currentTrack?.id
+                queue = restored
+                if let playingID,
+                   let index = restored.firstIndex(where: { $0.id == playingID }) {
+                    queueIndex = index
+                } else {
+                    // Still unreachable through the public API, even after
+                    // Task 2's `restoreFromPersistedState`. That method was
+                    // expected to reopen this branch — it resolves
+                    // `unshuffledQueue` and `queue` from persisted track IDs
+                    // through two separate `compactMap` calls, and a track
+                    // deleted between sessions was expected to resolve in one
+                    // and not the other. It doesn't: `queue` and
+                    // `unshuffledQueue` are always maintained as permutations
+                    // of the *same* id set (`play(_:in:)`, `toggleShuffle()`,
+                    // `handleTrackDeleted(_:)` and `stopPlayback()` all keep
+                    // that invariant), so the two persisted id lists are
+                    // always permutations of each other too. `resolveTrack
+                    // (byID:)` is a pure function of a `UUID` — a deleted
+                    // track drops out of *both* restored lists identically,
+                    // so they stay set-equal and the playing track, drawn
+                    // from `queue`, is always found in `restored`. Confirmed
+                    // empirically: instrumenting this branch and exercising a
+                    // restore with a deleted track (including the playing one
+                    // itself) never triggered it. Kept anyway, not dead code
+                    // to prune — it is one `compactMap` divergence away from
+                    // being reachable again, and the failure mode without it
+                    // is an out-of-bounds `queueIndex`. Keep the position
+                    // rather than jumping to the top: the number is
+                    // meaningless now either way, and one of these two leaves
+                    // the user near where they were.
+                    queueIndex = max(0, min(queueIndex, restored.count - 1))
+                }
+            }
+        } else {
+            isShuffled = true
+            unshuffledQueue = queue
+            applyShuffleToTail()
+        }
+        persistImmediately()
+    }
+
+    /// The tracks after the playing one — what the queue panel lists.
+    ///
+    /// Computed rather than stored: `queue` and `queueIndex` are the truth, and
+    /// a stored copy would be one more thing to keep in step with them. Empty
+    /// when nothing is playing, and when the playing track is the last.
+    var upcoming: [any Playable] {
+        guard queue.indices.contains(queueIndex) else { return [] }
+        let start = queueIndex + 1
+        guard start < queue.count else { return [] }
+        return Array(queue[start...])
+    }
+
+    /// Reorders the upcoming tracks.
+    ///
+    /// **`source` and `destination` are offsets into `upcoming`, not into
+    /// `queue`.** The view hands over exactly what `.onMove` gave it and never
+    /// does arithmetic against `queueIndex`; the conversion happens here, once,
+    /// where it can be tested.
+    ///
+    /// `queueIndex` cannot move, because every index this touches is strictly
+    /// greater than it — the same property that lets `applyShuffleToTail` leave
+    /// the index alone.
+    ///
+    /// **`source` and `destination` are validated before either is used.**
+    /// `Array.move(fromOffsets:toOffset:)` traps — a fatal error, not a thrown
+    /// error — when `destination` falls outside `0...tail.count`; an
+    /// out-of-range `source` happens not to trap, but silently doing nothing
+    /// with garbage input is not a guarantee this method makes on purpose, so
+    /// it is rejected the same way. Both guards below mean a malformed offset,
+    /// from any caller and not just the planned `.onMove` row, is an ordinary
+    /// no-op rather than a crash or an unverified pass-through.
+    ///
+    /// **`unshuffledQueue` is deliberately untouched.** Turning shuffle off
+    /// restores the order that existed before the shuffle, and a drag is an
+    /// edit to the shuffled arrangement, so it goes when that arrangement does.
+    /// That ruling is also what keeps the two arrays consistent for free: they
+    /// must hold the same *set*, and a permutation cannot change a set. Without
+    /// it this method would have to define where a track dragged in the
+    /// shuffled order belongs in the original one, which has no non-arbitrary
+    /// answer.
+    func moveUpcoming(from source: IndexSet, to destination: Int) {
+        guard queue.indices.contains(queueIndex) else { return }
+        let start = queueIndex + 1
+        guard start < queue.count else { return }
+        var tail = Array(queue[start...])
+        guard source.allSatisfy({ tail.indices.contains($0) }) else { return }
+        guard (0...tail.count).contains(destination) else { return }
+        tail.move(fromOffsets: source, toOffset: destination)
+        queue.replaceSubrange(start..<queue.count, with: tail)
+        // **Hoãn, không ghi ngay.** `persistImmediately` là một
+        // `ModelContext.save()` đồng bộ — I/O đĩa, trên main actor — và ở đây
+        // nó rơi đúng khung hình `List` đang chạy animation đưa hàng về chỗ
+        // mới. Người dùng thả tay ra và thấy hàng khựng lại một nhịp trước khi
+        // trượt vào vị trí.
+        //
+        // Cùng lý do mọi đường đi từ một cú chạm đều hoãn — xem `deferPersist`:
+        // người dùng đang đợi thấy thứ gì đó chuyển động, và một lượt ghi đĩa
+        // xen vào giữa là thứ họ cảm nhận được. Hoãn một vòng chạy main actor
+        // là đủ để animation bắt đầu trước.
+        deferPersist()
+    }
+
+    /// Jumps to an upcoming track, leaving the queue's order as it stands.
+    ///
+    /// `offset` is into `upcoming`, as above.
+    ///
+    /// **Not `play(_:in:)`.** That method rebuilds the queue from its argument
+    /// and, with shuffle armed, reshuffles the tail and resets
+    /// `unshuffledQueue` — so tapping the third row would silently reorder
+    /// everything below it and throw away the order shuffle restores to.
+    ///
+    /// A negative `offset` is rejected rather than left to resolve on its own:
+    /// `queueIndex + 1 + offset` can land back on an already-played index,
+    /// which is a valid `queue` index and would otherwise pass the bounds
+    /// check below and jump playback backwards.
+    func playUpcoming(at offset: Int) {
+        guard offset >= 0 else { return }
+        guard queue.indices.contains(queueIndex) else { return }
+        let target = queueIndex + 1 + offset
+        guard queue.indices.contains(target) else { return }
+        // The two counters `play(_:in:)` resets for a deliberate tap. This is
+        // one: whatever the last run skipped past has nothing to do with the
+        // row the user just chose.
+        failureSkipRun = 0
+        explicitSelections += 1
+        advance(to: target)
+    }
+
+    /// Replaces everything after `queueIndex` with a shuffled copy of itself.
+    ///
+    /// A no-op when the playing track is the last in the queue, or when there
+    /// is no queue — both are ordinary, not errors, and both must leave
+    /// `isShuffled` set so the button reflects what the user pressed.
+    private func applyShuffleToTail() {
+        guard queue.indices.contains(queueIndex) else { return }
+        let tailStart = queueIndex + 1
+        guard tailStart < queue.count else { return }
+        let head = Array(queue[..<tailStart])
+        let tail = Array(queue[tailStart...])
+        queue = head + shuffleTail(tail)
     }
 
     func pause() {
         guard hasLoaded, isPlaying else { return }
         player.pause()
         isPlaying = false
+        position = player.currentTime
         stopPositionUpdates()
-        pushNowPlaying()
+        deferSideEffects()
     }
 
-    func togglePlayPause() {
-        if isPlaying { pause() } else { play() }
+    func resume() {
+        guard hasLoaded, !isPlaying else { return }
+        activateSessionIfNeeded()
+        player.play()
+        isPlaying = true
+        startPositionUpdates()
+        deferSideEffects()
     }
 
     func seek(to target: TimeInterval) {
         guard hasLoaded else { return }
-        let clamped = max(0, min(target, player.duration))
+        let clamped = clampToDuration(target)
         player.currentTime = clamped
         position = clamped
         pushNowPlaying()
+        // Deferred like every other tap path's write. This one is reached from
+        // the scrubber on release and from `previous()` restarting a track, and
+        // in both the user is waiting to see something move.
+        deferPersist()
+    }
+
+    /// How far into a track Previous stops meaning "the one before" and starts
+    /// meaning "this one, from the top".
+    ///
+    /// Every music player behaves this way, and the reason is that Previous has
+    /// two jobs sharing a button: correcting a skip you just made, and
+    /// restarting something you are part way through. Three seconds is the
+    /// usual split — long enough that a mis-tap in the opening still goes back,
+    /// short enough that it never blocks a deliberate restart.
+    static let restartThreshold: TimeInterval = 3
+
+    /// Restarts the current track, steps back to the one before it, or — at
+    /// the head of the queue with a repeat mode armed — wraps to the last
+    /// track, the same "the queue doesn't end" logic `next()` applies going
+    /// forward.
+    ///
+    /// Never a no-op while a queue exists, which is why nothing disables the
+    /// button: past the threshold it restarts, at the head of the queue it
+    /// either wraps (repeat armed) or restarts (repeat off), and anywhere else
+    /// it steps back.
+    func previous() {
+        guard !queue.isEmpty else { return }
+        // The threshold outranks the repeat mode. Past three seconds this
+        // button means "this one, from the top" whatever is armed.
+        if position > Self.restartThreshold {
+            seek(to: 0)
+            return
+        }
+        if queueIndex > 0 {
+            advance(to: queueIndex - 1)
+        } else if repeatMode != .off {
+            advance(to: queue.count - 1)
+        } else {
+            seek(to: 0)
+        }
+    }
+
+    /// Bật/tắt autoplay.
+    ///
+    /// `persistImmediately` chứ không hoãn, cùng lý do `cycleRepeatMode` làm
+    /// thế: đây là một công tắc, và một công tắc không sống sót qua lần mở app
+    /// sau là một công tắc hỏng.
+    func toggleAutoplay() {
+        isAutoplay.toggle()
+        persistImmediately()
+    }
+
+    func next() {
+        guard !queue.isEmpty else { return }
+        if queueIndex + 1 < queue.count {
+            advance(to: queueIndex + 1)
+        } else if repeatMode != .off {
+            // Repeat-one wraps here too. It means "an unattended track
+            // repeats", not "the queue has an end" — and a Next press is not
+            // unattended.
+            advance(to: 0)
+        } else {
+            stopPlayback()
+        }
+    }
+
+    /// Test-only hook: drives the same code path as the 0.5s position timer.
+    /// Not for production callers.
+    func tickForTesting() { tickPosition() }
+
+    /// Keeps the in-memory queue consistent when a track is deleted from the
+    /// library. No-op if `track` isn't in the queue. If it's the currently
+    /// playing track, advances to the next track — or, if it was the last one,
+    /// wraps to the top under repeat-all and otherwise stops. Tracks that
+    /// aren't current are just removed, shifting `queueIndex` if they sat
+    /// before the current position.
+    ///
+    /// **Takes `any Playable`, and the widening is the fix rather than
+    /// tidiness.** It was `Track` while only `SongsView.deleteTrack` called it,
+    /// on the reasoning that deleting is a local-library action. That stopped
+    /// being true the moment `DriveLibraryService` gained two paths that delete
+    /// `DriveTrack` rows — its scan's reconciliation loop and `unlink` — and
+    /// neither could reach this method at all. The queue then kept strong
+    /// references to deleted-and-saved `PersistentModel`s, and reading any
+    /// property off one raises `NSObjectInaccessibleException`: an Objective-C
+    /// exception, so uncatchable in Swift and unhelped by `try?`. It is
+    /// intermittent rather than reliable, because a row whose attributes are
+    /// still materialised answers silently for a while.
+    ///
+    /// The body needs nothing else: it has always matched queue members purely
+    /// by `id`, so the parameter was already only carrying an identity.
+    ///
+    /// **Must be called while the row is still live**, i.e. before the delete
+    /// and before the save that flushes it — reading `track.id` afterwards is
+    /// the very crash this exists to prevent. `SongsView.deleteTrack` and
+    /// `DriveLibraryService`'s two delete paths all order it that way.
+    func handleTrackDeleted(_ track: any Playable) {
+        let wasPlaying = isPlaying
+        // Above the guard on purpose. The same row lives in both arrays while
+        // shuffle is on, and a deleted row left in either is a crash waiting
+        // for whoever reads it next.
+        //
+        // It used to sit below, on the reasoning that `unshuffledQueue` is a
+        // permutation of `queue`, so a track absent from one is absent from
+        // both. That holds today and it is not worth depending on: the
+        // invariant is spread over five places that write the two arrays, and
+        // `restoreFromPersistedState` already has a shape that can break it —
+        // it fills `unshuffledQueue` *above* its own `queueTrackIDs.isEmpty`
+        // guard, and its stale-state branch clears `state.queueTrackIDs`
+        // without clearing `state.unshuffledQueueTrackIDs`. Pruning before the
+        // guard costs a `removeAll` over an array that is usually empty, and
+        // buys the whole dependency away.
+        unshuffledQueue.removeAll { $0.id == track.id }
+        guard let removalIndex = queue.firstIndex(where: { $0.id == track.id }) else { return }
+        let wasCurrent = (removalIndex == queueIndex)
+        queue.remove(at: removalIndex)
+
+        if wasCurrent {
+            if queueIndex >= queue.count {
+                // Deleting the current track took us past the end. This is the
+                // third place that has to know an armed mode means the queue
+                // has no end — `next()` and `handleFinish()` are the other two
+                // — and it was the one left behind: swiping away the last track
+                // with repeat-all on stopped the music and wiped the surviving
+                // tracks, which is the worst possible answer to a delete.
+                //
+                // `.all` wraps: the tracks before it are still there and still
+                // wanted. `.one` deliberately does not, and this is not an
+                // oversight — repeat-one means "keep replaying *this* track",
+                // and the track it named is the one the user just deleted. With
+                // nothing left to repeat, stopping is the honest answer;
+                // wrapping would silently convert repeat-one into repeat-all.
+                //
+                // The emptiness check is load-bearing: deleting the only track
+                // in the queue leaves nothing to wrap to, whatever is armed.
+                if repeatMode == .all, !queue.isEmpty {
+                    queueIndex = 0
+                    playCountedForCurrent = false
+                    loadCurrentAndPlay(autoPlay: wasPlaying)
+                    persistImmediately()
+                } else {
+                    stopPlayback()
+                }
+            } else {
+                // queueIndex stays; the new track at this index becomes current.
+                playCountedForCurrent = false
+                loadCurrentAndPlay(autoPlay: wasPlaying)
+                persistImmediately()
+            }
+        } else if removalIndex < queueIndex {
+            queueIndex -= 1
+            persistImmediately()
+        } else {
+            persistImmediately()
+        }
+    }
+
+    /// Restores the queue, current track, and position from the persisted
+    /// `PlaybackState` row on app launch. Loads and seeks the current track
+    /// but deliberately leaves `isPlaying == false` — the user resumes by
+    /// tapping play. Track IDs that no longer resolve in the library (e.g.
+    /// deleted between sessions) are dropped from the restored queue, and
+    /// `queueIndex` is clamped into the surviving range. An empty/absent
+    /// persisted state is a no-op.
+    ///
+    /// If the file for the saved current track can no longer be loaded
+    /// (missing/corrupt on disk, even though its DB row still exists), this
+    /// mirrors `loadCurrentAndPlay()`'s resilience: it skips forward through
+    /// the remaining queue looking for a track that does load, rather than
+    /// tearing down the whole restored queue over one bad file. This is a
+    /// separate, self-contained loop rather than a call into
+    /// `loadCurrentAndPlay()` — that method also starts playback, which
+    /// restore must never do, and duplicating the small skip mechanics here
+    /// keeps `loadCurrentAndPlay()` itself untouched. Only when nothing in
+    /// the queue can load does it fall through to `stopPlayback()`.
+    func restoreFromPersistedState() async {
+        let state = library.playbackState
+        // Above the guard on purpose. The repeat mode is a setting rather than
+        // part of the queue, so a launch with nothing to restore must still
+        // bring it back. Reading it after the guard would quietly reset it to
+        // off for anyone who finished their queue before quitting.
+        repeatMode = RepeatMode(rawValue: state.repeatModeRaw) ?? .off
+        // Above the guard with `repeatMode`, and for the same reason given
+        // there: this is a setting rather than part of the queue, so a launch
+        // with nothing to restore must still bring it back.
+        isShuffled = state.isShuffled
+        isAutoplay = state.isAutoplay
+        unshuffledQueue = state.unshuffledQueueTrackIDs.compactMap { resolveTrack(byID: $0) }
+        guard !state.queueTrackIDs.isEmpty else { return }
+        let resolved: [any Playable] = state.queueTrackIDs.compactMap { resolveTrack(byID: $0) }
+        guard !resolved.isEmpty else {
+            // Stale state — clear it.
+            state.queueTrackIDs = []
+            state.queueIndex = 0
+            state.currentTrackID = nil
+            state.positionSeconds = 0
+            try? library.save()
+            return
+        }
+        queue = resolved
+        queueIndex = max(0, min(state.queueIndex, resolved.count - 1))
+        let originalIndex = queueIndex
+        let savedPosition = state.positionSeconds
+
+        var attempts = 0
+        while attempts < queue.count {
+            guard let track = currentTrack else {
+                stopPlayback()
+                return
+            }
+            let url = track.playbackURL()
+            // Recorded *before* the call, not after: the missing-API-key
+            // sentinel path reports its failure synchronously from inside
+            // `load`, and a callback that arrived before this was set would be
+            // dropped by `handleFailure`'s ownership guard as belonging to
+            // nothing.
+            lastRequestedURL = url
+            do {
+                try player.load(url: url)
+                hasLoaded = true
+            } catch {
+                attempts += 1
+                if queueIndex + 1 < queue.count {
+                    queueIndex += 1
+                    continue
+                } else if repeatMode != .off {
+                    // Same wrap as `loadCurrentAndPlay()`'s loop, and bounded
+                    // by the same already-incremented `attempts`. Lower stakes
+                    // here — restore never autoplays, so nothing stops mid
+                    // listen — but the outcome without it is still wrong: a
+                    // relaunch with repeat armed and the last track's file gone
+                    // threw away a queue whose earlier tracks were all fine.
+                    //
+                    // `repeatMode` is read above the queue guard, so it is
+                    // already the restored value by the time this runs.
+                    queueIndex = 0
+                    continue
+                } else {
+                    stopPlayback()
+                    return
+                }
+            }
+            // The saved position only applies to the track it was recorded
+            // against; a track reached by skipping forward starts at 0.
+            let pos = queueIndex == originalIndex ? clampToDuration(savedPosition) : 0
+            player.currentTime = pos
+            position = pos
+            currentMetadata = metadata(from: track)
+            currentTrackTitle = track.title
+            playCountedForCurrent = pos >= 30
+            isPlaying = false
+            pushNowPlaying()
+            // Restore builds and pushes its own metadata rather than calling
+            // `loadCurrentAndPlay()` (see above), so it has to ask for the
+            // artwork itself — `metadata(from:)` returns `artwork: nil` by
+            // design. Omitting this call left the most common launch path with
+            // no cover at all: `NowPlayingService.update` simply drops the
+            // artwork key when it is nil, and every later push on this track
+            // (`resume()`, `pause()`, `seek()`, the `tickPosition()` reconcile)
+            // re-reads the same nil-artwork `currentMetadata`, so the lock
+            // screen stayed blank until the track changed.
+            loadArtworkIntoNowPlaying(for: track)
+            // Persist the queue/index/position that actually landed — the
+            // stored row must reflect surviving tracks, not the pre-restore
+            // state, and must not be silently left pointing at a dead track.
+            persistImmediately()
+            return
+        }
+        stopPlayback()
+    }
+
+    // MARK: - Private
+
+    /// One id, against all three sources, in the order that answers soonest.
+    ///
+    /// Extracted because the unshuffled order needs precisely the same lookup
+    /// the queue does. Two copies would be two places for a fourth source to be
+    /// forgotten.
+    private func resolveTrack(byID id: UUID) -> (any Playable)? {
+        // Local first: it is the commoner case and needs no second query when
+        // it hits.
+        if let track = try? library.findTrack(byID: id) { return track }
+        if let track = try? library.findDriveTrack(byID: id) { return track }
+        return try? library.findJamendoTrack(byID: id)
+    }
+
+    /// Loads the track at `queueIndex` and starts playback. If a track fails to
+    /// load (missing/corrupt file), skips forward through the remaining queue
+    /// looking for one that does — the queue itself is untouched, only
+    /// `queueIndex` advances. Running off the end with a repeat mode armed
+    /// wraps to index 0 and keeps looking, because an armed mode means the
+    /// queue has no end: without that, one deleted file at the tail of an
+    /// overnight repeat-all queue stopped the music and wiped the queue even
+    /// though every track behind it played fine.
+    ///
+    /// **Still bounded, and the bound is what makes the wrap safe.** The loop
+    /// runs at most `queue.count` times because every failed attempt increments
+    /// `attempts` exactly once before it advances, wraps, or exits — the wrap
+    /// changes *where* the next attempt looks, never how many are left. So a
+    /// queue whose files have all been deleted still terminates in
+    /// `stopPlayback()` rather than circling forever, and it does so having
+    /// tried each position at most once.
+    /// - Parameter autoPlay: When false, the track still loads, seeks to 0,
+    ///   publishes Now Playing info, and persists — it just doesn't start
+    ///   playback, and `isPlaying` ends up `false`. Defaults to `true` so
+    ///   every existing call site (play, next, restore-adjacent flows) keeps
+    ///   its current behavior unchanged.
+    private func loadCurrentAndPlay(autoPlay: Bool = true) {
+        var attempts = 0
+        while attempts < queue.count {
+            guard let track = currentTrack else {
+                stopPlayback()
+                return
+            }
+            let url = track.playbackURL()
+            // Before the call, for the reason given on the same line in
+            // `restoreFromPersistedState()`: the sentinel path reports
+            // synchronously from inside `load`.
+            lastRequestedURL = url
+            do {
+                try player.load(url: url)
+                hasLoaded = true
+            } catch {
+                attempts += 1
+                if queueIndex + 1 < queue.count {
+                    queueIndex += 1
+                    playCountedForCurrent = false
+                    continue
+                } else if repeatMode != .off {
+                    // Wrap rather than stop, for the same reason `next()` does:
+                    // with a mode armed the end of the queue is not the end of
+                    // playback. `!= .off` rather than `== .all` because this
+                    // isn't a choice about which track to play next — it is
+                    // recovery from a file that won't open, and repeat-one's
+                    // "an unattended track repeats" says nothing about what to
+                    // do when that track cannot be opened at all. Stopping
+                    // there would end the session over one bad file with the
+                    // rest of the queue intact.
+                    //
+                    // `attempts` was already incremented above, so the loop
+                    // condition still stops this after `queue.count` tries.
+                    queueIndex = 0
+                    playCountedForCurrent = false
+                    continue
+                } else {
+                    stopPlayback()
+                    return
+                }
+            }
+            // Where this load starts. 0 for an ordinary one; for the retry of a
+            // track a failure interrupted, exactly where that failure caught it
+            // — see `interruptedTrackID`. Read and cleared here rather than at
+            // the failure site because this is the only place that knows which
+            // track is actually being loaded, including after the skip-forward
+            // loop above has moved on from the one that was asked for.
+            let resumePoint = track.id == interruptedTrackID
+                ? clampToDuration(interruptedPosition)
+                : 0
+            interruptedTrackID = nil
+            interruptedPosition = 0
+
+            currentMetadata = metadata(from: track)
+            currentTrackTitle = track.title
+            position = resumePoint
+            // Only when there is something to seek to: handing a streaming
+            // player a 0 it is already at would park a pointless pending seek.
+            if resumePoint > 0 { player.currentTime = resumePoint }
+            // A resumed track has already been counted as played, if it got far
+            // enough. Same rule `restoreFromPersistedState()` applies, and for
+            // the same reason: one listen must not count twice because the
+            // network dropped in the middle of it.
+            playCountedForCurrent = resumePoint >= 30
+            if autoPlay {
+                activateSessionIfNeeded()
+                player.play()
+                isPlaying = true
+                startPositionUpdates()
+                // A track is starting, so whatever went wrong last time is no
+                // longer what the user is looking at. Cleared here rather than
+                // at the top of the method because the skip-forward loop above
+                // can pass through several failing tracks first; clearing early
+                // would wipe the explanation before anything had actually
+                // started. `autoPlay == false` paths (restore, a delete that
+                // reloads without playing) deliberately leave it alone —
+                // nothing began playing there either.
+                lastPlaybackError = nil
+            } else {
+                isPlaying = false
+            }
+            pushNowPlaying()
+            loadArtworkIntoNowPlaying(for: track)
+            return
+        }
+        stopPlayback()
+    }
+
+    private func stopPlayback() {
+        player.pause()
+        isPlaying = false
+        hasLoaded = false
+        // Nothing is loaded, so no in-flight failure belongs to the present any
+        // more. Leaving this set would let a late failure for the track we just
+        // stopped raise a banner about playback the user has already ended.
+        lastRequestedURL = nil
+        // Playback has ended, so there is no retry left for a remembered
+        // position to belong to. Leaving it would start some unrelated later
+        // session part way in.
+        interruptedTrackID = nil
+        interruptedPosition = 0
+        // Nothing has been published any more, so there is no last-published
+        // duration for the next track's tick to compare against. Left set, the
+        // first tick of the next track would see a stale number and push once
+        // for nothing.
+        pushedDuration = nil
+        // The queue is gone, so there is nothing left for a skip run to be
+        // counted against.
+        failureSkipRun = 0
+        queue = []
+        queueIndex = 0
+        // Otherwise a shuffle toggle after this point resurrects a queue that
+        // stopped playing: `unshuffledQueue` still held tracks, and
+        // `toggleShuffle()`'s `if !restored.isEmpty` guard would treat that as
+        // real state to restore. `isShuffled` deliberately stays untouched —
+        // it is a setting, the same way `repeatMode` survives a stop.
+        unshuffledQueue = []
+        currentMetadata = nil
+        currentTrackTitle = nil
+        position = 0
+        playCountedForCurrent = false
+        stopPositionUpdates()
+        nowPlaying.clear()
+        persistImmediately()
+    }
+
+    /// Plays the track at `index`, from the top.
+    ///
+    /// Extracted because four callers now want it — Next, Previous, automatic
+    /// advance, and the repeat-one replay, which is simply `advance(to:)` with
+    /// the index it already has: `loadCurrentAndPlay()` reloads the file, seeks
+    /// to 0 and starts, which is exactly what replaying a track is.
+    ///
+    /// The persist is deferred for the same reason every other tap path defers
+    /// its own: a SwiftData write between the tap and the next render is felt
+    /// as button latency, and `loadCurrentAndPlay()` has already pushed the
+    /// track to the lock screen synchronously, so nothing user-visible waits.
+    private func advance(to index: Int) {
+        queueIndex = index
+        playCountedForCurrent = false
+        loadCurrentAndPlay()
+        deferPersist()
+    }
+
+    /// A track ran out on its own.
+    ///
+    /// This deliberately no longer delegates to `next()`. The two are different
+    /// events that happen to have shared an implementation: repeat-one applies
+    /// here and *not* to the Next button, where pressing it means the user
+    /// wants the next track regardless of the mode. Delegating would make Next
+    /// replay the current track whenever repeat-one was armed, which reads as a
+    /// broken button.
+    private func handleFinish() {
+        guard !queue.isEmpty else { return }
+        switch repeatMode {
+        case .one:
+            advance(to: queueIndex)
+        case .all:
+            advance(to: queueIndex + 1 < queue.count ? queueIndex + 1 : 0)
+        case .off:
+            if queueIndex + 1 < queue.count {
+                advance(to: queueIndex + 1)
+            } else if isAutoplay, appendAutoplayTracks() {
+                advance(to: queueIndex + 1)
+            } else {
+                stopPlayback()
+            }
+        }
+    }
+
+    /// Nối vào cuối hàng đợi những bài trong thư viện chưa có trong đó.
+    ///
+    /// Trả `false` khi không nối được gì — thư viện rỗng, hoặc mọi bài đã nằm
+    /// trong hàng đợi — và lúc ấy `handleFinish` dừng như thường. Đó là điều
+    /// đúng: autoplay là "còn nhạc thì phát tiếp", không phải "phát lại".
+    ///
+    /// Trộn ngẫu nhiên bất kể `isShuffled`. Phần nối thêm không phải thứ người
+    /// dùng chọn thứ tự, nên thứ tự bảng chữ cái ở đó chỉ là một sự tình cờ của
+    /// cách thư viện được đọc ra; ngẫu nhiên nói đúng bản chất "gợi ý tiếp".
+    ///
+    /// `unshuffledQueue` cũng được nối, nếu đang shuffle: tắt shuffle sau đó
+    /// không được phép làm biến mất những bài vừa thêm.
+    @discardableResult
+    private func appendAutoplayTracks() -> Bool {
+        let known = Set(queue.map(\.id))
+        // Chỉ thư viện cục bộ. Drive và Jamendo cần mạng và cần một lượt tải
+        // trước khi phát được; nối chúng vào một cách âm thầm là biến một cú
+        // "phát tiếp" thành một cú chờ không ai xin.
+        let extras = ((try? library.fetchAllTracks()) ?? [])
+            .filter { !known.contains($0.id) }
+            .shuffled()
+        guard !extras.isEmpty else { return false }
+        queue.append(contentsOf: extras)
+        if isShuffled { unshuffledQueue.append(contentsOf: extras) }
+        persistImmediately()
+        return true
+    }
+
+    /// Clamps a position into the track, skipping the upper bound while the
+    /// player has no duration to offer.
+    ///
+    /// `AVPlayer` reports an indefinite duration for the first few hundred
+    /// milliseconds after a streaming load, and `StreamingAudioPlayer.duration`
+    /// reports `0` there to keep NaN out of the scrubber's arithmetic. Clamping
+    /// against that `0` is what made **every restored Drive track lose its
+    /// saved position** — `min(2:31, 0)` is `0` — and made a scrub in that
+    /// window jump to the start. There is no fallback to fall back on:
+    /// `DriveTrack.durationSeconds` defaults to 0 as well.
+    ///
+    /// Chosen over deferring the seek inside `PlaybackService` because the
+    /// damage happens *here*, at the clamp: by the time a deferred seek ran, the
+    /// position would already have been flattened to 0 and there would be
+    /// nothing left to defer. The player still defers *applying* the seek until
+    /// its item is ready — the two halves are complementary, and both are
+    /// needed. Handing over a position past the eventual duration is safe;
+    /// `AVPlayer` clamps a seek to the seekable range itself.
+    private func clampToDuration(_ target: TimeInterval) -> TimeInterval {
+        guard player.isDurationKnown else { return max(0, target) }
+        return max(0, min(target, player.duration))
+    }
+
+    /// A player that failed after `load()` returned.
+    ///
+    /// **Whether it skips forward depends on the cause, because the spec asks
+    /// for two behaviours and they are genuinely different.** For anything that
+    /// looks like the network — the commonest case — it stops: skipping would
+    /// march through the whole queue failing once per track and end in silence
+    /// with nothing said. For `DriveError.fileUnavailable`, which means the
+    /// server answered and refused this one file, stopping the whole session
+    /// over a track someone deleted from Drive is the wrong answer; the spec's
+    /// error table asks for "Skip to next, note it", and both halves of that
+    /// matter. The note is what stops the skip from being silent — see the
+    /// re-assignment of `lastPlaybackError` at the end.
+    ///
+    /// The skip runs *after* the full stop-and-record below rather than instead
+    /// of it, so a skip that cannot happen (last track, repeat off) leaves
+    /// exactly the state the non-skipping path would have left, and so the
+    /// position is written down before anything moves.
+    ///
+    /// **The `url` guard is the whole safety of this method.** An asynchronous
+    /// failure arrives with no inherent claim on the present: a Drive item can
+    /// take seconds to reach `.failed`, the callback hop costs another
+    /// main-actor turn, and `teardown()`'s `invalidate()` cannot retract a
+    /// callback already in flight. Offline, tapping Drive track A and then
+    /// local track B — which plays fine — would otherwise end with B paused,
+    /// the timer stopped and a network banner about A. Same class of bug as the
+    /// stale `didFinishCallback` skipping a track, and it needs the same answer.
+    ///
+    /// A repeat-one replay reloads the same URL and so passes the guard, which
+    /// is correct rather than a hole: it is the same file failing for the same
+    /// reason, and the report applies either way.
+    ///
+    /// **It records where the track had got to before it gives up.** Treating a
+    /// failed item as terminal is right — `AVPlayer` does not recover from a
+    /// stall, so pretending otherwise only produces a play button that flickers
+    /// — but on its own it made a momentary blip as expensive as a crash: the
+    /// retry restarted the track from 0 and immediately wrote that 0 to disk.
+    /// `interruptedTrackID` carries the position across the retry, and the
+    /// immediate persist carries it across a relaunch, which is the other way a
+    /// user answers a stall. This is the one thing a failure must *not* throw
+    /// away.
+    private func handleFailure(_ error: Error, url: URL) {
+        guard url == lastRequestedURL else { return }
+        // `position` is the tick timer's last reading, so at worst half a second
+        // behind where the audio actually stopped. Read here rather than from
+        // `player.currentTime`, which a failed item reports as 0.
+        interruptedTrackID = currentTrack?.id
+        interruptedPosition = position
+        lastPlaybackError = error
+        player.pause()
+        isPlaying = false
+        // Without this the transport lies. `resume()` guards on
+        // `hasLoaded, !isPlaying`, both of which would still hold: a tap on
+        // play would call `player.play()` — a no-op on a failed item — set
+        // `isPlaying = true` and restart the timer, giving a pause glyph, a
+        // position frozen at 0:00 and no sound. `tickPosition`'s reconcile
+        // cannot rescue it either, because a failed item reports duration 0 and
+        // currentTime 0, and `0 < 0 - 0.5` is false. Clearing the flag makes
+        // play inert instead of dishonest.
+        hasLoaded = false
+        stopPositionUpdates()
+        pushNowPlaying()
+        // Not deferred and not throttled. The throttled write runs at most every
+        // five seconds, so without this a failure could leave up to five seconds
+        // of listening unsaved — and a stalled app is one a user is unusually
+        // likely to force-quit rather than wait out.
+        persistImmediately()
+
+        guard (error as? DriveError) == .fileUnavailable else { return }
+        // `canGoNext` covers both "there is a track after this one" and "a
+        // repeat mode says the queue has no end"; `failureSkipRun` is what stops
+        // the second of those from circling forever. See its doc comment.
+        guard canGoNext, failureSkipRun < queue.count else { return }
+        failureSkipRun += 1
+        // The resume point belongs to the track being left behind, and this
+        // failure is not one a retry recovers from — the file is gone. Left set,
+        // it would start some later replay of that same track part way in.
+        interruptedTrackID = nil
+        interruptedPosition = 0
+        next()
+        // Restored deliberately, and it has to be after: `loadCurrentAndPlay()`
+        // clears `lastPlaybackError` when a track starts, which is right for
+        // every other path and wrong for this one — the whole point is that the
+        // user is told a track was skipped. `stalledPlaybackError` is what keeps
+        // the note off the player's own subtitle, where it would caption a track
+        // that is now playing fine; the Drive list's banner reads the full
+        // `lastPlaybackError` and shows it. If the skip ended in
+        // `stopPlayback()` — nothing loadable left — this still reports the
+        // reason instead of stopping mutely.
+        lastPlaybackError = error
+    }
+
+    private func tickPosition() {
+        position = player.currentTime
+        // Audio has actually got somewhere, so whatever run of unplayable files
+        // preceded it is over. See `failureSkipRun` for why "a track started" is
+        // not good enough evidence on the streaming path.
+        if position > 0 { failureSkipRun = 0 }
+        if !playCountedForCurrent, position >= 30, let track = currentTrack {
+            track.playCount += 1
+            track.lastPlayedAt = .now
+            try? library.save()
+            playCountedForCurrent = true
+        }
+        // A streaming item's duration resolves after the load that published
+        // it, and nothing else re-publishes: `markItemReady()` drains a pending
+        // seek and stops. This timer is already running, already on the main
+        // actor and already holds everything the push needs, so it is where the
+        // late number is noticed. Guarded on a change, so a local track — whose
+        // duration is right from the first push — never pushes twice, and a
+        // streaming one pushes exactly once more. See `pushedDuration`.
+        if let pushedDuration, pushedDuration != player.duration {
+            pushNowPlaying()
+        }
+        // The player can stop underneath us without going through pause()/
+        // stopPlayback() — a phone call, a headphone unplug. Reconcile our
+        // state so the UI and lock screen stop claiming playback. Guarded
+        // against the end-of-track race: `player.isPlaying` goes false a
+        // moment before the async didFinishCallback hop lands, so only
+        // reconcile when clearly not near the end, or this would fire on
+        // every track's natural finish and fight auto-advance.
+        if isPlaying, !player.isPlaying, player.currentTime < player.duration - 0.5 {
+            isPlaying = false
+            stopPositionUpdates()
+            pushNowPlaying()
+            persistImmediately()
+            return
+        }
+        persistThrottled()
     }
 
     private func startPositionUpdates() {
         stopPositionUpdates()
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.position = self.player.currentTime
+            Task { @MainActor in self.tickPosition() }
         }
         RunLoop.main.add(timer, forMode: .common)
         positionTimer = timer
@@ -78,25 +1161,183 @@ final class PlaybackService {
         positionTimer = nil
     }
 
-    private func handleFinish() {
-        isPlaying = false
-        position = player.duration
-        stopPositionUpdates()
-        pushNowPlaying()
+    private func persistThrottled() {
+        if Date.now.timeIntervalSince(lastPersistAt) >= persistInterval {
+            persistImmediately()
+        }
+    }
+
+    /// **Hai mảng chỉ gán khi thật sự đổi, và đó là số đo chứ không phải sự
+    /// gọn gàng.**
+    ///
+    /// SwiftData đánh dấu một thuộc tính là bẩn khi *gán*, không phải khi giá
+    /// trị khác đi. Gán vô điều kiện nghĩa là mọi cú ghi — kể cả cú ghi
+    /// `persistThrottled` bắn nửa giây một lần chỉ để cập nhật `positionSeconds`
+    /// — đều mã hoá lại toàn bộ hai mảng UUID thành blob rồi viết xuống SQLite.
+    /// Chi phí ấy tỉ lệ với chiều dài hàng đợi, và autoplay có thể kéo hàng đợi
+    /// dài bằng cả thư viện.
+    ///
+    /// Đo trên máy thật bằng Instruments, template Animation Hitches, 45 giây
+    /// dùng bình thường: **73 ms hitch mỗi giây** (ngưỡng "tệ" của Apple là 10),
+    /// 23 lần main thread bị chặn, và cú dài nhất là **441ms** với stack
+    /// `persistImmediately() → _executeSaveChangesRequest → NSSQLCore → SQLite`.
+    ///
+    /// So sánh trước khi gán là phép so hai mảng UUID trong bộ nhớ — vài
+    /// micro-giây — đổi lấy việc bỏ hẳn một lượt mã hoá và ghi đĩa. Thứ tự phát
+    /// đổi thì vẫn ghi, vì lúc ấy phép so trả về khác.
+    private func persistImmediately() {
+        let state = library.playbackState
+        let ids = queue.map(\.id)
+        if state.queueTrackIDs != ids { state.queueTrackIDs = ids }
+        let unshuffled = unshuffledQueue.map(\.id)
+        if state.unshuffledQueueTrackIDs != unshuffled {
+            state.unshuffledQueueTrackIDs = unshuffled
+        }
+        state.queueIndex = queueIndex
+        state.currentTrackID = currentTrack?.id
+        state.positionSeconds = position
+        state.repeatModeRaw = repeatMode.rawValue
+        state.isShuffled = isShuffled
+        state.isAutoplay = isAutoplay
+        try? library.save()
+        lastPersistAt = .now
+    }
+
+    /// Runs the lock-screen push and the disk write after the current
+    /// main-actor turn, so SwiftUI renders the new play/pause glyph before
+    /// either starts. Only for the tap path (`pause()`/`resume()`): assigning
+    /// `nowPlayingInfo` ships the artwork across XPC to the media server and
+    /// `persistImmediately()` does a SwiftData write, and both otherwise land
+    /// inside the perceived button latency.
+    private func deferSideEffects() {
+        Task { @MainActor in
+            pushNowPlaying()
+            persistImmediately()
+        }
+    }
+
+    /// The persist half alone, for callers that have already pushed to the lock
+    /// screen synchronously and only need the disk write moved off the tap.
+    ///
+    /// **Nothing may be captured here, and the same goes for `deferSideEffects`
+    /// above.** A deferred write can land *after* something else has already
+    /// persisted — `next()` on the last track calls `stopPlayback()`, which
+    /// persists an empty queue, and this task runs afterwards. That is safe
+    /// only because `persistImmediately()` reads `queue`, `queueIndex`,
+    /// `currentTrack` and `position` live at execution time and captures
+    /// nothing at enqueue time, so a late write reproduces whatever state
+    /// actually landed in between rather than resurrecting a stale snapshot.
+    /// Passing captured values in (a queue, an index, a position taken at the
+    /// tap) would turn a harmless duplicate write into a resurrection of a
+    /// queue the user has already left — this project's worst bug to date came
+    /// from exactly that shape. Change the behaviour only with that in mind.
+    /// **Vẫn trên main thread**, và cái tên không hứa gì khác: nó hoãn sang
+    /// vòng chạy kế tiếp của main actor để SwiftUI kịp vẽ khung hình đang chờ,
+    /// chứ không đưa cú ghi ra khỏi luồng ấy.
+    ///
+    /// Nếu con số 441ms ở `persistImmediately` còn sau khi đã chặn hai mảng
+    /// UUID, thì bước tiếp theo là một `@ModelActor` nền với `ModelContext`
+    /// riêng — không phải hoãn thêm một vòng nữa.
+    private func deferPersist() {
+        Task { @MainActor in persistImmediately() }
     }
 
     private func pushNowPlaying() {
         guard let metadata = currentMetadata else { return }
+        let duration = player.duration
         nowPlaying.update(
             title: metadata.title,
             artist: metadata.artist,
             album: metadata.album,
             artwork: metadata.artwork,
-            duration: player.duration,
+            duration: duration,
             elapsed: position,
             isPlaying: isPlaying
         )
+        pushedDuration = duration
     }
+
+    /// Everything except the artwork — all of it already in memory, so it costs
+    /// nothing to build while the user's finger is still on the button.
+    ///
+    /// The artwork used to be read and decoded here, synchronously, on every
+    /// track change. That put a file read and a full-size `UIImage` decode
+    /// between a tap on Next and anything happening on screen. It arrives
+    /// separately now; see `loadArtworkIntoNowPlaying`.
+    private func metadata(from track: any Playable) -> TrackMetadata {
+        TrackMetadata(
+            title: track.title,
+            artist: track.artistName,
+            album: track.albumTitle,
+            artwork: nil,
+            durationSeconds: track.durationSeconds
+        )
+    }
+
+    /// Fills the artwork in behind the tap and pushes again.
+    ///
+    /// The lock screen gets title, artist and album immediately and the picture
+    /// a moment later, which is the right trade: the text is what tells the user
+    /// the track changed, and it no longer waits on a decode.
+    ///
+    /// Guarded on the track's id, because a user holding Next changes track
+    /// faster than a decode finishes — without it, a late decode would put the
+    /// previous track's cover under the current track's title.
+    ///
+    /// The load goes through `ArtworkStore`, not through a local
+    /// `Data(contentsOf:)` + `UIImage(data:)`. That pair decoded the file at
+    /// its full resolution, which for the 1000x1000–3000x3000 covers embedded
+    /// in real files is up to ~36 MB a time, and it only *moved* the cost this
+    /// method exists to remove: `NowPlayingService` wraps the result as
+    /// `MPMediaItemArtwork(boundsSize: artwork.size)`, so the full-size bitmap
+    /// is what crosses XPC to the media server. `ArtworkStore` downsamples
+    /// through ImageIO to `lockScreenArtworkPixels` and caches the result, so
+    /// each of these tasks holds a few MB rather than tens, and a track played
+    /// again later is a cache hit rather than another file read.
+    ///
+    /// The task is deliberately unstructured and unstored. Holding Next starts
+    /// one per track change, and the id guard below discards all but the last;
+    /// what makes that acceptable rather than wasteful is that each is now a
+    /// bounded, cached, downsampled read. If this ever goes back to decoding at
+    /// full size, the fan-out has to be bounded too.
+    ///
+    /// Takes the path out of the row before hopping: both `Playable`
+    /// conformers are SwiftData `@Model`s, neither `Sendable` nor safe to touch
+    /// from another executor. A Drive track always reports a nil path, so this
+    /// simply finds no artwork for one rather than needing a source check.
+    private func loadArtworkIntoNowPlaying(for track: any Playable) {
+        let path = track.artworkRelativePath
+        let id = track.id
+        Task { @MainActor in
+            let image = await ArtworkStore.image(
+                for: path,
+                maxPixel: Self.lockScreenArtworkPixels
+            )
+            guard let image else { return }
+            guard currentTrack?.id == id, let current = currentMetadata else { return }
+            currentMetadata = TrackMetadata(
+                title: current.title,
+                artist: current.artist,
+                album: current.album,
+                artwork: image,
+                durationSeconds: current.durationSeconds
+            )
+            pushNowPlaying()
+        }
+    }
+
+    /// The longest edge, in pixels, the lock screen and Control Center need —
+    /// the only two consumers of `TrackMetadata.artwork`. Nothing in the app
+    /// draws it; `PlayerCard` asks `ArtworkStore` for its own size separately.
+    ///
+    /// The lock screen's cover fills most of the display's width, so the
+    /// requirement scales with the largest device: ~360pt on a 440pt-wide
+    /// iPhone 17 Pro Max, which at @3x is ~1080px. 1024 is the round number
+    /// just under that — visually indistinguishable at this size, and 4 MB
+    /// rather than the ~36 MB a full-resolution 3000x3000 cover would cost,
+    /// which also keeps a queue's worth of entries inside `ArtworkStore`'s
+    /// 50 MB cache budget.
+    private static let lockScreenArtworkPixels: CGFloat = 1024
 
     private func activateSessionIfNeeded() {
         guard !sessionActivated else { return }
@@ -106,7 +1347,95 @@ final class PlaybackService {
             try session.setActive(true)
             sessionActivated = true
         } catch {
-            print("Failed to activate audio session: \(error)")
+            AppLog.playback.error("Failed to activate audio session: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - When the system takes the audio away
+
+    /// Subscribes to the two things that stop playback without the app being
+    /// asked: an interruption, and the current output device disappearing.
+    ///
+    /// A `.playback` app has to handle both itself. iOS pauses the hardware and
+    /// tells nobody, so without this the app's own state drifts from reality —
+    /// `isPlaying`, the pause glyph and the lock screen all keep claiming
+    /// playback is live while the room is silent — and when the call ends iOS
+    /// does not resume for you either.
+    ///
+    /// Both handlers hop to the main actor rather than assuming the posting
+    /// thread. `AVAudioSession` promises nothing about which thread it delivers
+    /// on, and `MainActor.assumeIsolated` would turn a wrong guess into a crash
+    /// instead of a hop. The values are read out of `userInfo` here, inside the
+    /// non-isolated closure, because a `[AnyHashable: Any]` cannot cross into a
+    /// `Task` — the raw `UInt`s can.
+    private func observeAudioSession() {
+        let interruption = notificationCentre.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+            // Unwrapped before the hop, not inside it: `[weak self]` binds a
+            // `var`, and referencing that from the nested concurrent closure is
+            // an error under the Swift 6 language mode.
+            guard let self else { return }
+            Task { @MainActor in self.handleInterruption(type: type, options: options) }
+        }
+        let routeChange = notificationCentre.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard let self else { return }
+            Task { @MainActor in self.handleRouteChange(reason: reason) }
+        }
+        sessionObservers = [interruption, routeChange]
+    }
+
+    /// A phone call, an alarm, Siri — anything that takes the session for a
+    /// while and may hand it back.
+    private func handleInterruption(type rawType: UInt?, options rawOptions: UInt?) {
+        guard let rawType, let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+            return
+        }
+        switch type {
+        case .began:
+            // iOS deactivated the session on its way in. `sessionActivated` is
+            // the flag `activateSessionIfNeeded()` guards on, and it used to be
+            // set once and never cleared — so after any interruption every
+            // later `resume()` would skip reactivation and hand `play()` to a
+            // session that is no longer active. That is the silent-play bug
+            // behind "it stopped working after a phone call, until I restarted
+            // the app".
+            sessionActivated = false
+            shouldResumeAfterInterruption = isPlaying
+            pause()
+        case .ended:
+            // Only give playback back if this interruption is what took it —
+            // see `shouldResumeAfterInterruption`.
+            guard shouldResumeAfterInterruption else { return }
+            shouldResumeAfterInterruption = false
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions ?? 0)
+            // Without `.shouldResume` the interrupting app is still holding the
+            // session — Siri left something playing, or another audio app took
+            // over. Starting anyway would be two apps fighting over the speaker.
+            guard options.contains(.shouldResume) else { return }
+            resume()
+        @unknown default:
+            break
+        }
+    }
+
+    /// Headphones pulled out, or a Bluetooth speaker walked away from.
+    ///
+    /// Only `.oldDeviceUnavailable` pauses. Every other reason — a device
+    /// arriving, a category change, the route reconfiguring itself — must leave
+    /// playback alone, or plugging headphones *in* would stop the music.
+    private func handleRouteChange(reason rawReason: UInt?) {
+        guard let rawReason,
+              AVAudioSession.RouteChangeReason(rawValue: rawReason) == .oldDeviceUnavailable
+        else { return }
+        // Nothing is coming back from an unplug, so a later `.ended` from some
+        // unrelated interruption must not treat this as something to resume.
+        shouldResumeAfterInterruption = false
+        pause()
     }
 }

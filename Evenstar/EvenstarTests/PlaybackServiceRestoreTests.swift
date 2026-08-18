@@ -1,0 +1,235 @@
+import XCTest
+import SwiftData
+@testable import Evenstar
+
+@MainActor
+final class PlaybackServiceRestoreTests: XCTestCase {
+
+    private func makeStack(persistInterval: TimeInterval = 5) throws -> (PlaybackService, MockAudioPlayer, LibraryService) {
+        let player = MockAudioPlayer()
+        let nowPlaying = MockNowPlayingPublisher()
+        let library = try InMemoryLibrary.make()
+        let service = PlaybackService(player: player, nowPlaying: nowPlaying, library: library, persistInterval: persistInterval)
+        return (service, player, library)
+    }
+
+    private func seed(_ count: Int, library: LibraryService) throws -> [Track] {
+        try (0..<count).map { i in
+            let t = Track(
+                title: "T\(i)",
+                artistName: "A",
+                albumTitle: "B",
+                durationSeconds: 100,
+                relativePath: "Music/\(UUID().uuidString).mp3",
+                format: "mp3"
+            )
+            try library.insert(t)
+            return t
+        }
+    }
+
+    func testRestoreLoadsLastTrackAtPersistedPositionButDoesNotAutoplay() async throws {
+        let (service, player, library) = try makeStack()
+        let tracks = try seed(3, library: library)
+        let state = library.playbackState
+        state.queueTrackIDs = tracks.map(\.id)
+        state.queueIndex = 1
+        state.positionSeconds = 42
+        try library.save()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertEqual(service.queue.map(\.id), tracks.map(\.id))
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertEqual(service.currentTrack?.id, tracks[1].id)
+        XCTAssertEqual(player.currentTime, 42, accuracy: 0.01)
+        XCTAssertFalse(service.isPlaying)
+    }
+
+    func testRestoreSkipsMissingTracks() async throws {
+        let (service, _, library) = try makeStack()
+        var tracks = try seed(3, library: library)
+        let state = library.playbackState
+        state.queueTrackIDs = tracks.map(\.id)
+        state.queueIndex = 1
+        state.positionSeconds = 0
+        try library.save()
+        // Delete the middle track from the library after persistence captured the ID.
+        let deleted = tracks.remove(at: 1)
+        try library.delete(deleted)
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertEqual(service.queue.map(\.id), tracks.map(\.id))
+        // queueIndex was 1 (the deleted, middle track). After the queue
+        // shrinks to the two survivors, index 1 is still in-bounds and now
+        // refers to what was originally the third track — pin that
+        // explicitly rather than only asserting the clamp's tautological
+        // bounds (>= 0 and < count hold for any clamped index).
+        XCTAssertEqual(service.queueIndex, 1)
+        XCTAssertEqual(service.currentTrack?.id, tracks[1].id)
+    }
+
+    func testRestoreEmptyStateIsNoOp() async throws {
+        let (service, _, _) = try makeStack()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertTrue(service.queue.isEmpty)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertFalse(service.isPlaying)
+    }
+
+    /// `pause()` defers the disk write to the next main-actor turn so the
+    /// play/pause glyph renders first, so this yields before reading the row.
+    /// The assertion is unchanged: pausing at 17s must still land 17s (not the
+    /// 0 that `play()`'s own persist wrote) in the persisted state.
+    func testPersistWritesStateOnPause() async throws {
+        let (service, player, library) = try makeStack()
+        let tracks = try seed(2, library: library)
+        service.play(tracks[0], in: tracks)
+        player.currentTime = 17
+
+        service.pause()
+        await Task.yield()
+
+        XCTAssertEqual(library.playbackState.currentTrackID, tracks[0].id)
+        XCTAssertEqual(library.playbackState.positionSeconds, 17, accuracy: 0.01)
+        XCTAssertEqual(library.playbackState.queueTrackIDs, tracks.map(\.id))
+    }
+
+    // MARK: - Restore failure path (ruling item 2)
+
+    /// The saved current track's file can no longer be loaded (e.g. deleted
+    /// from disk while its DB row survives). Restore must skip forward to a
+    /// playable track — mirroring loadCurrentAndPlay() — rather than wiping
+    /// the persisted row via stopPlayback(). The whole point of the fix is
+    /// that the surviving queue stays recorded, so we assert directly on the
+    /// persisted row, not just on in-memory service state.
+    func testRestoreSkipsUnplayableCurrentTrackAndKeepsPersistedQueue() async throws {
+        let (service, player, library) = try makeStack()
+        let tracks = try seed(3, library: library)
+        player.failingURLs = [FileLocation.absoluteURL(forRelative: tracks[1].relativePath)]
+        let state = library.playbackState
+        state.queueTrackIDs = tracks.map(\.id)
+        state.queueIndex = 1
+        state.positionSeconds = 42
+        try library.save()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertEqual(service.queueIndex, 2)
+        XCTAssertEqual(service.currentTrack?.id, tracks[2].id)
+        XCTAssertFalse(service.isPlaying)
+        // The landed track was reached by skipping forward, not the track
+        // the saved position was recorded against — it must start at 0.
+        XCTAssertEqual(player.currentTime, 0, accuracy: 0.01)
+        XCTAssertEqual(service.position, 0, accuracy: 0.01)
+        // The persisted row must reflect the surviving queue, not be wiped.
+        XCTAssertFalse(library.playbackState.queueTrackIDs.isEmpty)
+        XCTAssertEqual(library.playbackState.queueTrackIDs, tracks.map(\.id))
+        XCTAssertEqual(library.playbackState.currentTrackID, tracks[2].id)
+    }
+
+    /// No track in the persisted queue can be loaded. Restore must stop
+    /// cleanly rather than hang or crash — the bounded skip loop must
+    /// terminate.
+    func testRestoreWhenNoTrackCanLoadStopsCleanlyWithoutHanging() async throws {
+        let (service, player, library) = try makeStack()
+        let tracks = try seed(3, library: library)
+        for track in tracks {
+            player.failingURLs.insert(FileLocation.absoluteURL(forRelative: track.relativePath))
+        }
+        let state = library.playbackState
+        state.queueTrackIDs = tracks.map(\.id)
+        state.queueIndex = 0
+        state.positionSeconds = 10
+        try library.save()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertNil(service.currentTrack)
+        XCTAssertTrue(service.queue.isEmpty)
+    }
+
+    // MARK: - Mixed-source restore (C1)
+
+    /// A persisted queue can mix all three sources — local, Drive, Jamendo —
+    /// since `PlaybackState` just stores an ordered list of bare `UUID`s with
+    /// no note of which table each came from. Before `findJamendoTrack(byID:)`
+    /// existed, `restoreFromPersistedState()` had no way to resolve the
+    /// Jamendo id: it fell out of `resolved` silently, `queueIndex` clamped
+    /// onto whatever survived, and a queue that was *only* Jamendo tracks
+    /// resolved to empty and had its persisted state wiped outright. This
+    /// pins the fix: all three rows must come back, in their original order.
+    func testRestoreResolvesAMixedQueueOfAllThreeSourcesInOrder() async throws {
+        let (service, _, library) = try makeStack()
+        let local = try seed(1, library: library)[0]
+        let drive = DriveTrack(fileID: "f1", folderID: "folder1", fileName: "drive.mp3")
+        library.context.insert(drive)
+        let jamendo = JamendoTrack(
+            jamendoID: "j1",
+            title: "Jam Track",
+            artistName: "Artist",
+            albumTitle: "Album",
+            durationSeconds: 120,
+            audioURLString: "https://prod.jamendo.com/j1.mp3"
+        )
+        library.context.insert(jamendo)
+        try library.save()
+
+        let state = library.playbackState
+        state.queueTrackIDs = [local.id, drive.id, jamendo.id]
+        state.queueIndex = 0
+        state.positionSeconds = 0
+        try library.save()
+
+        await service.restoreFromPersistedState()
+
+        XCTAssertEqual(service.queue.map(\.id), [local.id, drive.id, jamendo.id])
+    }
+
+    // MARK: - Persist throttle (ruling item 3)
+
+    /// Two ticks close together should produce only one write beyond the
+    /// initial persist from play(). We can't inspect the private throttle
+    /// timestamp, so we detect a write indirectly: change the player's
+    /// currentTime between ticks and check whether the persisted position
+    /// moved.
+    func testThrottleSuppressesWritesWithinWindow() throws {
+        let (service, player, library) = try makeStack(persistInterval: 5)
+        let tracks = try seed(1, library: library)
+        service.play(tracks[0], in: tracks)
+        // play() persists immediately at position 0.
+        XCTAssertEqual(library.playbackState.positionSeconds, 0, accuracy: 0.01)
+
+        player.currentTime = 1
+        service.tickForTesting()
+        let afterFirstTick = library.playbackState.positionSeconds
+        XCTAssertEqual(afterFirstTick, 0, accuracy: 0.01, "first tick within the window should not write")
+
+        player.currentTime = 2
+        service.tickForTesting()
+        let afterSecondTick = library.playbackState.positionSeconds
+        XCTAssertEqual(afterSecondTick, 0, accuracy: 0.01, "second tick within the window should still not write")
+    }
+
+    /// Once the throttle window has elapsed, the next tick does write.
+    /// Expresses "the window has elapsed" by construction — injecting a
+    /// zero-length interval so any tick is already past it — rather than by
+    /// waiting on the wall clock, which would make the suite flaky under
+    /// load. If the throttle regressed to never write, `positionSeconds`
+    /// would stay at 0 and this assertion would fail.
+    func testThrottleWritesOnceWindowElapses() throws {
+        let (service, player, library) = try makeStack(persistInterval: 0)
+        let tracks = try seed(1, library: library)
+        service.play(tracks[0], in: tracks)
+        XCTAssertEqual(library.playbackState.positionSeconds, 0, accuracy: 0.01)
+
+        player.currentTime = 9
+        service.tickForTesting()
+
+        XCTAssertEqual(library.playbackState.positionSeconds, 9, accuracy: 0.01)
+    }
+}
