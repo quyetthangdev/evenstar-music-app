@@ -1241,21 +1241,7 @@ struct PlayerCard: View {
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
-        .clipShape(
-            UnevenRoundedRectangle(
-                // Collapsed the card is a pill — all four corners at
-                // `collapsedCornerRadius`. Expanded it is the Now Playing
-                // card: 38pt top corners, square bottom against the display
-                // edge. The top corners therefore interpolate 32 -> 38 and are
-                // never 0; the bottom two interpolate 32 -> 0.
-                topLeadingRadius: Self.collapsedCornerRadius
-                    + (Self.expandedCornerRadius - Self.collapsedCornerRadius) * progress,
-                bottomLeadingRadius: Self.collapsedCornerRadius * (1 - progress),
-                bottomTrailingRadius: Self.collapsedCornerRadius * (1 - progress),
-                topTrailingRadius: Self.collapsedCornerRadius
-                    + (Self.expandedCornerRadius - Self.collapsedCornerRadius) * progress
-            )
-        )
+        .modifier(CardClip(progress: progress, insets: insets))
         // Lifts the collapsed pill off the list behind it, with the same shadow
         // the tab bar's surfaces use — they share a screen, and while minimised
         // they share a row, so a lift on one and none on the other is visible
@@ -2830,6 +2816,78 @@ struct PlayerCard: View {
         }
     }
 
+    /// Bán kính hai góc **trên** của thẻ ở một `progress` cho trước.
+    ///
+    /// Thu gọn là một viên thuốc thật (32 = nửa chiều cao), mở hết là tấm thẻ
+    /// Now Playing (38). Không bao giờ về 0 ở hai góc này.
+    static func cardTopCornerRadius(progress: Double) -> CGFloat {
+        collapsedCornerRadius
+            + (expandedCornerRadius - collapsedCornerRadius) * progress
+    }
+
+    /// Bán kính hai góc **dưới**, cho những máy phải vẽ chúng cho đúng.
+    ///
+    /// Vuông dần về 0 khi mở, vì mép dưới của thẻ mở hết áp vào mép màn hình.
+    static func cardBottomCornerRadius(progress: Double) -> CGFloat {
+        collapsedCornerRadius * (1 - progress)
+    }
+
+    /// Thẻ có được phép cắt bằng **một** bán kính đều cho cả bốn góc không.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO CÓ CÂU HỎI NÀY, VÀ NÓ ĐÁNG BAO NHIÊU
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `UnevenRoundedRectangle` — bốn bán kính khác nhau — không có đường nào
+    /// ánh xạ xuống `layer.cornerRadius` của Core Animation, vốn chỉ có **một**
+    /// bán kính (`maskedCorners` chọn góc nào nhận nó, không cho mỗi góc một
+    /// số). Nên SwiftUI phải dựng một mask layer, và mask là một lượt rasterize
+    /// ngoài màn hình.
+    ///
+    /// **Đo được** (Color Offscreen-Rendered Yellow, Release, iPhone 12,
+    /// 2026-08-18): với `UnevenRoundedRectangle`, **cả màn hình** bị tô vàng —
+    /// nền danh sách, từng hàng, tiêu đề, thanh phân đoạn — ở **mọi** màn hình
+    /// của app, kể cả khi player đóng, vì thẻ luôn nằm trong cây. Đổi sang một
+    /// bán kính đều thì toàn bộ phần ấy sạch; chỉ còn `.thinMaterial` của viên
+    /// thuốc và của thanh tab, mà Đợt A1 đã đo Material không kèm bóng ra
+    /// 0,0 ms/giây. Người dùng xác nhận cú bung mượt hơn, thử tay trên Release.
+    ///
+    /// Đây là thứ mà bốn vòng đo `h1`–`k1` không thể thấy: bộ đo của chúng dừng
+    /// ở `CATransaction.flush()`, tức chỉ đo pha commit, còn bảng A1 cho thấy
+    /// 86% chi phí của lỗi cùng loại ở thanh tab nằm ở render và GPU.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO KHÔNG PHẢI MÁY NÀO CŨNG ĐƯỢC
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Một bán kính đều nghĩa là hai góc **dưới** cũng bo 38 khi mở hết, thay
+    /// vì vuông về 0. Trên máy có màn hình bo góc thì không ai thấy: thiết bị
+    /// tự cắt nhiều hơn thế (iPhone XS ~39pt, iPhone 12 ~47pt, 14 Pro ~55pt),
+    /// nên góc bo 38 của thẻ nằm trọn trong phần đã bị cắt.
+    ///
+    /// Trên máy màn hình **góc vuông** — iPhone SE 2/3, iPad có nút Home — thì
+    /// thấy rõ: hai lỗ tròn ở đáy player mở hết. Nên những máy ấy giữ hình cũ
+    /// và giữ luôn cái giá cũ.
+    ///
+    /// **Phân biệt bằng safe-area inset dưới, không bằng model.** Đúng một lớp
+    /// máy có màn hình bo góc: lớp có thanh Home ảo, và thanh ấy chính là thứ
+    /// tạo ra inset dưới khác 0. Máy còn nút Home vật lý cho inset 0 và cũng là
+    /// máy màn hình góc vuông. Không có API công khai đọc bán kính bo của màn
+    /// hình, và cái private (`_displayCornerRadius`) thì không đáng đánh đổi
+    /// với App Review khi đã có một dấu hiệu công khai nói đúng cùng chuyện.
+    ///
+    /// **Biên an toàn mỏng, và nó được ghim bằng test.** Máy có màn bo góc hẹp
+    /// nhất mà iOS 18 còn chạy là iPhone XS / 11 Pro ở ~39pt, chỉ hơn
+    /// `expandedCornerRadius` = 38 đúng 1pt. Nâng `expandedCornerRadius` lên 40
+    /// là hở góc trên chính những máy này, và
+    /// `testTheExpandedCornerStaysInsideTheNarrowestRoundedDisplay` đỏ ngay.
+    static func cardCornerRadiiMayBeUniform(bottomSafeAreaInset: CGFloat) -> Bool {
+        bottomSafeAreaInset > 0
+    }
+
+    /// Bán kính bo màn hình của máy hẹp nhất mà nhánh nhanh còn phải đúng —
+    /// iPhone XS / 11 Pro. Xem `cardCornerRadiiMayBeUniform`.
+    static let narrowestRoundedDisplayCorner: CGFloat = 39
+
+
     /// Quãng đổi có đáng giấu sau một cú hoà mờ không.
     ///
     /// **Cái này không phải chỉnh cho đẹp, nó chặn một lỗi thật.**
@@ -2910,6 +2968,41 @@ struct PlayerCard: View {
             refreshCachedCover(for: path, owner: artworkIdentity)
         }
         tint = loadedColour
+    }
+}
+
+/// Cắt thẻ theo hình của nó, bằng hình **rẻ nhất** mà máy này chấp nhận được.
+///
+/// Một `ViewModifier` chứ không phải một `.clipShape(AnyShape(...))`: `AnyShape`
+/// xoá kiểu tĩnh của hình, và nhánh nhanh ở đây phụ thuộc đúng vào việc SwiftUI
+/// **nhận ra** `RoundedRectangle` để hạ nó xuống `layer.cornerRadius`. Một cái
+/// `if` trong `body` giữ nguyên kiểu ở cả hai nhánh.
+///
+/// Rẽ nhánh cấu trúc ở đây an toàn vì điều kiện là hằng số theo máy: safe-area
+/// inset dưới không đổi giữa các khung, nên `_ConditionalContent` không bao giờ
+/// lật và không có gì bị tháo ra gắn lại giữa cú morph. Xoay máy đổi *độ lớn*
+/// của inset chứ không đổi việc nó khác 0.
+///
+/// Toàn bộ lý lẽ, số đo, và vì sao SE phải đi đường khác: xem
+/// `PlayerCard.cardCornerRadiiMayBeUniform(bottomSafeAreaInset:)`.
+private struct CardClip: ViewModifier {
+    let progress: Double
+    let insets: EdgeInsets
+
+    func body(content: Content) -> some View {
+        let top = PlayerCard.cardTopCornerRadius(progress: progress)
+        if PlayerCard.cardCornerRadiiMayBeUniform(bottomSafeAreaInset: insets.bottom) {
+            content.clipShape(RoundedRectangle(cornerRadius: top, style: .continuous))
+        } else {
+            content.clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: top,
+                    bottomLeadingRadius: PlayerCard.cardBottomCornerRadius(progress: progress),
+                    bottomTrailingRadius: PlayerCard.cardBottomCornerRadius(progress: progress),
+                    topTrailingRadius: top
+                )
+            )
+        }
     }
 }
 

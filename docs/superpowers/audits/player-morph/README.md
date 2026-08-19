@@ -1,7 +1,15 @@
-# Cú bung player giật ở khung đầu — bốn vòng đo
+# Cú bung player giật ở khung đầu — bốn vòng đo, rồi một cú chụp ảnh
 
-> **Kết luận: chưa sửa được, và đây là lý do.** Đọc mục "Nếu ai đó quay lại chỗ
-> này" ở cuối trước khi thử bất cứ gì.
+> **ĐÃ CŨ MỘT PHẦN. Đọc [`l1-report.md`](l1-report.md) trước.** Thủ phạm là
+> **offscreen rasterization**, và bốn vòng đo dưới đây không thể thấy nó: bộ đo
+> của chúng dừng ở `CATransaction.flush()`, tức chỉ đo pha commit, còn bảng A1
+> của chính dự án cho thấy 86% chi phí của lỗi cùng loại nằm ở render và GPU.
+> Hai phút chụp Color Offscreen-Rendered Yellow trên Release tìm ra chỗ mà bốn
+> vòng này không tìm ra.
+>
+> Phần dưới **vẫn đúng và vẫn đáng đọc** — sáu giả thuyết bị bác bỏ ở đây đều
+> bị bác bỏ đúng, và phương pháp A/B đan xen của `h1` vẫn là khuôn tốt nhất
+> repo này có. Chỉ có câu "chưa sửa được" là không còn đúng.
 
 ## Triệu chứng
 
