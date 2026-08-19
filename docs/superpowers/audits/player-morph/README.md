@@ -7,6 +7,13 @@
 > Hai phút chụp Color Offscreen-Rendered Yellow trên Release tìm ra chỗ mà bốn
 > vòng này không tìm ra.
 >
+> **E2 đã chạy ngày 2026-08-19** và nó đóng lại câu hỏi cuối của khu vực này:
+> GPU chỉ chiếm **7,3%** hitch, nên bốn lớp offscreen trên `artworkView`
+> ("nhóm B") **không đáng tách**. Chi phí nằm ở main thread khi SwiftUI dựng và
+> so cây view — đúng thứ `h1`/`j1`/`k1` kết luận từ phía bộ đo commit-phase.
+> Hitch đi từ 73,5 xuống **22,9 ms/giây**. Xem
+> [`2026-08-19-e2-trace.md`](../2026-08-19-e2-trace.md).
+>
 > Phần dưới **vẫn đúng và vẫn đáng đọc** — sáu giả thuyết bị bác bỏ ở đây đều
 > bị bác bỏ đúng, và phương pháp A/B đan xen của `h1` vẫn là khuôn tốt nhất
 > repo này có. Chỉ có câu "chưa sửa được" là không còn đúng.

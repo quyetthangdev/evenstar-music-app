@@ -199,7 +199,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
   Xcode → chọn **PROJECT** (không phải TARGET) → Build Settings → iOS Deployment Target → `18.6`.
 
-- [ ] **E2 — Đo ba thao tác chưa từng đo riêng**
+- [x] **E2 — Đo ba thao tác chưa từng đo riêng** — *xong cho thao tác mở/đóng player, ngày 2026-08-19. Kết quả và số đo: [`2026-08-19-e2-trace.md`](../audits/2026-08-19-e2-trace.md). Hai thao tác còn lại (mở/đóng playlist, kéo thả hàng đợi) chưa đo.*
 
   Mở/đóng player, mở/đóng playlist, kéo thả hàng đợi. Mỗi cái một trace, mỗi trace một loại thao tác liên tục.
 
@@ -221,7 +221,7 @@ HIG đòi nhiều hơn "làm animation ngắn lại": phải tắt **dịch chuy
 
 ## Không làm, và vì sao
 
-- **Tách `PlayerCard`** (mục 10) — chặn bởi E2. 2.429 dòng, 24 `@State`, hàm `card()` dài 516 dòng; việc lớn nhất kế hoạch và có thể không cần.
+- **Tách `PlayerCard`** (mục 10) — **E2 đã chạy, và nó không mở cổng cho việc này**. Trace nói chi phí nằm ở main thread khi SwiftUI dựng và so cây view (commit 45%, commit-to-render 47%, GPU chỉ 7,3%), nên tách view đúng là đường nhắm vào đó. Nhưng **57% phần hitch còn lại nằm trong một cú duy nhất** — cú bung đầu tiên sau một quãng nghỉ — nên đo cú ấy trước rẻ hơn nhiều so với 3–5 ngày tách một view 3.000 dòng để giảm chi phí mỗi khung. Xem [`2026-08-19-e2-trace.md`](../audits/2026-08-19-e2-trace.md) §4.
 - **Swift Testing thay XCTest** — 47 file, 469 hàm. Lợi ích thật nhưng không đóng vấn đề nào đã tìm ra.
 - **Dynamic Type** — chưa ai kiểm ở cỡ chữ trợ năng. Cần khảo sát trước, không phải sửa mù.
 - **Họ crash `DriveFolder`** — `DriveLibraryService.scan` giữ `folder` qua `await` không có hook. Cùng loại với bốn chỗ đã đóng ở Đợt 1 trước; một việc riêng.
