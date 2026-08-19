@@ -352,16 +352,17 @@ struct PlayerCard: View {
     /// còn là một mặt kính chứ không phải một tấm phủ cả màn hình.
     static let materialCutoff: Double = 0.5
 
-    /// Tỉ lệ điểm→pixel của **màn hình đang vẽ thẻ này**, không phải màn hình
-    /// chính, để `loadArtwork` giải mã bìa đúng số pixel sẽ vẽ ra.
-    ///
-    /// Đọc thẳng được ở đây vì `loadArtwork` là một hàm của `View` chạy từ
-    /// `.task` — môi trường đã điền xong từ `body` trở đi, và giá trị ấy còn
-    /// đúng cả sau khi tác vụ đã treo (đo được: với `traitOverrides` đặt 2x
-    /// trên host mà màn chính 3x, một hàm `async` như thế đọc ra 2.0).
-    /// `ArtworkThumbnail` không dùng được cách này: nó cần con số ngay trong
-    /// `init`, nơi môi trường còn rỗng — xem `ArtworkThumbnail.maxPixel`.
-    @Environment(\.displayScale) private var displayScale
+    // `@Environment(\.displayScale)` đã bị bỏ khỏi kiểu này.
+    //
+    // Nó tồn tại để nhân với cỡ vẽ ra cỡ giải mã, và cỡ giải mã giờ là
+    // `ArtworkStore.fullScreenCoverPixels` — một hằng số dùng chung với màn
+    // khoá, đích danh để hai chỗ không băm ra hai khoá cache khác nhau cho cùng
+    // một tấm ảnh. Không còn ai trong file này đọc tỉ lệ màn hình.
+    //
+    // Đợt A2 của lộ trình đưa nó vào đây để thay `UIScreen.main.scale`, và điều
+    // đó vẫn đúng ở `ArtworkThumbnail` cùng `JamendoResultRow`. Chỉ chỗ này
+    // không còn việc cho nó.
+
 
     /// Where the card rests: 0 collapsed, 1 expanded. Changed only on release.
     @State private var settled: Double = 0
@@ -894,7 +895,7 @@ struct PlayerCard: View {
     /// grew correctly but the picture "appeared underneath" part-way instead of
     /// growing with it. Nothing was wrong with the animation — there were simply
     /// no pixels to animate. `artwork` is `nil` at that moment (the coverless
-    /// track cleared it) and the decode lands tens of milliseconds into a 400ms
+    /// track cleared it) and the decode lands tens of milliseconds into a 360ms
     /// spring, so the cover fades in over a frame that has already half opened.
     ///
     /// The list row the user just tapped has *already* decoded this picture, at
@@ -972,12 +973,18 @@ struct PlayerCard: View {
         GeometryReader { outer in
             card(size: outer.size, insets: outer.safeAreaInsets)
                 .ignoresSafeArea()
-                // Attached here, rather than outside the reader, so the
-                // artwork's target size can be derived from the same
-                // `outer` geometry the card lays out with. See F2.
-                .task(id: artworkIdentity) {
-                    await loadArtwork(safeAreaSize: outer.size, insets: outer.safeAreaInsets)
-                }
+                // **Cỡ giải mã không còn tới từ `outer`, và chú thích cũ ở
+                // đây đã hết đúng.** Nó viết: "Attached here, rather than
+                // outside the reader, so the artwork's target size can be
+                // derived from the same `outer` geometry the card lays out
+                // with. See F2." Cỡ giải mã giờ là
+                // `ArtworkStore.fullScreenCoverPixels`, một hằng số dùng chung
+                // với màn khoá — xem doc của nó về vì sao.
+                //
+                // Vẫn để trong reader chứ không dời ra: dời nó là một thay đổi
+                // cấu trúc trên cây view, và không có gì đòi thay đổi ấy. Chỗ
+                // này giờ chỉ là một chỗ, không còn là một ràng buộc.
+                .task(id: artworkIdentity) { await loadArtwork() }
         }
         // Cú hoà mờ thay cho cú morph khi giảm chuyển động — xem
         // `cardOpacity` và `morph(to:curve:)`. Ở chế độ thường nó là hằng số 1.
@@ -3007,7 +3014,7 @@ struct PlayerCard: View {
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
     ///   actually draw. See F2.
-    private func loadArtwork(safeAreaSize: CGSize, insets: EdgeInsets) async {
+    private func loadArtwork() async {
         // Bail rather than clear: when the last track in the queue finishes,
         // `currentTrack` goes nil and this re-fires with a nil id while the
         // card is still mid collapse-and-fade. Clearing `artwork`/`tint` here
@@ -3016,18 +3023,21 @@ struct PlayerCard: View {
         // the rest of the card. See F3.
         guard playback.currentTrack != nil else { return }
 
-        let fullSize = CGSize(
-            width: safeAreaSize.width + insets.leading + insets.trailing,
-            height: safeAreaSize.height + insets.top + insets.bottom
-        )
-        let artworkSide = Self.artworkSide(fullSize: fullSize, topInset: insets.top)
-
         let path = playback.currentTrack?.artworkRelativePath
         async let image = ArtworkStore.image(
             for: path,
-            // Cạnh khối vuông, không phải bề rộng thẻ: bìa không còn tràn
-            // ngang màn hình nên giải mã theo bề rộng thẻ là thừa pixel.
-            maxPixel: artworkSide * displayScale
+            // **Hằng số dùng chung, không phải cỡ vẽ tính từ hình học.**
+            //
+            // Chỗ này từng là `artworkSide * displayScale` — cỡ vẽ thật, và đúng
+            // hơn về nguyên tắc. Cái giá của "đúng hơn": nó cho 1026 trên iPhone
+            // 12 trong khi màn khoá xin 1024, `cacheKey` băm theo
+            // `Int(maxPixel)`, nên mỗi lần đổi bài app giải mã cùng một JPEG
+            // **hai lần** — hai bitmap ~4MB cách nhau 2 pixel, song song ngay
+            // lúc cú morph bắt đầu.
+            //
+            // Toàn bộ lý lẽ và đánh đổi ở doc của
+            // `ArtworkStore.fullScreenCoverPixels`.
+            maxPixel: ArtworkStore.fullScreenCoverPixels
         )
         async let colour = ArtworkStore.dominantColor(for: path)
         // Concurrently with the others, not after them: all read the same

@@ -116,6 +116,52 @@ enum ArtworkStore {
         $0.countLimit = 256
     }
 
+    /// Cỡ giải mã cho **một tấm bìa vẽ gần cỡ màn hình**, dùng chung bởi cả hai
+    /// người cần nó.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO PHẢI LÀ MỘT HẰNG SỐ, KHÔNG PHẢI HAI CON SỐ ĐÚNG
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Có đúng hai chỗ trong app cần một bản giải mã cỡ ấy: màn khoá cùng
+    /// Control Center (`PlaybackService`), và tấm bìa của player mở
+    /// (`PlayerCard`). Trước đây mỗi chỗ tự tính lấy:
+    ///
+    ///     PlaybackService   1024                          (hằng số)
+    ///     PlayerCard        artworkSide × displayScale     = 1026 trên iPhone 12
+    ///
+    /// `cacheKey` là `"\(path)@\(Int(maxPixel))"`, nên **1026 và 1024 là hai
+    /// khoá khác nhau** — và mỗi lần đổi bài, app giải mã **cùng một JPEG hai
+    /// lần**, hai bitmap ~4MB, cách nhau đúng 2 pixel, chạy song song ngay lúc
+    /// cú morph bắt đầu. Cộng lượt thứ ba 48px cho `dominantColor`.
+    ///
+    /// Không bộ đo nào trong `docs/superpowers/audits/player-morph/` thấy được
+    /// chuyện này: `warmUp()` của rig **cố ý** để cú giải mã đầu tiên rơi ra
+    /// ngoài phép đo, và `ArtworkStore` cache theo tiến trình với một file dùng
+    /// chung cho mọi lần mount — nên trong ~200 lần mount của cả bốn vòng, cú
+    /// giải mã xảy ra đúng một lần.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO 1024 VÀ KHÔNG PHẢI CON SỐ TÍNH TỪ HÌNH HỌC
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Con số tính từ hình học *đúng hơn* cho tấm thẻ — nó là cỡ vẽ thật, và
+    /// doc của `image(for:maxPixel:)` khuyên đúng thế. Nhưng nó phụ thuộc máy,
+    /// nên không có giá trị nào của phía màn khoá trùng được với nó trên **mọi**
+    /// máy: iPhone 12 ra 1026, iPhone 17 Pro Max ra ~1176.
+    ///
+    /// Chọn một hằng số nghĩa là chấp nhận phóng to ~13% trên máy lớn nhất. Với
+    /// một tấm ảnh chụp ở cỡ ấy thì không nhìn ra, và đó đúng là cùng một đánh
+    /// đổi mà phía màn khoá đã ghi lại và chấp nhận từ trước ("1024 is the round
+    /// number just under that — visually indistinguishable at this size").
+    ///
+    /// Đổi lấy: một lượt giải mã thay vì hai, và ngân sách 50MB của `images`
+    /// chứa được gấp đôi số bài trước khi đuổi — thứ mà cái lưới an toàn
+    /// `anyCachedImage` sống hay chết nhờ nó.
+    ///
+    /// **Đừng cho chỗ nào trong hai chỗ ấy tự tính lại.** Cái sai cũ không phải
+    /// một con số sai; nó là hai con số đúng mà không ai buộc chúng phải bằng
+    /// nhau.
+    static let fullScreenCoverPixels: CGFloat = 1024
+
     /// - Parameter maxPixel: the longest edge, in pixels, the decoded image needs.
     ///   Pass the point size multiplied by the screen scale for a crisp result.
     @concurrent

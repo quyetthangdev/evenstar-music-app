@@ -112,7 +112,7 @@ final class PlayerArtworkSourceTests: XCTestCase {
     /// **The half the first fix missed.** Opening a cover track straight after a
     /// coverless one, the frame grew correctly but the picture appeared
     /// part-way instead of growing with it — because `artwork` was nil at that
-    /// moment and the decode lands well into a 400ms spring. The row the user
+    /// moment and the decode lands well into a 360ms spring. The row the user
     /// just tapped has already decoded the same picture at its own size, so
     /// there is something to draw from the first frame.
     func testACoverDecodedAtAnotherSizeIsUsedWhenTheFullOneIsNotReady() {

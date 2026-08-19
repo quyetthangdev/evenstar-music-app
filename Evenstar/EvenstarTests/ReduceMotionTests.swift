@@ -57,7 +57,7 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.selection, .spring(duration: 0.38, bounce: 0.34))
         XCTAssertEqual(BottomBarStyle.content, .spring(duration: 0.34, bounce: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .spring(duration: 0.42, bounce: 0.14))
-        XCTAssertEqual(BottomBarStyle.expand, .spring(duration: 0.40, bounce: 0.12))
+        XCTAssertEqual(BottomBarStyle.expand, .spring(duration: 0.36, bounce: 0.12))
         XCTAssertEqual(BottomBarStyle.queue, .spring(Spring(duration: 0.31, bounce: 0)))
         XCTAssertEqual(
             BottomBarStyle.queueContentSlide,
@@ -70,7 +70,7 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.selection, .easeInOut(duration: 0.18))
         XCTAssertEqual(BottomBarStyle.content, .easeInOut(duration: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .easeInOut(duration: 0.29))
-        XCTAssertEqual(BottomBarStyle.expand, .easeInOut(duration: 0.29))
+        XCTAssertEqual(BottomBarStyle.expand, .easeInOut(duration: 0.26))
         XCTAssertEqual(BottomBarStyle.queue, .easeInOut(duration: 0.29))
         XCTAssertEqual(BottomBarStyle.queueContentSlide, .easeInOut(duration: 0.19))
     }
@@ -529,7 +529,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
         let expansion = try openThePlayer(reduceMotion: false)
 
         XCTAssertEqual(expansion.progress, 1)
-        XCTAssertEqual(expansion.animation, .spring(duration: 0.40, bounce: 0.12))
+        XCTAssertEqual(expansion.animation, .spring(duration: 0.36, bounce: 0.12))
     }
 }
 
@@ -997,7 +997,7 @@ final class SpringSettlingEvidenceTests: XCTestCase {
         ("selection", 0.38, 0.34, 0.18),
         ("content", 0.34, 0.20, 0.20),
         ("settle", 0.42, 0.14, 0.29),
-        ("expand", 0.40, 0.12, 0.29),
+        ("expand", 0.36, 0.12, 0.26),
         ("queue", 0.31, 0, 0.29),
         ("queueContentSlide", 0.20, 0, 0.19),
     ]

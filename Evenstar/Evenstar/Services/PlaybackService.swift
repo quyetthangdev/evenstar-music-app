@@ -1311,7 +1311,7 @@ final class PlaybackService {
         Task { @MainActor in
             let image = await ArtworkStore.image(
                 for: path,
-                maxPixel: Self.lockScreenArtworkPixels
+                maxPixel: ArtworkStore.fullScreenCoverPixels
             )
             guard let image else { return }
             guard currentTrack?.id == id, let current = currentMetadata else { return }
@@ -1326,18 +1326,14 @@ final class PlaybackService {
         }
     }
 
-    /// The longest edge, in pixels, the lock screen and Control Center need —
-    /// the only two consumers of `TrackMetadata.artwork`. Nothing in the app
-    /// draws it; `PlayerCard` asks `ArtworkStore` for its own size separately.
-    ///
-    /// The lock screen's cover fills most of the display's width, so the
-    /// requirement scales with the largest device: ~360pt on a 440pt-wide
-    /// iPhone 17 Pro Max, which at @3x is ~1080px. 1024 is the round number
-    /// just under that — visually indistinguishable at this size, and 4 MB
-    /// rather than the ~36 MB a full-resolution 3000x3000 cover would cost,
-    /// which also keeps a queue's worth of entries inside `ArtworkStore`'s
-    /// 50 MB cache budget.
-    private static let lockScreenArtworkPixels: CGFloat = 1024
+    // Cỡ giải mã cho màn khoá đọc từ `ArtworkStore.fullScreenCoverPixels`, và
+    // hằng số riêng ở đây đã bị bỏ.
+    //
+    // Câu cũ trong doc của nó — "`PlayerCard` asks `ArtworkStore` for its own
+    // size separately" — mô tả đúng cái lỗi: `PlayerCard` xin 1026 trên iPhone
+    // 12, đây xin 1024, `cacheKey` băm theo `Int(maxPixel)` nên đó là hai khoá
+    // và mỗi lần đổi bài app giải mã cùng một JPEG hai lần. Lý lẽ đầy đủ, cùng
+    // đánh đổi phóng to ~13% trên máy lớn nhất, ở doc của hằng số dùng chung.
 
     private func activateSessionIfNeeded() {
         guard !sessionActivated else { return }
