@@ -95,8 +95,76 @@ private struct RecedeBehindPlayer: ViewModifier {
     }
 }
 
+
+/// Giữ thanh tab **nổi trên** tấm thẻ, và cho nó tan đi theo cú mở.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// LỖI NÓ SỬA
+/// ─────────────────────────────────────────────────────────────────────────
+/// Lúc player đã thu nhỏ, viên thuốc và thanh tab là hai mặt *nổi* trên nội
+/// dung — nhìn thấy danh sách phía sau và quanh chúng. Vẻ ấy **biến mất suốt cú
+/// thu nhỏ rồi bật lại ở khung cuối**, và người dùng báo đúng chuyện đó.
+///
+/// Cơ chế là hình học, không phải màu: `PlayerCard` vẽ **trên** thanh tab, và
+/// mép **dưới** của thẻ chỉ đi được `collapsedBottomOffset` (~79pt) trong cả cú
+/// morph, trong khi thanh tab cao ~70pt. Nên thanh tab bị che gần trọn cú thu
+/// và chỉ lộ ra ở đoạn cuối — một cú bật, không phải một cú chuyển.
+///
+/// Đảo thứ tự vẽ thì thanh tab không bao giờ bị che nữa; nó chỉ mờ đi theo cú
+/// mở và đậm lại theo cú thu, đều đặn suốt quãng.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO HAI TẦNG MODIFIER
+/// ─────────────────────────────────────────────────────────────────────────
+/// Tầng ngoài đọc `expansion.progress` **bên trong thân của chính nó**, không
+/// phải ở chỗ gọi — cùng lý do `RecedeBehindPlayer` làm thế: cú kéo tay ghi
+/// `expansion.set(progress:animation: nil)` mỗi khung, và đọc nó trong
+/// `RootView.body` sẽ dựng lại `TabView` cùng cả năm tab ở mỗi khung của một cú
+/// kéo.
+///
+/// Tầng trong là `Animatable`, nên độ mờ **và** hit testing đi theo giá trị
+/// đang được *vẽ* chứ không phải giá trị đích. Không có nó, cú thu nhỏ bằng
+/// `withAnimation` sẽ bật hit testing của thanh tab ngay khung đầu — lúc tấm
+/// thẻ vẫn còn tràn màn hình — và một cú chạm gần đáy sẽ đổi tab thay vì rơi
+/// vào player. Đây là đúng cái bẫy `CardSurface` ghi lại, ở một chỗ khác.
+private struct FloatOverPlayer: ViewModifier {
+    let expansion: PlayerExpansion
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(PresentedFloat(progress: expansion.progress))
+            // Đường cong tới từ `expansion`, không từ transaction bao ngoài —
+            // giống `RecedeBehindPlayer` ngay trên.
+            .animation(expansion.animation, value: expansion.progress)
+    }
+}
+
+/// Độ mờ và hit testing theo giá trị đang được vẽ. Xem `FloatOverPlayer`.
+private struct PresentedFloat: ViewModifier, Animatable {
+    var progress: Double
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(1 - progress)
+            // Không phải `== 0`: một cú kéo dừng sát đáy vẫn là một player đang
+            // mở về phía người dùng, và thanh tab ở độ mờ 0,98 mà ăn chạm thì
+            // đọc ra như một cú chạm rơi vào chỗ không nhìn thấy.
+            .allowsHitTesting(progress < 0.02)
+    }
+}
+
 extension View {
     func recedesBehindPlayer(_ expansion: PlayerExpansion) -> some View {
         modifier(RecedeBehindPlayer(expansion: expansion))
+    }
+
+    /// Thanh tab nổi trên tấm thẻ và tan theo cú mở. Xem `FloatOverPlayer`.
+    func floatsOverPlayer(_ expansion: PlayerExpansion) -> some View {
+        modifier(FloatOverPlayer(expansion: expansion))
     }
 }

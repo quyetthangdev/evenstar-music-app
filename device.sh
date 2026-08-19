@@ -132,13 +132,31 @@ echo "▸ Building $CONFIGURATION for $DEVICE_NAME"
 # touches the profiles in ~/Library/MobileDevice, never the project file.
 #
 # Not piped into a filter that hides failures: a broken build has to show its own
-# error in full. `|| true` on the grep only, so the pipeline's exit status still
-# comes from `set -o pipefail` on xcodebuild.
+# error in full.
+#
+# **Câu chú thích cũ ở đây sai, và cái sai ấy tốn năm lượt sửa mù.** Nó viết:
+# "`|| true` on the grep only, so the pipeline's exit status still comes from
+# `set -o pipefail` on xcodebuild". Không phải: trong shell, `a | b | c || true`
+# thì `|| true` áp cho **cả pipeline**, nên một cú build hỏng bị nuốt trọn và
+# `set -e` không nổ. Script chạy tiếp, tìm thấy file `.app` **cũ** còn nằm trong
+# DerivedData từ lần build thành công trước, rồi cài và chạy đúng bản cũ ấy —
+# và vẫn in `✓ Running Release` ở cuối. Không có cách nào từ màn hình mà biết.
+#
+# Nay giữ mã thoát của `xcodebuild` qua `PIPESTATUS` và dừng hẳn nếu nó khác 0.
+set +e
 xcodebuild build -project "$PROJECT" -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
   -destination "platform=iOS,id=$HW_ID" \
   -allowProvisioningUpdates \
-  | grep -E "error:|warning:|BUILD" | grep -v AppIntents || true
+  | grep -E "error:|warning:|BUILD" | grep -v AppIntents
+BUILD_STATUS=${PIPESTATUS[0]}
+set -e
+if [ "$BUILD_STATUS" -ne 0 ]; then
+  echo "✗ Build thất bại (mã $BUILD_STATUS). KHÔNG cài gì cả." >&2
+  echo "  Nếu cứ cài tiếp thì thứ lên máy là bản .app cũ trong DerivedData," >&2
+  echo "  và mọi thay đổi vừa viết sẽ trông như không có tác dụng." >&2
+  exit 1
+fi
 
 # Asked for rather than globbed, for the same reason `run.sh` asks: DerivedData
 # can hold several builds of this project and picking the newest by mtime

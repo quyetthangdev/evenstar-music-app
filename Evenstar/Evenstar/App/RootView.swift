@@ -237,6 +237,20 @@ struct RootView: View {
                     }
                 }
             )
+            // **Trên tấm thẻ, không dưới.** Mép dưới của thẻ chỉ đi được
+            // `collapsedBottomOffset` (~79pt) trong cả cú morph, mà thanh tab
+            // cao ~70pt — nên vẽ dưới thẻ thì nó bị che gần trọn cú thu nhỏ rồi
+            // bật lại ở khung cuối, và người dùng báo đúng chuyện đó. Toàn bộ
+            // lý lẽ, cùng lý do độ mờ và hit testing phải bám giá trị đang được
+            // vẽ, nằm ở `FloatOverPlayer`.
+            //
+            // `zIndex` chứ không dời khối này xuống dưới `PlayerCard`: thứ tự
+            // *khai báo* ở đây đọc theo tầng — nội dung, rồi thanh tab, rồi
+            // player — còn thứ tự *vẽ* là một câu hỏi khác, và nói nó ra bằng
+            // một dòng ở đúng chỗ thì rõ hơn là chuyển sáu mươi dòng đi nơi
+            // khác. Lớp làm nóng ngay dưới đã dùng `zIndex(-1)` cùng lý do.
+            .floatsOverPlayer(expansion)
+            .zIndex(1)
             // Anchored to the screen, not to the safe area — Apple's own
             // floating tab bar sits 21pt in from the physical bottom edge on
             // every device, and deliberately intrudes into the bottom inset.

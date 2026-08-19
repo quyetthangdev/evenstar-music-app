@@ -461,8 +461,43 @@ enum BottomBarStyle {
     /// coefficient at 0 that modifier interpolates a value that never changes,
     /// which costs nothing and needs no second branch in
     /// `RecedeBehindPlayer`.
+    /// ─────────────────────────────────────────────────────────────────────
+    /// CẢ HAI NHÁNH GIỜ LÀ 1 — CÚ THU NHỎ NỀN ĐÃ BỊ BỎ, VÀ ĐÂY LÀ SỐ ĐO
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Nhánh thường từng là 0,92. Bỏ vì nó cắt cụt đáy danh sách trong lúc
+    /// morph rồi trả lại chiều cao đầy trong **một khung**.
+    ///
+    /// Đo trên video người dùng quay, một cú vuốt thu nhỏ chậm, dải màn hình
+    /// y≈812–828 — ngay dưới thanh tab:
+    ///
+    ///     suốt 4 giây kéo tay   4,6 → 7,3    đứng gần như im
+    ///     khung 398             7,27
+    ///     khung 399            38,72         ← gấp 5 lần, đúng lúc thả tay
+    ///
+    /// Nhìn khung hình thì thấy thẳng: dưới thanh tab đen kịt suốt cú kéo, rồi
+    /// một hàng danh sách hiện ra ở khung cuối. `scaleEffect` nhỏ hơn 1 thu cả
+    /// lớp nội dung lại, nên phần mép **không còn được vẽ** — và cú trả về 1
+    /// làm nó hiện lại một phát.
+    ///
+    /// Ghi chú ở `PlayerExpansion` đã đo đúng lỗi này từ trước ("mép dưới nội
+    /// dung đứng ở y 797 suốt chín khung rồi nhảy xuống 828 trong một khung")
+    /// và định vá bằng cách cho đường cong đi qua `PlayerExpansion.animation`.
+    /// Bản vá ấy **không đủ**: đo lại trên máy thật, cú nhảy vẫn còn nguyên.
+    ///
+    /// Xác nhận bằng phép thử một biến: gỡ `recedesBehindPlayer` khỏi
+    /// `RootView`, quay lại cùng thao tác — cú nhảy biến mất.
+    ///
+    /// Cái mất là chiều sâu kiểu "tấm sheet đẩy màn hình phía sau lùi lại".
+    /// Cái được là thứ người dùng đòi và mô tả bằng chính lời họ: viên thuốc và
+    /// thanh tab nổi trên nội dung, và **vẻ ấy giữ nguyên suốt cú thu nhỏ** chứ
+    /// không biến mất rồi bật lại ở khung cuối.
+    ///
+    /// Đường đi được giữ nguyên chứ không tháo: với hệ số `(1 - recedeScale)`
+    /// bằng 0, `RecedeBehindPlayer` nội suy một giá trị không bao giờ đổi —
+    /// không tốn gì, và còn nguyên chỗ nếu sau này ai muốn dựng lại chiều sâu
+    /// ấy bằng một cách không cắt cụt nội dung.
     @MainActor static var recedeScale: CGFloat { reduceMotion ? recedeScaleFlat : recedeScaleFull }
-    private static let recedeScaleFull: CGFloat = 0.92
+    private static let recedeScaleFull: CGFloat = 1
     private static let recedeScaleFlat: CGFloat = 1
     // A `recedeCornerRadius` stood here, rounding the receding content the way
     // a sheet's backdrop is rounded. It was removed rather than tuned: applying

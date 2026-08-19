@@ -295,7 +295,34 @@ struct PlayerCard: View {
     ///
     /// Đừng đổi con số này mà quên `materialCutoff` ngay dưới: hai cái là một
     /// phép suy, không phải hai lựa chọn.
-    static let opaqueBaseRamp: Double = 10
+    /// **Đây là cái núm quyết định cú nháy ở cuối cú thu nhỏ.** Nó nói lớp nền
+    /// đục hết đục ở `progress` nào, và vì thế cú chuyển từ *thẻ đặc* sang *thẻ
+    /// mờ* trải ra bao lâu:
+    ///
+    ///     10   mờ từ progress 0,10   ~2–3 khung   ⇒ đọc ra như một cú nháy
+    ///      3   mờ từ progress 0,33   ~6 khung     (giá trị gốc)
+    ///      2   mờ từ progress 0,50   ~9 khung
+    ///      1   mờ từ progress 1,00   cả cú morph
+    ///
+    /// Đo bằng cách đếm khung trên video người dùng quay: ở `progress` 0,34 và
+    /// 0,13 thân thẻ vẫn đặc — không thấy hàng danh sách nào phía sau — rồi ở
+    /// trạng thái nghỉ thì thấy hết. Cả cú chuyển gói trong 2–3 khung.
+    ///
+    /// Đánh đổi, và nó không tránh được: cú chuyển *là* chỗ tấm thẻ thôi đặc.
+    /// Trải nó ra lâu hơn nghĩa là tấm thẻ nhìn xuyên thấy được sớm hơn, lúc nó
+    /// còn to. Không có giá trị nào vừa giữ thẻ đặc lúc còn to vừa không có cú
+    /// chuyển ở cuối.
+    /// **1 nghĩa là không còn mốc nào cả.** Lớp nền đục đúng bằng `progress`,
+    /// nên tấm thẻ mờ theo tỉ lệ ở mọi thời điểm và vẻ nổi trên nội dung giữ
+    /// liên tục suốt cú morph — không có `progress` nào mà nó "bắt đầu mờ",
+    /// nên không có gì để nhảy.
+    ///
+    /// Đo trên video người dùng quay bản hệ số 10: dải màn hình y600–700 tụt
+    /// 12,05 đơn vị sáng **trong một khung** (khung 157), trong khi cùng đoạn
+    /// ấy cú thu nhỏ nền trôi đều qua 11 khung và thanh tab đậm dần qua 13
+    /// khung. Cú nhảy nằm gọn ở chỗ tấm thẻ thôi đặc, và hệ số này là thứ
+    /// quyết định nó diễn ra trong bao lâu.
+    static let opaqueBaseRamp: Double = 1
 
     /// Where the frosted layer in `background` stops being rendered at all.
     ///

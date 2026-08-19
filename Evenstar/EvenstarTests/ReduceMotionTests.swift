@@ -152,11 +152,20 @@ final class ReduceMotionTests: XCTestCase {
 
     // MARK: - The distances that go to zero
 
-    /// `recedeScale` is not a curve, it is a *distance*, and reducing motion
-    /// has to take the distance out rather than travel it differently.
-    func testTheRecedeScaleFlattensToNoScaleAtAll() {
+    /// `recedeScale` is not a curve, it is a *distance*.
+    ///
+    /// **Nhánh thường giờ cũng là 1, và đó là một quyết định có số đo đứng
+    /// sau** — xem doc của chính hằng số ấy. Cú thu nhỏ nền cắt cụt đáy danh
+    /// sách trong lúc morph rồi trả lại chiều cao đầy trong một khung; đo trên
+    /// video, dải y≈812–828 đi từ 7,27 lên 38,72 giữa hai khung liên tiếp.
+    ///
+    /// Test này vì thế đổi từ "hai nhánh khác nhau" sang "cả hai đều không
+    /// thu nhỏ gì". Nó vẫn có việc để làm: nếu ai dựng lại chiều sâu ấy thì
+    /// phải đi qua đây và đọc lý do nó bị bỏ, thay vì đổi một con số rồi phát
+    /// hành lại đúng cú nháy cũ.
+    func testNeitherBranchScalesTheContentBehindThePlayer() {
         BottomBarStyle.reduceMotion = false
-        XCTAssertEqual(BottomBarStyle.recedeScale, 0.92)
+        XCTAssertEqual(BottomBarStyle.recedeScale, 1)
 
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(BottomBarStyle.recedeScale, 1)
@@ -197,20 +206,30 @@ final class ReduceMotionTests: XCTestCase {
         }
     }
 
-    /// …and with the setting off it still recedes. A branch that flattened
-    /// both modes, or a modifier that had quietly stopped scaling at all,
-    /// passes the test above and fails this one.
-    func testTheContentBehindThePlayerStillRecedesWithTheSettingOff() throws {
+    /// …và với **thiết lập tắt** thì giờ cũng vậy.
+    ///
+    /// **Test này từng khẳng định điều ngược lại**, và nó đúng cho tới ngày
+    /// 2026-08-19: nó ghim rằng nhánh thường *phải* thu nhỏ, đích danh để bắt
+    /// "một nhánh làm phẳng cả hai chế độ". Cú thu nhỏ ấy đã bị bỏ, có số đo
+    /// đứng sau — nó cắt cụt đáy danh sách trong lúc morph rồi trả lại chiều
+    /// cao đầy trong một khung, dải y≈812–828 đi từ 7,27 lên 38,72 giữa hai
+    /// khung liên tiếp trên máy thật. Xem doc của `BottomBarStyle.recedeScale`.
+    ///
+    /// Nên cái test này canh giờ đổi chiều: nó canh rằng lớp nội dung **không
+    /// bao giờ** bị thu nhỏ, ở cả hai chế độ, ở mọi `progress`. Vẫn là một
+    /// phép đo trên pixel của chính modifier sản phẩm, không phải trên một bản
+    /// chép lại số học — nên dựng lại cú thu nhỏ bằng bất cứ đường nào cũng
+    /// làm nó đỏ, và người làm việc ấy sẽ đọc được vì sao nó đã bị bỏ.
+    func testTheContentBehindThePlayerNeverShrinksWithTheSettingOffEither() throws {
         BottomBarStyle.reduceMotion = false
 
-        XCTAssertTrue(
-            try isBlueAtTheUnrecededEdge(progress: 0),
-            "the content was already receding at progress 0"
-        )
-        XCTAssertFalse(
-            try isBlueAtTheUnrecededEdge(progress: 1),
-            "the content did not recede at progress 1 with Reduce Motion off"
-        )
+        for step in 0...10 {
+            let progress = Double(step) / 10
+            XCTAssertTrue(
+                try isBlueAtTheUnrecededEdge(progress: progress),
+                "lớp nội dung bị thu nhỏ ở progress \(progress) khi Giảm chuyển động tắt"
+            )
+        }
     }
 
     /// Renders `recedesBehindPlayer(_:)` and reports whether the square still

@@ -1191,7 +1191,7 @@ final class PlayerCardTranslucencyTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testTheCardIsOpaqueWhileItTravels() throws {
+    func testTheFloatingLookIsPresentWhileTheCardTravels() throws {
         window?.isHidden = true
         let rig = try CardRig.make(
             background: Color(red: 0, green: 1, blue: 0),
@@ -1226,13 +1226,36 @@ final class PlayerCardTranslucencyTests: XCTestCase {
                 if data[p] > 20 || Int(data[p + 1]) < 200 || data[p + 2] > 20 { top = row; break }
             }
             guard let found = top else { return (nil, 0, 0) }
-            var leaking = 0
-            for row in found..<height {
+            // **Độ trội xanh trung bình, không phải số hàng rò rỉ.** Đếm hàng
+            // bão hoà: ở lớp nền đục 0,38 thì *mọi* hàng đều vượt ngưỡng, nên
+            // 38% trong suốt và 95% trong suốt đọc ra như nhau. Cái cần đo là
+            // rò rỉ *bao nhiêu*, và nền là (0,255,0) nên `g` trội hơn hai kênh
+            // kia bao nhiêu chính là chừng ấy.
+            // Bỏ 40 hàng đầu: `found` rơi vào dải **bóng đổ** phía trên mép
+            // thẻ, và dải ấy vẫn gần như xanh nguyên nên nó bơm một sàn ~27 đơn
+            // vị vào mọi phép đo — đủ để một cấu hình đục hẳn đọc ra như đang
+            // rò rỉ. Bắt được vì một đột biến đáng ra phải đỏ lại xanh.
+            let bodyStart = min(found + 40, height - 1)
+            // Và cắt cả đuôi. Đáy thẻ chưa chạm đáy màn hình cho tới khi mở
+            // hết — ở `progress` 0,46 nó còn cách 43pt — nên 43 hàng nền xanh
+            // **nguyên vẹn** nằm dưới thẻ, và tính chúng vào thân thẻ bơm thêm
+            // một sàn ~29 đơn vị. Đủ để một cấu hình đục hẳn đọc ra 29 thay vì
+            // 0, và đủ để một đột biến đáng ra phải đỏ lại xanh. Bắt được vì
+            // đột biến ấy không đỏ.
+            var bodyEnd = height
+            while bodyEnd > bodyStart {
+                let p = ((bodyEnd - 1) * width + column) * 4
+                let isGround = data[p] < 20 && Int(data[p + 1]) > 200 && data[p + 2] < 20
+                if !isGround { break }
+                bodyEnd -= 1
+            }
+            var excess = 0
+            for row in bodyStart..<max(bodyStart + 1, bodyEnd) {
                 let p = (row * width + column) * 4
                 let r = Int(data[p]), g = Int(data[p + 1]), b = Int(data[p + 2])
-                if g > r + 40, g > b + 40 { leaking += 1 }
+                excess += max(0, g - max(r, b))
             }
-            return (found, leaking, height - found)
+            return (found, excess / max(1, bodyEnd - bodyStart), bodyEnd - bodyStart)
         }
 
         rig.tapToOpen()
@@ -1244,7 +1267,7 @@ final class PlayerCardTranslucencyTests: XCTestCase {
 
         for row in trace {
             CommitProbe.log("[opaque] mép thẻ \(row.0.map(String.init) ?? "—")pt  "
-                  + "rò rỉ \(row.1)/\(row.2) hàng")
+                  + "trội xanh \(row.1), cao \(row.2) hàng")
         }
 
         // Mẫu giữa đường: thẻ đã rời hẳn viên thuốc nhưng chưa tới đích. Ở
@@ -1259,23 +1282,29 @@ final class PlayerCardTranslucencyTests: XCTestCase {
             "không bắt được mẫu nào ở giữa cú morph để chấm"
         )
 
-        // Đo được ngày 2026-08-19, cùng máy cùng buổi, ở mép thẻ ~350pt:
+        // Đo được ngày 2026-08-19, cùng máy cùng buổi, độ trội xanh trung bình
+        // trong thân thẻ theo `opaqueBaseRamp`:
         //
-        //   lớp nền đọc `progress` của `body`   304/480 hàng  (63%)
-        //   lớp nền đọc giá trị đang được vẽ     46/507 hàng   (9%)
+        //              p≈0,46   p≈0,75   đích
+        //   ramp 1          31        5      0     ← dốc đều
+        //   ramp 10          0        0      0     ← chỉ đổi ở khúc cuối
         //
-        // 25% là ngưỡng: dưới hẳn 63% của cách hỏng, trên hẳn 9% còn lại — phần
-        // dư ấy là mép trên tấm thẻ, nơi lớp sương và cú bo góc chồng nhau, và
-        // nó không phải thứ ai nhìn ra.
-        let leakFraction = Double(sample.1) / Double(sample.2)
-        XCTAssertLessThan(
-            leakFraction, 0.25,
+        // Tách sạch: 0 so với 31. Ngưỡng 15 nằm giữa với biên rộng cả hai phía. Nó **không** nói "thẻ phải trong bao
+        // nhiêu" — nó nói vẻ nổi trên nội dung phải *có mặt* trong lúc thẻ còn
+        // đang đi, chứ không xuất hiện trong một khung ở cuối. Đó là yêu cầu
+        // người dùng nêu: "lúc nào cũng giữ hiệu ứng đó".
+        //
+        // Bản đầu của test này ghim điều **ngược lại** — rằng thẻ phải đục giữa
+        // cú morph — vì tôi đọc sai triệu chứng. Nó xanh suốt bốn vòng sửa sai
+        // và không cứu được vòng nào; một test ghim đúng giả định của người
+        // viết thì chỉ xác nhận người viết.
+        XCTAssertGreaterThan(
+            sample.1, 15,
             """
-            tấm thẻ trong suốt giữa cú morph: \(sample.1)/\(sample.2) hàng cho \
-            thấy nền xuyên qua ở mép thẻ \(sample.0.map(String.init) ?? "?")pt. \
-            Lớp nền đục đang đọc `progress` của `body` — vốn đã là giá trị đích \
-            ngay từ khung đầu của một `withAnimation` — thay vì giá trị đang \
-            được vẽ. Xem `CardSurface`.
+            vẻ nổi trên nội dung vắng mặt giữa cú morph: độ trội xanh chỉ \
+            \(sample.1) ở mép thẻ \(sample.0.map(String.init) ?? "?")pt. Thân thẻ \
+            đang đục suốt quãng đi rồi mới thành mờ ở khúc cuối, và cú chuyển ấy \
+            đọc ra như một cái nháy. Xem `opaqueBaseRamp`.
             """
         )
     }
