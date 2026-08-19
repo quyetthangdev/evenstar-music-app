@@ -133,7 +133,7 @@ enum BottomBarStyle {
     //   selection            0.38 / 0.34  0.177    0.18
     //   content              0.34 / 0.20  0.204    0.20
     //   settle               0.42 / 0.14  0.287    0.29
-    //   expand               0.52 / 0.12  0.372    0.37
+    //   expand               0.40 / 0.12  0.286    0.29
     //   queue                0.31 / 0     0.288    0.29
     //   queueContentSlide    0.20 / 0     0.186    0.19
     //
@@ -378,9 +378,29 @@ enum BottomBarStyle {
     /// what keeps a large move from feeling mechanical, but far less than a
     /// short one can carry.
     ///
-    /// Reduced: 0.37s `easeInOut`, the longest flat curve here, for the same
-    /// reason it is the longest spring — 750pt covered too fast arrives before
-    /// the eye has followed it, and that is true of a flat curve too. The
+    /// **0.52 → 0.40, và đoạn trên đã bị chỉnh chứ không bị bỏ.** Người dùng
+    /// yêu cầu cú bung nhanh hơn mà giữ nguyên kiểu, nên `bounce` không đổi —
+    /// chỉ `duration`. Cái mất là chính thứ đoạn trên bảo vệ: 750pt giờ đi
+    /// trong ~0,28s thay vì ~0,37s (`duration` của lò xo là thời gian *lắng*,
+    /// không phải thời gian tới nơi; `h1` đo thẻ tới đích ở ~70% con số ấy).
+    /// Nó vẫn là đường cong dài nhất trong file *trừ* `settle`, và tương quan
+    /// với `settle` bị lật: cú chạm giờ nhanh hơn cú thả tay sau khi kéo, 0.40
+    /// so với 0.42. Đó là lựa chọn có ý thức — `settle` được giữ nguyên đích
+    /// danh, vì ngón tay đã đi phần lớn quãng đường trước khi nó bắt đầu, nên
+    /// hai con số gần bằng nhau không có nghĩa hai cú đi cùng tốc độ.
+    ///
+    /// Reduced: 0.29s `easeInOut` — **không phải một con số chọn tay.** Bảng ở
+    /// đầu file dẫn mọi thời lượng phẳng từ `t(98%)` của chính lò xo nó thay
+    /// thế, và `SpringSettlingEvidenceTests` chạy lại phép dẫn ấy bằng
+    /// `Spring.value(target:time:)` chứ không tin bảng. Lò xo 0.40/0.12 cắt
+    /// 98% ở 0,286s, nên số phẳng là 0,29. Trước khi đổi nó là 0,37 vì lò xo
+    /// cũ cắt ở 0,372. Ai đổi `duration` mà quên số này sẽ bị test bắt.
+    ///
+    /// Lý lẽ cũ cho con số phẳng vẫn giữ nguyên giá trị và được chép lại
+    /// nguyên văn dưới đây, vì nó nói vì sao curve này dài hơn hàng xóm chứ
+    /// không nói vì sao nó dài **đúng** ngần ấy — 750pt covered too fast
+    /// arrives before the eye has followed it, and that is true of a flat
+    /// curve too. The
     /// "little overshoot that keeps a large move from feeling mechanical" is
     /// the deliberate loss. B3 decides whether the 750pt travel survives at all
     /// or becomes a cross-fade; if it becomes a cross-fade, this duration is
@@ -407,8 +427,8 @@ enum BottomBarStyle {
     /// different tempos in the reduced mode exactly as they had them in the
     /// full one.
     @MainActor static var expand: Animation { reduceMotion ? expandFlat : expandFull }
-    private static let expandFull = Animation.spring(duration: 0.52, bounce: 0.12)
-    private static let expandFlat = Animation.easeInOut(duration: 0.37)
+    private static let expandFull = Animation.spring(duration: 0.40, bounce: 0.12)
+    private static let expandFlat = Animation.easeInOut(duration: 0.29)
 
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.

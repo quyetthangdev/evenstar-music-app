@@ -57,7 +57,7 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.selection, .spring(duration: 0.38, bounce: 0.34))
         XCTAssertEqual(BottomBarStyle.content, .spring(duration: 0.34, bounce: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .spring(duration: 0.42, bounce: 0.14))
-        XCTAssertEqual(BottomBarStyle.expand, .spring(duration: 0.52, bounce: 0.12))
+        XCTAssertEqual(BottomBarStyle.expand, .spring(duration: 0.40, bounce: 0.12))
         XCTAssertEqual(BottomBarStyle.queue, .spring(Spring(duration: 0.31, bounce: 0)))
         XCTAssertEqual(
             BottomBarStyle.queueContentSlide,
@@ -70,7 +70,7 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.selection, .easeInOut(duration: 0.18))
         XCTAssertEqual(BottomBarStyle.content, .easeInOut(duration: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .easeInOut(duration: 0.29))
-        XCTAssertEqual(BottomBarStyle.expand, .easeInOut(duration: 0.37))
+        XCTAssertEqual(BottomBarStyle.expand, .easeInOut(duration: 0.29))
         XCTAssertEqual(BottomBarStyle.queue, .easeInOut(duration: 0.29))
         XCTAssertEqual(BottomBarStyle.queueContentSlide, .easeInOut(duration: 0.19))
     }
@@ -510,7 +510,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
         let expansion = try openThePlayer(reduceMotion: false)
 
         XCTAssertEqual(expansion.progress, 1)
-        XCTAssertEqual(expansion.animation, .spring(duration: 0.52, bounce: 0.12))
+        XCTAssertEqual(expansion.animation, .spring(duration: 0.40, bounce: 0.12))
     }
 }
 
@@ -754,7 +754,15 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         Trace.reset()
 
         dip(.easeInOut(duration: 0.2))
-        pump(0.3)
+        // 0.7 chứ không phải 0.3, cùng lý do đã ghi ở
+        // `testAClearedValueIsNeverDrawnAtItsOldOne`: `RunLoop.run(until:)`
+        // không hứa phục vụ bao nhiêu display link, nên biên phải rộng tay chứ
+        // không sát. Với 0.3 — gấp 1,5 lần một curve 0,2s — test này đỏ hai lần
+        // trong các lượt chạy suite đầy đủ ngày 2026-08-19, ở 0,9973 và 0,9934
+        // so với ngưỡng 1,0 ± 0,001, trong khi chạy riêng thì xanh 3/3. Đó là
+        // run loop bị 500 test chạy trước bỏ đói, không phải cú hoà mờ hỏng.
+        // Assertion không đổi một chữ: nó vẫn đòi curve chạy tới đúng 1,0.
+        pump(0.7)
 
         XCTAssertEqual(Trace.interpolated.first ?? -1, 0, accuracy: 0.001)
         XCTAssertFalse(
@@ -970,7 +978,7 @@ final class SpringSettlingEvidenceTests: XCTestCase {
         ("selection", 0.38, 0.34, 0.18),
         ("content", 0.34, 0.20, 0.20),
         ("settle", 0.42, 0.14, 0.29),
-        ("expand", 0.52, 0.12, 0.37),
+        ("expand", 0.40, 0.12, 0.29),
         ("queue", 0.31, 0, 0.29),
         ("queueContentSlide", 0.20, 0, 0.19),
     ]

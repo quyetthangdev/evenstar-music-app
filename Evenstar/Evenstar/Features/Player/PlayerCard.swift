@@ -814,7 +814,7 @@ struct PlayerCard: View {
     /// grew correctly but the picture "appeared underneath" part-way instead of
     /// growing with it. Nothing was wrong with the animation — there were simply
     /// no pixels to animate. `artwork` is `nil` at that moment (the coverless
-    /// track cleared it) and the decode lands tens of milliseconds into a 520ms
+    /// track cleared it) and the decode lands tens of milliseconds into a 400ms
     /// spring, so the cover fades in over a frame that has already half opened.
     ///
     /// The list row the user just tapped has *already* decoded this picture, at
