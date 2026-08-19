@@ -102,6 +102,11 @@ chữ trên màn giới thiệu ngay tại chỗ, vì hạ tầng ấy đã ch�
 
 Nút "Bắt đầu" dùng `.prominentAction`, style đã có.
 
+Lựa chọn ngôn ngữ ghi ngay khi bấm, không đợi "Bắt đầu" — nên nó vẫn giữ nếu app
+bị kill ở màn này. Cờ `onboardingIntroFinished` thì chỉ ghi khi bấm "Bắt đầu", nên
+người dùng bị kill giữa màn giới thiệu sẽ thấy lại nó, đã chọn sẵn ngôn ngữ họ vừa
+chọn.
+
 **Ba chi tiết chịu lực:**
 
 - Nền đục và ăn chạm, nên `RootView` phía sau không nhận cú chạm nào. Cộng
@@ -125,7 +130,7 @@ không tự hiểu được là **kết quả** — thanh tab tự thu lại. N�
 
 | | gợi ý A — đóng player | gợi ý B — thanh tab thu lại |
 |---|---|---|
-| hiện khi | player mở hết lần đầu | `isMinimised` thành `true` lần đầu |
+| hiện khi | `presentedProgress > 0,99` lần đầu | `isMinimised` thành `true` lần đầu |
 | ở đâu | ngay dưới grabber, đỉnh thẻ | trên thanh tab đã thu, trỏ vào nút mở lại |
 | chữ | ↓ "Vuốt xuống để đóng" | "Thanh tab thu lại khi bạn cuộn. Bấm để mở lại." |
 | tắt khi | bắt đầu kéo, **hoặc** sau 6 giây | bấm mở lại, **hoặc** sau 6 giây |
@@ -146,8 +151,15 @@ TabBarMinimiseHint(isMinimised: isMinimisedActive).zIndex(2)
 `TabView`. `RootView.body` chỉ dựng ra hai view.
 
 Gợi ý A **không nằm trong `PlayerCard`**: nó định vị theo safe area đỉnh màn
-hình, và player mở hết thì tràn màn hình nên "dưới grabber" là một khoảng cố định
-từ đỉnh. Đó là 3.000 dòng không phải mở ra.
+hình, và player mở hết thì tràn màn hình nên "dưới grabber" là một khoảng tính
+được từ đỉnh. Đó là 3.000 dòng không phải mở ra.
+
+**Con số ấy phải đọc từ hằng số của `PlayerCard`, không gõ lại.** Grabber nằm ở
+`topInset + grabberTopGap + grabberHeight`, và cả ba đã có tên trong
+`PlayerCard`. Gõ lại một con số ở đây là dựng hai con số phải bằng nhau bằng niềm
+tin — đúng loại lỗi mà chú thích của `artworkSide` và `queueThumbCentre` đã ghi
+lại là đã hỏng một lần. Nếu hằng số đang `private` thì nâng lên `static` nội bộ,
+đừng nhân bản giá trị.
 
 Một `OnboardingHint` dùng chung — nhãn, hướng mũi, closure "đã xong" — cộng hai
 chỗ gọi mỏng. Hai gợi ý thì chưa cần hạ tầng gì hơn.
