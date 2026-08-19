@@ -357,9 +357,48 @@ private struct CardRig {
         return relative
     }()
 
-    static func make(background: Color? = nil) throws -> CardRig {
+    /// Một tấm bìa **chưa từng được giải mã trong tiến trình này**, ở một
+    /// đường dẫn riêng cho mỗi lần gọi.
+    ///
+    /// `coverPath` ở trên cố ý ấm: nó là `static let`, nên mọi lần mount sau
+    /// lần đầu đều là một cú tra cache. Điều đó đúng cho việc xếp hạng chi phí
+    /// commit, và **sai** cho bất cứ câu hỏi nào về việc bìa tới muộn — trên
+    /// máy thật, mỗi lần đổi bài là một lượt giải mã thật.
+    ///
+    /// Trắng với một dải xanh lá ngang, chứ không phải hai mảng màu: dải ấy là
+    /// thước đo. Bề dày của nó trên màn hình tỉ lệ thẳng với cỡ tấm bìa đang
+    /// được vẽ, nên đọc dải là đọc được bìa đang to bằng bao nhiêu ở khung ấy.
+    ///
+    /// **Nền trắng, và bản đầu dùng nền đen là một lỗi đã đo được.** Mép thẻ
+    /// được dò bằng "hàng sáng đầu tiên trên nền đen của cửa sổ", nên một tấm
+    /// bìa đen làm hai thước đo lẫn vào nhau: sau khi thẻ mở hết, hàng sáng đầu
+    /// tiên **chính là dải xanh**, và bảng in ra "mép thẻ 380pt" suốt phần đuôi
+    /// — đó là dải, không phải mép. Trắng tách chúng ra.
+    ///
+    /// 1200×1200 chứ không phải 600: cú giải mã phải đủ chậm để tiếp đất *giữa*
+    /// cú morph, vì đó là toàn bộ tình huống đang được đo.
+    static func freshCover(_ name: String) -> String {
+        let relative = "covers/cold-\(name).jpg"
+        let url = FileLocation.absoluteURL(forRelative: relative)
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let side: CGFloat = 1200
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+            UIColor(red: 0, green: 1, blue: 0, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: side * 0.45, width: side, height: side * 0.10))
+        }
+        try? image.jpegData(compressionQuality: 0.95)?.write(to: url)
+        return relative
+    }
+
+    static func make(background: Color? = nil, cover: String? = nil) throws -> CardRig {
         let library = try InMemoryLibrary.make()
-        let track = InMemoryLibrary.makeTrack(artworkRelativePath: Self.coverPath)
+        let track = InMemoryLibrary.makeTrack(artworkRelativePath: cover ?? Self.coverPath)
         try library.insert(track)
         let playback = PlaybackService(
             player: MockAudioPlayer(),
@@ -742,6 +781,201 @@ final class PlayerCardCommitCostTests: XCTestCase {
             "the visible samples all sat at the same place; the map covers nothing — "
             + "span \(span)pt over a travel of \(rest)pt"
         )
+    }
+}
+
+/// **Khi cú giải mã bìa tiếp đất giữa cú morph, bìa xuất hiện ở cỡ nào?**
+///
+/// Người dùng báo: *"thỉnh thoảng như kiểu ảnh có sẵn, chỉ có player bung"* —
+/// tấm bìa không lớn dần cùng tấm thẻ. Doc của `ArtworkStore.anyCachedImage`
+/// đã gọi đúng tên triệu chứng ấy từ trước: *"it is the cover failing to grow
+/// with the card"*, và cái lưới an toàn nó mô tả chỉ bắt được khi bài ấy đã
+/// từng được giải mã ở **một cỡ nào đó** trong tiến trình. Bài chưa từng được
+/// giải mã thì lưới rỗng.
+///
+/// Có **hai** cách hỏng khác nhau ở đây, và chúng dẫn tới hai bản sửa khác
+/// hẳn nhau, nên phải tách được chúng trước khi sửa bất cứ gì:
+///
+/// 1. **Đứt gãy hình học.** `if source == .image` trong `artworkView` là một
+///    `if` *cấu trúc*, và `loadArtwork` ghi `artwork` bằng một cú ghi `@State`
+///    trần. Nếu SwiftUI chèn tấm `Image` vào cây với hình học **đích** thay vì
+///    hình học đang được nội suy, thì bìa thật sự nhảy — và bản sửa là bỏ cái
+///    `if` ấy đi.
+/// 2. **Chỉ là tới muộn.** Nếu tấm `Image` được chèn vào và lớn lên đúng theo
+///    thẻ, thì không có gì đứt gãy cả; bìa chỉ vắng mặt trong phần lớn cú
+///    bung. Bản sửa khi ấy nằm ở chỗ khác hoàn toàn: rút ngắn cú giải mã, hoặc
+///    làm cái lưới `anyCachedImage` bắt được nhiều hơn.
+///
+/// Test này **không** khẳng định cái nào đúng — nó in ra bảng để đọc. Assertion
+/// duy nhất là assertion mà một bộ đo phải có: rằng nó nhìn thấy được thứ nó
+/// đang đo.
+@MainActor
+final class PlayerCardColdArtworkArrivalTests: XCTestCase {
+
+    private var window: UIWindow?
+
+    override func tearDown() async throws {
+        window?.isHidden = true
+        window = nil
+        try await super.tearDown()
+    }
+
+    func testWhereTheCoverIsOnTheFrameItArrives() throws {
+        window?.isHidden = true
+        let rig = try CardRig.make(background: .black, cover: CardRig.freshCover("arrival"))
+        window = rig.window
+
+        let column = 195
+        let height = 844
+
+        /// Một lượt đọc cột `column`: mép trên tấm thẻ, và dải xanh của tấm bìa.
+        ///
+        /// Cùng một lần render cho cả ba con số, chứ không ba lần: hai lượt
+        /// render cách nhau vài mili giây là hai khung khác nhau của một cú
+        /// animation đang chạy, và so chúng với nhau là so hai thời điểm.
+        func read() -> (cardTop: Int?, greenTop: Int?, greenBottom: Int?) {
+            let view = rig.host.view!
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            let width = column + 1
+            var data = [UInt8](repeating: 0, count: width * height * 4)
+            guard let context = CGContext(
+                data: &data, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return (nil, nil, nil) }
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+            view.layer.render(in: context)
+
+            var cardTop: Int?
+            var greenTop: Int?
+            var greenBottom: Int?
+            for row in 0..<height {
+                let p = (row * width + column) * 4
+                let r = Int(data[p]), g = Int(data[p + 1]), b = Int(data[p + 2])
+                if cardTop == nil, r + g + b > 60 { cardTop = row }
+                // JPEG ở chất lượng 0.95 vẫn làm mép dải nhoè, và tấm bìa còn
+                // đi qua lớp sương với cú tan, nên "xanh" phải là một vùng chứ
+                // không phải một giá trị: trội hẳn hai kênh kia là đủ để không
+                // thứ gì khác trên tấm thẻ lọt vào.
+                if g > 90, g > r * 2, g > b * 2 {
+                    if greenTop == nil { greenTop = row }
+                    greenBottom = row
+                }
+            }
+            return (cardTop, greenTop, greenBottom)
+        }
+
+        // **Bơm run loop tường minh, không dùng `CommitProbe.idle(until:)`.**
+        //
+        // `idle(until:)` có `guard remaining > 0 else { return }`, và một lượt
+        // `read()` render cả một context 196×844 nên tốn hơn 16,7ms. Deadline
+        // `start + index/60` vì thế tụt lại ngay từ khung đầu và `idle` trả về
+        // tức thì ở **mọi** lượt sau đó — run loop không bao giờ được chạy, nên
+        // continuation của `loadArtwork` không bao giờ tiếp đất. Bản đầu của
+        // test này chạy 150 mẫu, báo "bìa không hiện ở khung nào", rồi in ra
+        // một dải xanh sáng rực ngay khi được `pump(1.5)`. Cùng cách hỏng mà
+        // `spin(until:)` ở đầu file đã ghi lại, tới từ một cửa khác.
+        //
+        // Hệ quả: mốc thời gian phải **đo**, không suy ra từ chỉ số khung — một
+        // mẫu ở đây dài hơn một khung màn hình.
+        rig.tapToOpen()
+        var trace: [(Double, (cardTop: Int?, greenTop: Int?, greenBottom: Int?))] = []
+        let start = CACurrentMediaTime()
+        for _ in 0..<90 {
+            CommitProbe.pump(1.0 / 60)
+            trace.append(((CACurrentMediaTime() - start) * 1000, read()))
+        }
+
+        for (index, row) in trace.enumerated().map({ ($0.offset, $0.element) }).map({ ($0.1.0, $0.1.1) }) {
+            let card = row.cardTop.map { "\($0)pt" } ?? "chưa hiện"
+            let green = row.greenTop.flatMap { top in
+                row.greenBottom.map { "dải \(top)–\($0)pt, dày \($0 - top)pt" }
+            } ?? "chưa có bìa"
+            CommitProbe.log(String(format: "[arrival] t=%6.1fms  mép thẻ %@  %@",
+                                   index, card, green))
+        }
+
+        let framesWithGreen = trace.filter { $0.1.greenTop != nil }
+        CommitProbe.log("[arrival] bìa hiện ở \(framesWithGreen.count)/90 mẫu; "
+              + "mẫu đầu tiên có bìa: t=\(framesWithGreen.first.map { String(format: "%.1f", $0.0) } ?? "không có")ms")
+
+        // Chẩn đoán khi không thấy dải: để mọi thứ lắng hẳn rồi in trắc diện
+        // màu của cả cột. Nếu dải có ở đây mà không có ở trên thì là cú giải mã
+        // tới muộn; nếu không có ở đây nữa thì là ngưỡng màu sai.
+        CommitProbe.pump(1.5)
+        let view = rig.host.view!
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        let width = column + 1
+        var data = [UInt8](repeating: 0, count: width * height * 4)
+        if let context = CGContext(
+            data: &data, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) {
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+            view.layer.render(in: context)
+            for row in stride(from: 0, to: height, by: 20) {
+                let p = (row * width + column) * 4
+                CommitProbe.log("[arrival-profile] row \(row): "
+                      + "r\(data[p]) g\(data[p + 1]) b\(data[p + 2])")
+            }
+        }
+
+        // Bộ đo phải nhìn thấy được cả hai thứ nó đo, nếu không cả bảng ở trên
+        // là một trang trắng có định dạng đẹp.
+        XCTAssertFalse(
+            trace.compactMap({ $0.1.cardTop }).isEmpty,
+            "không đọc được mép thẻ ở khung nào"
+        )
+        XCTAssertFalse(
+            framesWithGreen.isEmpty,
+            "không đọc được tấm bìa ở khung nào — cú giải mã chưa bao giờ tiếp đất, "
+            + "hoặc ngưỡng màu không bắt được dải xanh"
+        )
+        // ── KHẲNG ĐỊNH CHÍNH ─────────────────────────────────────────────────
+        //
+        // Đọc dải mốc ở một mẫu mà tấm thẻ **còn đang đi**, rồi so với chỗ dải
+        // ấy nằm khi mọi thứ đã đứng yên. Bìa lớn lên cùng thẻ thì hai chỗ ấy
+        // phải cách nhau; bìa đứng sẵn ở đích thì chúng trùng nhau.
+        //
+        // Số đo ngày 2026-08-19, cùng máy cùng buổi:
+        //
+        //   trước bản sửa   mép thẻ 120pt  dải 380–463pt   (đúng chỗ cuối cùng)
+        //   sau bản sửa     mép thẻ 391pt  dải 531–583pt   (còn cách 152pt)
+        //
+        // 30pt là ngưỡng, không phải con số kỳ vọng: nó nằm dưới hẳn 152pt đo
+        // được và trên hẳn 0pt của cách hỏng. Rộng như vậy vì mỗi mẫu ở đây tốn
+        // 50–80ms — `read()` render cả một bitmap — nên cú morph 0,40s chỉ cho
+        // khoảng bốn mẫu, và mẫu đầu tiên có bìa rơi vào đâu trong bốn mẫu ấy
+        // thì tuỳ máy.
+        let settledBandTop = try XCTUnwrap(
+            trace.last(where: { $0.1.greenTop != nil })?.1.greenTop,
+            "không có mẫu nào ở trạng thái nghỉ để lấy chỗ đứng cuối của dải"
+        )
+        let whileTravelling = trace.first { sample in
+            guard let cardTop = sample.1.cardTop, sample.1.greenTop != nil else { return false }
+            return cardTop > 30
+        }
+        let travelling = try XCTUnwrap(
+            whileTravelling,
+            "không bắt được mẫu nào vừa thấy bìa vừa thấy thẻ đang đi. Cú giải mã "
+            + "tiếp đất sau khi thẻ đã mở xong, nên không có gì để so — máy quá "
+            + "chậm cho phép đo này, chứ không phải mã sai."
+        )
+        let bandTopWhileTravelling = try XCTUnwrap(travelling.1.greenTop)
+        XCTAssertGreaterThan(
+            bandTopWhileTravelling - settledBandTop, 30,
+            "tấm bìa không lớn lên cùng tấm thẻ: mép thẻ còn ở "
+            + "\(travelling.1.cardTop.map(String.init) ?? "?")pt mà dải mốc đã ở "
+            + "\(bandTopWhileTravelling)pt, trong khi chỗ đứng cuối của nó là "
+            + "\(settledBandTop)pt. Bìa đang được vẽ ở hình học đích rồi để tấm "
+            + "thẻ hé ra — xem chú thích ở `artworkView` về cái `if` cấu trúc."
+        )
+
     }
 }
 

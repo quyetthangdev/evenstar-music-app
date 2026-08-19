@@ -1561,6 +1561,27 @@ struct PlayerCard: View {
     /// chiều sâu thay vì là một mảng phẳng.
     private static let artworklessTint = Color(white: 0.26)
 
+    /// Một pixel trong suốt, để ô bìa luôn có **một** tấm `Image` trong cây kể
+    /// cả khi chưa có gì để vẽ. Xem chú thích ở chỗ dùng trong `artworkView`
+    /// về việc vì sao định danh view là thứ phải giữ.
+    ///
+    /// `1×1` và `.resizable().scaledToFill()`: kéo một pixel trong suốt ra cỡ
+    /// màn hình không vẽ gì và không tốn gì — không có kênh alpha nào khác 0 để
+    /// hợp thành.
+    static let transparentPixel: UIImage = {
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: 1, height: 1),
+            format: {
+                let format = UIGraphicsImageRendererFormat.default()
+                format.opaque = false
+                format.scale = 1
+                return format
+            }()
+        )
+        return renderer.image { _ in }
+    }()
+
+
     /// Ô placeholder của tấm bìa: cùng sắc màu với nền, sáng hơn một bậc.
     ///
     /// Một bậc nhỏ hơn `queueSurface` (0.38 so với 0.50): đây là một mảng lớn
@@ -1820,11 +1841,37 @@ struct PlayerCard: View {
             // trước khi ảnh tới, và một mảng xám ở đó nhấp nháy sai màu.
             Rectangle().fill(Self.placeholderTile(tintColour))
 
-            if source == .image, let shown {
-                Image(uiImage: shown)
-                    .resizable()
-                    .scaledToFill()
-            }
+            // **Luôn gắn, không bao giờ chèn.** Một `if source == .image` ở đây
+            // là một rẽ nhánh **cấu trúc**, và cú giải mã ghi `artwork` bằng
+            // một cú ghi `@State` trần từ `loadArtwork` — nên tấm ảnh được
+            // *chèn* vào cây giữa lúc cú morph đang bay, và SwiftUI dựng nó ở
+            // hình học **đích** vì một view vừa chèn không có giá trị "từ đâu"
+            // để nội suy.
+            //
+            // Đo được, `PlayerCardColdArtworkArrivalTests`, bìa lạnh chưa từng
+            // giải mã trong tiến trình: dải mốc trên tấm bìa hiện ra ở đúng
+            // 380–463pt — vị trí **cuối cùng** của nó — trong khi mép trên tấm
+            // thẻ còn ở 120pt, tức progress 0,83. Vẽ theo khung thẻ lúc ấy thì
+            // dải phải ở 446–518pt. Tấm bìa không lớn lên cùng thẻ; nó đứng sẵn
+            // ở đích và được tấm thẻ đang lớn dần hé ra. Người dùng báo đúng
+            // chuyện này: *"như kiểu ảnh có sẵn, chỉ có player bung"*, và doc
+            // của `ArtworkStore.anyCachedImage` đã gọi tên nó từ trước —
+            // *"the cover failing to grow with the card"*.
+            //
+            // Đây là **cùng một lỗi** mà `source(hasArtwork:loaded:)` ở trên đã
+            // sửa một tầng, chỉ là còn sót một tầng nữa: ở đó cú rẽ nhánh giữa
+            // *ô placeholder* và *tấm bìa* được chuyển từ `loaded` (bất đồng
+            // bộ) sang `hasArtwork` (đồng bộ); ở đây cú rẽ nhánh giữa *chưa có
+            // ảnh* và *có ảnh* vẫn còn treo vào `loaded`.
+            //
+            // Một pixel trong suốt thay cho `nil`, chứ không phải `.opacity(0)`
+            // trên một nhánh vẫn có `if`: thứ phải giữ nguyên là **định danh**
+            // của view, và chỉ có việc luôn dựng ra đúng một `Image` mới giữ
+            // được nó. Nội dung đổi từ pixel trong suốt sang tấm bìa là một
+            // thay đổi *nội dung*, và SwiftUI không tháo gì ra để làm nó.
+            Image(uiImage: shown ?? Self.transparentPixel)
+                .resizable()
+                .scaledToFill()
 
             if source == .placeholder {
                 // `.font(size:)` isn't animatable, so during the expand spring
