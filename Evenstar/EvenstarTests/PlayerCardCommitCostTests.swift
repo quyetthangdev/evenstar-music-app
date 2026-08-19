@@ -396,9 +396,23 @@ private struct CardRig {
         return relative
     }
 
-    static func make(background: Color? = nil, cover: String? = nil) throws -> CardRig {
+    /// - Parameter alreadyPlaying: chọn bài **trước khi** gắn view, nên lúc gắn
+    ///   `currentTrack` đã khác nil. Cú mở sau đó là cú mở **ấm**: không có cú
+    ///   hoà mờ `.opacity(currentTrack == nil ? 0 : 1)` trên `settle`, không có
+    ///   `.task` giải mã chạy lại, chỉ còn đúng cú morph. `j1` §1 đo cú mở ấm
+    ///   rẻ hơn cú mở lạnh 54%, và bất kỳ phép đo nào về *độ trong suốt* đều
+    ///   phải chạy ở đây — trên đường lạnh, cú hoà mờ toàn thẻ nuốt trọn tín
+    ///   hiệu và mọi thứ trông như đang rò rỉ nền.
+    static func make(
+        background: Color? = nil,
+        cover: String? = nil,
+        alreadyPlaying: Bool = false,
+        artworkless: Bool = false
+    ) throws -> CardRig {
         let library = try InMemoryLibrary.make()
-        let track = InMemoryLibrary.makeTrack(artworkRelativePath: cover ?? Self.coverPath)
+        let track = InMemoryLibrary.makeTrack(
+            artworkRelativePath: artworkless ? nil : (cover ?? Self.coverPath)
+        )
         try library.insert(track)
         let playback = PlaybackService(
             player: MockAudioPlayer(),
@@ -407,6 +421,8 @@ private struct CardRig {
         )
         let expansion = PlayerExpansion()
         Drive.minimised = nil
+
+        if alreadyPlaying { playback.play(track, in: [track]) }
 
         let card = CardHarness(playback: playback, library: library, expansion: expansion)
         let (window, host): (UIWindow, UIViewController)
@@ -1133,6 +1149,134 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
         XCTAssertGreaterThan(
             loudest, tapTotal,
             "160 extra state writes cost nothing measurable; the harness is probably not writing at all"
+        )
+    }
+}
+
+
+/// **Tấm thẻ có trong suốt giữa cú morph không.**
+///
+/// Người dùng báo hai lần rằng khi thu nhỏ player, thanh tab và danh sách phía
+/// sau nhìn xuyên qua được và bị làm mờ, rồi trả về nguyên trạng một phát khi
+/// xong. Hai vòng chẩn đoán trước đó sai, và cả hai sai vì suy luận từ mã thay
+/// vì đo — nên đây là phép đo.
+///
+/// Cách đo: đặt thẻ lên một nền **xanh lá thuần** (0,255,0), ép chế độ tối, rồi
+/// đếm số hàng trong thân thẻ mà kênh green trội hẳn hai kênh kia. Mọi lớp của
+/// thẻ đều là xám hoặc màu trội rút từ bìa, nên một hàng xanh trội chỉ có thể
+/// là nền lọt qua.
+///
+/// Ba chi tiết của rig, mỗi cái sửa một phép đo đã hỏng trước đó:
+///
+/// - **`alreadyPlaying: true`.** Trên cú mở **lạnh**, `.opacity(currentTrack ==
+///   nil ? 0 : 1)` hoà cả tấm thẻ vào trên `settle`, và cú hoà mờ ấy làm mọi
+///   thứ trông như đang rò rỉ nền — bản đầu của phép đo này đọc ra 65% rò rỉ ở
+///   giữa cú morph và con số ấy hoàn toàn là cú hoà mờ.
+/// - **`artworkless: true`.** Bài **có** bìa thì tấm bìa tràn màn hình và đục
+///   che mất lớp nền, nên độ trong suốt của nền không quan sát được. Bài trong
+///   video người dùng quay là bài không bìa, và đó cũng là ca duy nhất đo được.
+/// - **chế độ tối.** `systemGroupedBackground` ở chế độ sáng gần trắng nên nó
+///   cho cả ba kênh cao, không tách được "nền lọt qua" khỏi "mặt thẻ vốn sáng".
+///
+/// Chỉ đo được chiều **mở**; `h1` §4.5 đã ghi vì sao chiều đóng không đo được
+/// từ test. Cơ chế đối xứng, nên chiều mở là đại diện.
+@MainActor
+final class PlayerCardTranslucencyTests: XCTestCase {
+
+    private var window: UIWindow?
+
+    override func tearDown() async throws {
+        window?.isHidden = true
+        window = nil
+        try await super.tearDown()
+    }
+
+    func testTheCardIsOpaqueWhileItTravels() throws {
+        window?.isHidden = true
+        let rig = try CardRig.make(
+            background: Color(red: 0, green: 1, blue: 0),
+            alreadyPlaying: true,
+            artworkless: true
+        )
+        window = rig.window
+        rig.window.overrideUserInterfaceStyle = .dark
+        rig.warmUp()
+
+        let column = 195
+        let height = 844
+
+        func sample() -> (cardTop: Int?, leaking: Int, rows: Int) {
+            let view = rig.host.view!
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            let width = column + 1
+            var data = [UInt8](repeating: 0, count: width * height * 4)
+            guard let ctx = CGContext(
+                data: &data, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return (nil, 0, 0) }
+            ctx.translateBy(x: 0, y: CGFloat(height))
+            ctx.scaleBy(x: 1, y: -1)
+            view.layer.render(in: ctx)
+
+            var top: Int?
+            for row in 0..<height {
+                let p = (row * width + column) * 4
+                if data[p] > 20 || Int(data[p + 1]) < 200 || data[p + 2] > 20 { top = row; break }
+            }
+            guard let found = top else { return (nil, 0, 0) }
+            var leaking = 0
+            for row in found..<height {
+                let p = (row * width + column) * 4
+                let r = Int(data[p]), g = Int(data[p + 1]), b = Int(data[p + 2])
+                if g > r + 40, g > b + 40 { leaking += 1 }
+            }
+            return (found, leaking, height - found)
+        }
+
+        rig.tapToOpen()
+        var trace: [(Int?, Int, Int)] = []
+        for _ in 0..<20 {
+            CommitProbe.pump(1.0 / 60)
+            trace.append(sample())
+        }
+
+        for row in trace {
+            CommitProbe.log("[opaque] mép thẻ \(row.0.map(String.init) ?? "—")pt  "
+                  + "rò rỉ \(row.1)/\(row.2) hàng")
+        }
+
+        // Mẫu giữa đường: thẻ đã rời hẳn viên thuốc nhưng chưa tới đích. Ở
+        // trạng thái nghỉ thẻ **phải** trong — viên thuốc là một mặt sương, và
+        // đó là chủ ý — nên mốc dưới 200pt loại đúng trạng thái ấy ra.
+        let midway = trace.first { row in
+            guard let top = row.0 else { return false }
+            return top > 200 && top < 520
+        }
+        let sample = try XCTUnwrap(
+            midway,
+            "không bắt được mẫu nào ở giữa cú morph để chấm"
+        )
+
+        // Đo được ngày 2026-08-19, cùng máy cùng buổi, ở mép thẻ ~350pt:
+        //
+        //   lớp nền đọc `progress` của `body`   304/480 hàng  (63%)
+        //   lớp nền đọc giá trị đang được vẽ     46/507 hàng   (9%)
+        //
+        // 25% là ngưỡng: dưới hẳn 63% của cách hỏng, trên hẳn 9% còn lại — phần
+        // dư ấy là mép trên tấm thẻ, nơi lớp sương và cú bo góc chồng nhau, và
+        // nó không phải thứ ai nhìn ra.
+        let leakFraction = Double(sample.1) / Double(sample.2)
+        XCTAssertLessThan(
+            leakFraction, 0.25,
+            """
+            tấm thẻ trong suốt giữa cú morph: \(sample.1)/\(sample.2) hàng cho \
+            thấy nền xuyên qua ở mép thẻ \(sample.0.map(String.init) ?? "?")pt. \
+            Lớp nền đục đang đọc `progress` của `body` — vốn đã là giá trị đích \
+            ngay từ khung đầu của một `withAnimation` — thay vì giá trị đang \
+            được vẽ. Xem `CardSurface`.
+            """
         )
     }
 }

@@ -263,14 +263,49 @@ struct PlayerCard: View {
     }
 
 
+    /// Bao lâu thì lớp nền đục của `background` đục hẳn, tính theo `progress`.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// 3 → 10, VÀ ĐÂY LÀ LÝ DO
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Người dùng báo: thu nhỏ player thì thanh tab bị mờ và tối đi suốt cú
+    /// thu, rồi trả về nguyên trạng một phát khi xong.
+    ///
+    /// Cơ chế, đọc ra từ thứ tự lớp chứ không phải đoán: `.thinMaterial` nằm
+    /// **trên** lớp nền đục trong `ZStack` của `background`, nên nó làm mờ mọi
+    /// thứ lọt qua lớp nền ấy. Với `progress * 3`, lớp nền chỉ đục hẳn ở 1/3,
+    /// nên suốt `0 < progress < 1/3` thanh tab phía sau lọt qua rồi bị làm mờ.
+    /// Và đó **đúng** là khoảng tấm thẻ đè lên thanh tab: mép dưới của thẻ chỉ
+    /// đi được `collapsedBottomOffset` (79pt ở `minimised` 0) trong cả cú morph,
+    /// trong khi thanh tab cao hơn thế.
+    ///
+    /// Đo bằng ảnh chụp giữ tay giữa cú kéo: ở `progress` ≈ 0,28 lớp nền mới
+    /// đục 0,84 — 16% còn lại là thanh tab lọt qua — và cả hàng tab đọc ra xám
+    /// đi, viên chọn mất màu.
+    ///
+    /// Với 10, lớp nền đục hẳn ở 0,1. Từ đó trở lên thanh tab bị **che hẳn**
+    /// thay vì bị nhìn xuyên qua, tức nó luôn rõ nét ở mọi chỗ còn nhìn thấy
+    /// được — không còn gì để nhảy khi cú thu kết thúc.
+    ///
+    /// **Vẻ mờ của viên thuốc lúc nghỉ không mất.** Ở `progress` 0 lớp nền vẫn
+    /// là 0 và `.thinMaterial` vẫn đục hoàn toàn, nên viên thuốc vẫn nhìn thấy
+    /// danh sách phía sau đúng như trước — và ở đúng lúc ấy nó **không** đè lên
+    /// thanh tab, nên hai chuyện không đụng nhau. Cái mất là vẻ mờ trong khoảng
+    /// `0,1 < progress < 1/3` của một cú kéo dở tay, nơi thẻ giờ đục sớm hơn.
+    ///
+    /// Đừng đổi con số này mà quên `materialCutoff` ngay dưới: hai cái là một
+    /// phép suy, không phải hai lựa chọn.
+    static let opaqueBaseRamp: Double = 10
+
     /// Where the frosted layer in `background` stops being rendered at all.
     ///
-    /// Tied to the opaque base's `min(1, progress * 3)`, which reaches 1 at
-    /// exactly 1/3. Anything at or above that point is fully covered. A hair
-    /// above 1/3 rather than 1/3 itself, so floating-point comparison at the
-    /// boundary can only ever keep the layer a frame too long — never drop it a
-    /// frame too early, which would be a visible flash.
-    private static let materialCutoff: Double = 0.34
+    /// Tied to the opaque base's `min(1, progress * opaqueBaseRamp)`, which
+    /// reaches 1 at exactly `1 / opaqueBaseRamp`. Anything at or above that
+    /// point is fully covered. A hair above rather than the value itself, so
+    /// floating-point comparison at the boundary can only ever keep the layer a
+    /// frame too long — never drop it a frame too early, which would be a
+    /// visible flash.
+    static let materialCutoff: Double = 1 / opaqueBaseRamp + 0.01
 
     /// Tỉ lệ điểm→pixel của **màn hình đang vẽ thẻ này**, không phải màn hình
     /// chính, để `loadArtwork` giải mã bìa đúng số pixel sẽ vẽ ra.
@@ -1416,57 +1451,16 @@ struct PlayerCard: View {
 
     private var background: some View {
         ZStack {
-            // Opaque base: the two layers above cross-fade via opacity, which
-            // composites rather than sums, so without this the card is
-            // translucent through the whole middle of the morph (F4). Gated
-            // on progress rather than always-on, so the collapsed bar keeps
-            // its frosted look instead of sitting on a flat grey rectangle —
-            // `min(1, progress * 3)` reaches full opacity at progress ≈ 1/3,
-            // the same point miniChrome's `1 - progress * 3` fade reaches
-            // zero, and the material layer alone is fully opaque (1 - 0 = 1)
-            // at progress 0, so the base contributes nothing there and the
-            // list is genuinely visible, blurred, through the resting bar.
-            // See R3.
-            Color(.systemGroupedBackground)
-                .opacity(min(1, progress * 3))
-            // Dropped entirely — not merely faded — once the opaque base above
-            // reaches full opacity at progress = 1/3.
+            // Lớp nền đục cộng lớp sương, cả hai đọc **giá trị đang được vẽ**
+            // chứ không phải giá trị đích. Toàn bộ lý lẽ, và số đo từ video cú
+            // thu nhỏ của người dùng, nằm ở doc của `CardSurface`.
             //
-            // A material is a live blur of everything behind it, recomputed
-            // every frame, and it costs the same at opacity 0.01 as at 1. Held
-            // at `1 - progress` alone it stayed alive for the whole drag, so
-            // two thirds of every expand was spent blurring a layer sitting
-            // underneath a fully opaque one. Nothing on screen changes: at the
-            // moment it is removed it is already completely covered.
-            if progress < Self.materialCutoff {
-                Rectangle()
-                    .fill(.thinMaterial)
-                    .opacity(1 - progress)
-            }
-            // The cover's dominant colour, held flat down the card.
-            //
-            // **This was a `MeshGradient` drifting at 30fps, and measurement is
-            // what removed it.** Two Instruments recordings on the device, same
-            // script, only this differing:
-            //
-            //     hitch time / second of use   189 ms  ->  35 ms
-            //     longest single stall         900 ms  -> 183 ms
-            //
-            // A fifth of the delay, and the near-second freeze gone entirely. It
-            // was the single most expensive thing the app drew: a full-screen
-            // mesh recomputed thirty times a second, composited under a masked
-            // cover and over a material.
-            //
-            // A flat field is also what Apple Music actually does — its expanded
-            // player has a *static* blurred backdrop, not a moving one. The
-            // moving version was this app's own invention, and it cost five
-            // times the frame budget to have.
-            //
-            // The Mach band the mesh was brought in to fix — a crease above the
-            // title, from a slope discontinuity where the artwork's fade met a
-            // constant colour — is handled by `dissolveStops` on the artwork
-            // instead: seven smoothstepped stops, so there is no corner in the
-            // gradient for the eye to find.
+            // Lớp nền tồn tại vì hai lớp trên hoà vào nhau bằng opacity, mà
+            // opacity **hợp thành** chứ không cộng — không có nó thì tấm thẻ
+            // trong suốt suốt quãng giữa cú morph (F4). Nó chỉ vắng mặt ở
+            // `progress` 0, nên viên thuốc lúc nghỉ vẫn là một mặt sương nhìn
+            // thấy danh sách phía sau chứ không phải một mảng xám phẳng. Xem R3.
+            CardSurface(progress: progress)
             LinearGradient(
                 // **Bám theo vệt tan của bìa, không phải trải đều cả thẻ.**
                 //
@@ -3049,6 +3043,63 @@ private struct CardClip: ViewModifier {
                     topTrailingRadius: top
                 )
             )
+        }
+    }
+}
+
+/// Lớp nền đục và lớp sương của tấm thẻ, cả hai đọc **giá trị đang được vẽ**.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO PHẢI LÀ MỘT `Animatable` RIÊNG
+/// ─────────────────────────────────────────────────────────────────────────
+/// Hai lớp này từng nằm thẳng trong `background` và đọc `progress` — tức giá
+/// trị trong `body`. Trên đường **kéo tay** điều đó đúng: `body` chạy lại mỗi
+/// khung nên `progress` là chỗ tấm thẻ đang thật sự ở. Trên đường
+/// **`withAnimation`** thì không: `settled` nhảy thẳng tới đích, nên `progress`
+/// đọc trong `body` **đã là giá trị cuối ngay từ khung đầu**, và thứ SwiftUI
+/// nội suy là bản thân các modifier sinh ra từ nó.
+///
+/// Hậu quả đo được, từ video người dùng quay cú thu nhỏ: ở khung có mép thẻ
+/// 338pt — `progress` ≈ 0,52, chỗ mà lớp nền đáng ra đã đục hẳn — vẫn đọc được
+/// tên các hàng danh sách xuyên qua tấm thẻ. Vì `.opacity` được tính ở
+/// `progress` = 0 rồi nội suy từ 1 xuống 0 suốt cả cú lò xo, nên giữa đường nó
+/// là ~0,5 bất kể tấm thẻ đang to bằng nào. Và lớp sương thì ngược lại: cái
+/// `if` đúng ngay khung đầu nên nó được **chèn** vào ở cường độ đầy đủ, không
+/// nội suy gì. Cộng lại: tấm thẻ trong mờ và bị làm mờ suốt cú thu, rồi trả về
+/// nguyên trạng một phát khi xong — đúng thứ người dùng báo.
+///
+/// `Animatable` trên một view **lá** như thế này không phải cách mà `b8a94d6`
+/// đã làm và `b14ad5d` đã hoàn nguyên: ở đó nó bắt cả `PlayerCard.body` chạy
+/// lại mỗi khung. Ở đây chỉ thân của chính kiểu này chạy lại — cùng khuôn với
+/// `PresentedOpacity` ngay dưới, với `Slot` trong `ReorderableStack`, và với
+/// `PlaybackScrubber`.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// LỚP SƯƠNG HIỆN RA TỪ 0, KHÔNG BẬT RA Ở 0,9
+/// ─────────────────────────────────────────────────────────────────────────
+/// Cái `if` vẫn còn, và vẫn cố ý — một `.thinMaterial` là một cú làm mờ trực
+/// tiếp, và nó tốn như nhau ở opacity 0,01 hay 1, nên giữ nó trong cây suốt cú
+/// morph là trả tiền cho một thứ không ai thấy. Nhưng giờ nó gắn vào đúng lúc,
+/// và **gắn ở opacity 0**: `1 - progress / materialCutoff` bằng 0 ngay tại mốc
+/// gắn và bằng 1 ở trạng thái nghỉ. Bản cũ dùng `1 - progress`, tức gắn vào ở
+/// 0,9 — một cú bật.
+private struct CardSurface: View, Animatable {
+    var progress: Double
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+                .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
+            if progress < PlayerCard.materialCutoff {
+                Rectangle()
+                    .fill(.thinMaterial)
+                    .opacity(max(0, 1 - progress / PlayerCard.materialCutoff))
+            }
         }
     }
 }
