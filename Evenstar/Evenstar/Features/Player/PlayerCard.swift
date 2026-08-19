@@ -326,13 +326,31 @@ struct PlayerCard: View {
 
     /// Where the frosted layer in `background` stops being rendered at all.
     ///
-    /// Tied to the opaque base's `min(1, progress * opaqueBaseRamp)`, which
-    /// reaches 1 at exactly `1 / opaqueBaseRamp`. Anything at or above that
-    /// point is fully covered. A hair above rather than the value itself, so
-    /// floating-point comparison at the boundary can only ever keep the layer a
-    /// frame too long — never drop it a frame too early, which would be a
-    /// visible flash.
-    static let materialCutoff: Double = 1 / opaqueBaseRamp + 0.01
+    /// ─────────────────────────────────────────────────────────────────────
+    /// KHÔNG CÒN SUY RA TỪ `opaqueBaseRamp`, VÀ ĐÂY LÀ LÝ DO
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Nó từng là `1 / opaqueBaseRamp + 0.01`, dẫn từ chỗ lớp nền đục hết đục:
+    /// trên mốc ấy lớp sương bị che hoàn toàn nên tháo đi là miễn phí.
+    ///
+    /// Phép dẫn ấy **chết khi `opaqueBaseRamp` xuống 1**: lớp nền khi ấy không
+    /// bao giờ đục hẳn trừ đúng `progress` = 1, nên công thức cho ra **1,01** —
+    /// tức `progress < materialCutoff` luôn đúng, và một `.thinMaterial` cỡ
+    /// màn hình nằm trong cây **vĩnh viễn**, ở opacity ~0,01.
+    ///
+    /// Bắt được bằng ảnh Color Offscreen-Rendered Yellow trên Release: màn
+    /// player bài **không bìa** vàng trở lại toàn bộ, sau khi lần đo trước nó
+    /// gần sạch. Đúng cái bẫy mà chú thích của chính lớp ấy đã gọi tên — "it
+    /// costs the same at opacity 0.01 as at 1" — và tôi vô hiệu hoá cái rào ấy
+    /// bằng cách cột nó vào một hằng số vừa đi xuống 1.
+    ///
+    /// Nay là một con số riêng, và nó trả lời một câu khác: **trên `progress`
+    /// nào thì lớp sương không còn đóng góp gì nhìn thấy được.** Với
+    /// `opacity(1 - progress / materialCutoff)` thì tại đúng mốc này độ mờ
+    /// bằng 0, nên tháo nó ở đây không thể chớp.
+    ///
+    /// 0,5: lớp sương chỉ sống ở nửa dưới cú morph, nơi tấm thẻ đủ nhỏ để nó
+    /// còn là một mặt kính chứ không phải một tấm phủ cả màn hình.
+    static let materialCutoff: Double = 0.5
 
     /// Tỉ lệ điểm→pixel của **màn hình đang vẽ thẻ này**, không phải màn hình
     /// chính, để `loadArtwork` giải mã bìa đúng số pixel sẽ vẽ ra.
