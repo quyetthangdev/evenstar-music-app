@@ -10,7 +10,7 @@ import SwiftData
 ///
 /// **Mọi lượt quét lại phải fetch theo `fileID` rồi sửa tại chỗ — không bao giờ
 /// dựng một `DriveTrack(fileID:...)` mới và insert cho một `fileID` có thể đã
-/// tồn tại.** Trước đây ràng buộc duy nhất (`unique`) giữ số hàng ở một dù làm cách nào;
+/// tồn tại.** Trước đây `@Attribute(.unique)` giữ số hàng ở một dù làm cách nào;
 /// **ràng buộc ấy đã bị bỏ** vì CloudKit không chấp nhận nó, nên giờ một lượt
 /// insert lặp lại thực sự sinh ra hàng thứ hai.
 ///

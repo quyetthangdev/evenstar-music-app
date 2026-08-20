@@ -7,7 +7,7 @@ import SwiftData
 /// re-queries: a library that needs the network to draw itself is not a library.
 ///
 /// **Không còn ràng buộc duy nhất nào trên bảng này** — CloudKit không chấp
-/// nhận ràng buộc duy nhất (`unique`). Trước đây nó cũng chưa bao giờ là hàng rào thật:
+/// nhận `@Attribute(.unique)`. Trước đây nó cũng chưa bao giờ là hàng rào thật:
 /// khi va chạm, SwiftData upsert, và `id` của hàng sống sót *không nhất thiết*
 /// là `id` gốc. `PlaybackState` giữ thành viên hàng đợi bằng `UUID` trần không
 /// có quan hệ ngược, nên một hàng đổi `id` làm hàng đợi mất bài trong im lặng.

@@ -41,12 +41,30 @@ final class ModelCloudKitConformanceTests: XCTestCase {
     /// hàng rào chống trùng nào đang được dùng: doc comment của `JamendoTrack`
     /// ghi rằng dựa vào `unique` chính là lỗi đã phải sửa, và
     /// `JamendoLibraryService.inFlightSaves` mới là thứ chống trùng thật.
+    ///
+    /// **Chỉ soi dòng mã, bỏ qua dòng comment.** Bản đầu của test này soi
+    /// nguyên văn bản file, kể cả comment — và vô tình cấm luôn
+    /// `DriveTrack`/`JamendoTrack` *nhắc tên* ràng buộc mà chúng vừa bỏ, đúng
+    /// hai chỗ người đọc cần lời giải thích nhất. Ràng buộc đã mất, nhưng
+    /// *lịch sử* của nó đáng được ghi lại; một test cấm nhắc tên thứ nó vừa
+    /// xoá làm tài liệu tệ đi, không phải tốt lên. Đừng "đơn giản hoá" chỗ
+    /// này về lại `source.contains(...)` trên cả file — trông gọn hơn, nhưng
+    /// âm thầm phá tài liệu lần nữa.
+    ///
+    /// Bỏ qua bằng cách nhận diện dòng có bản rút gọn (đã trim khoảng trắng)
+    /// bắt đầu bằng `//` — đủ dùng ở đây vì các file trong `Models/` không có
+    /// block comment (`/* ... */`) và không có chuỗi ký tự nào chứa
+    /// `@Attribute(.unique)`. Không dựng lexer Swift cho việc này.
     func testNoModelDeclaresAUniqueAttribute() throws {
         for url in try modelSources() {
             let source = try String(contentsOf: url, encoding: .utf8)
+            let code = source
+                .components(separatedBy: .newlines)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+                .joined(separator: "\n")
             XCTAssertFalse(
-                source.contains("@Attribute(.unique)"),
-                "\(url.lastPathComponent) còn @Attribute(.unique). CloudKit từ chối nó."
+                code.contains("@Attribute(.unique)"),
+                "\(url.lastPathComponent) còn @Attribute(.unique) trong mã (ngoài comment). CloudKit từ chối nó."
             )
         }
     }
