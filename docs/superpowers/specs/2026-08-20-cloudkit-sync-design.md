@@ -117,16 +117,48 @@ Vào: hai hàng cùng khoá tự nhiên. Ra: quyết định gộp.
 Bước 5 là bước dễ quên nhất và là bước đúng cái lỗi mà hai doc comment trên đã
 ghi lại: hàng đợi giữ `UUID` trần, không ai nối lại hộ.
 
-**Khoá tự nhiên theo model:**
+**Khoá tự nhiên, và hai bảng bị loại:**
 
-| Model | Khoá tự nhiên |
-|---|---|
-| `Track` | `relativePath` |
-| `JamendoTrack` | `jamendoID` |
-| `DriveTrack` | `fileID` |
-| `DriveFolder` | `folderID` |
+| Model | Khoá tự nhiên | Gộp? |
+|---|---|---|
+| `DriveTrack` | `fileID` | **Có** |
+| `JamendoTrack` | `jamendoID` | **Có** |
+| `Track` | *không có* | **Không** |
+| `DriveFolder` | `folderID` | **Không** |
 
-**Khi nào chạy:** một lượt sau khi đồng bộ ổn định, không phải mỗi lần khởi động.
+Hai chỗ loại trừ ấy được tìm ra khi viết plan, bằng cách đọc mã thay vì suy đoán,
+và mỗi chỗ có lý do riêng.
+
+**`Track` không có khoá tự nhiên.** `ImportService` dựng
+`relativePath = "Music/\(id.uuidString).\(ext)"` — đường dẫn chứa `id` của chính
+hàng ấy, nên hai máy nhập cùng một file sinh hai đường dẫn khác nhau. Đó là khoá
+riêng của máy, không phải khoá tự nhiên.
+
+Đổi sang khoá tên+nghệ sĩ+thời lượng (kiểu `findExistingTrack` đang dùng) còn
+**tệ hơn hẳn**: gộp xong, hàng sống sót giữ **một** `relativePath`, và máy không
+phải chủ đường dẫn đó vẫn còn file thật trên đĩa nhưng không còn hàng nào trỏ
+tới. Mất quyền phát một bài mình đang có, đổi lấy một danh sách gọn hơn.
+
+Nên hai hàng `Track` cùng tên trên hai máy **không phải trùng lặp**. Chúng là hai
+file thật ở hai chỗ thật, và mỗi máy chỉ phát được cái của mình. Cái giá, nói
+thẳng: người dùng **thấy bài ấy hai dòng**. Gộp hai dòng ở tầng hiển thị là một
+tính năng riêng, không thuộc đợt này.
+
+**`DriveFolder` không có tiêu chí cắt hoà tất định.** Nó không có `id`, không có
+bộ đếm — không trường nào phân biệt được hai hàng cùng `folderID`. Mà quy tắc gộp
+**bắt buộc** phải tất định: lượt gộp chạy độc lập trên mỗi máy, nên nếu máy A giữ
+hàng X và máy B giữ hàng Y, mỗi máy xoá hàng kia và cả hai lệnh xoá cùng đồng bộ
+lên — **mất sạch cả hai**. Một hàng thừa là chuyện thẩm mỹ; mất cả hai là mất dữ
+liệu.
+
+**Cắt hoà khi `dateAdded` bằng nhau: cắt bằng `id`.** Cùng lý do trên, và đây là
+ca có thật — hai máy lưu cùng một bài trong cùng một giây. Cắt bằng thứ tự đầu vào
+là cách chắc chắn làm mất bài.
+
+**Khi nào chạy:** một lượt lúc khởi động. Hàng trùng đến trong phiên này được dọn
+ở **lần mở app sau**. Đánh đổi có chủ ý: bám theo `NSPersistentStoreRemoteChange`
+dọn sớm hơn nhưng thêm một luồng sự kiện bắn liên tục vào một thao tác có xoá
+hàng.
 
 ---
 
@@ -172,7 +204,12 @@ thiết kế này dựa vào, và một lần sửa vô ý ở đó sẽ làm nh
 Đây là chỗ nguy hiểm thật. Trên máy B, xoá một bài vắng mặt trông như "dọn một
 hàng rác". Thực tế nó **xoá bài khỏi mọi máy**, kể cả máy đang giữ file thật.
 
-Cảnh báo: *"Bài này có trên một máy khác. Xoá sẽ gỡ nó khỏi mọi máy."*
+Cảnh báo: *"Bài này không có trên máy này. Xoá sẽ gỡ nó khỏi mọi máy."*
+
+**Câu chữ có chủ ý.** Bản nháp đầu viết *"có trên một máy khác"* — app **không biết
+được** điều đó. Một bài vắng mặt có thể chỉ là file bị xoá từ ngoài app trên một
+máy dùng đơn lẻ, và lúc ấy câu kia là nói dối người dùng đúng lúc họ đang quyết
+định xoá. Câu đã chọn đúng trong cả hai trường hợp.
 
 Quy tắc là hàm thuần: trạng thái vào, có/không cảnh báo ra.
 
@@ -305,9 +342,12 @@ của app không đi vào đường ấy.
 
 ## Thứ tự thi công
 
-1. **Kiểm migration trên bản cài có dữ liệu** — trước mọi thứ, vì nó có thể đổi
-   cả thiết kế.
-2. Bỏ 6 `unique`, thêm ~34 giá trị mặc định.
+1. **Chuẩn bị**: cài bản hiện tại và tạo dữ liệu thật, để sẵn một bản cài có dữ
+   liệu. Không kiểm được một migration chưa viết — cái làm được trước là bản cài
+   để lát nữa cài đè lên.
+2. Bỏ 6 `unique`, thêm 33 giá trị mặc định. **Rồi kiểm migration ngay**, bằng
+   cách cài đè lên bản ở bước 1. Hỏng ở đây là app crash lúc mở, nên không đi
+   tiếp khi chưa qua.
 3. Quy tắc gộp trùng + test.
 4. Tính tập bài có mặt trong `LibraryStore` + test.
 5. UI mờ + chạm không phát.
