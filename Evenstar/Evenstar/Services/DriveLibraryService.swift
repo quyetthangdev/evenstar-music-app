@@ -154,16 +154,18 @@ final class DriveLibraryService {
         )
         let liveFileIDs = Set(files.map(\.id))
 
-        // The insertion guard is deliberately store-wide, not folder-scoped:
-        // `DriveTrack.fileID` carries `@Attribute(.unique)` across every linked
-        // folder, because Drive supports multi-parent files — the same file
-        // can be a direct child of two folders the user links separately. A
+        // The insertion guard is deliberately store-wide, not folder-scoped,
+        // because Drive supports multi-parent files — the same file can be a
+        // direct child of two folders the user links separately. A
         // folder-scoped existence check would miss a `fileID` already known
         // under a *different* folder and construct-and-insert a second row
-        // for it; SwiftData's uniqueness constraint then collapses the two
-        // rows down to one, but hands the survivor a freshly minted `id`,
-        // silently orphaning anything (e.g. a saved queue) that referenced
-        // the original `id`. See `DriveTrack.swift`'s type-level doc comment.
+        // for it. `DriveTrack.fileID` no longer carries `@Attribute(.unique)`
+        // — CloudKit rejects it — so there is no SwiftData-level uniqueness
+        // constraint left to collapse that duplicate: this fetch is now the
+        // only thing that keeps one `fileID` to one row across folders, and
+        // without it a second insert would silently orphan anything (e.g. a
+        // saved queue) that referenced the original `id`. See
+        // `DriveTrack.swift`'s type-level doc comment.
         let existingAnywhere = try library.context.fetch(FetchDescriptor<DriveTrack>())
         let existingByFileIDAnywhere = Dictionary(uniqueKeysWithValues: existingAnywhere.map { ($0.fileID, $0) })
 

@@ -3,20 +3,27 @@ import SwiftData
 
 @Model
 final class Track {
-    @Attribute(.unique) var id: UUID
-    var title: String
-    var artistName: String
-    var albumTitle: String
+    /// Mọi thuộc tính dưới đây hoặc optional hoặc mang giá trị mặc định, và
+    /// **không được bỏ mặc định đi**: CloudKit đọc bản ghi do máy khác ghi, kể
+    /// cả bản ghi cũ chưa có cột này, và một cột không-optional không mặc định
+    /// là một bản ghi không giải mã được. Cùng lý do bốn thuộc tính của
+    /// `PlaybackState` đã mang mặc định từ trước.
+    ///
+    /// Ràng buộc này được ghim bởi `ModelCloudKitConformanceTests`.
+    var id: UUID = UUID()
+    var title: String = ""
+    var artistName: String = ""
+    var albumTitle: String = ""
     var trackNumber: Int?
     var discNumber: Int?
-    var durationSeconds: Double
-    var relativePath: String
+    var durationSeconds: Double = 0
+    var relativePath: String = ""
     var artworkRelativePath: String?
-    var format: String
+    var format: String = ""
     var sampleRate: Int?
     var bitDepth: Int?
-    var dateAdded: Date
-    var playCount: Int
+    var dateAdded: Date = Date.now
+    var playCount: Int = 0
     var lastPlayedAt: Date?
 
     init(id: UUID = UUID(),

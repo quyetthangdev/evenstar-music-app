@@ -34,33 +34,41 @@ final class DriveModelTests: XCTestCase {
         XCTAssertEqual(track.title, "Untitled")
     }
 
-    /// `fileID` is unique so a rescan updates rather than duplicates — but the
-    /// surviving row keeps the *second* object's `id`, not the first's. This
-    /// is exactly why reconciling a scan against existing rows must fetch by
-    /// `fileID` and mutate in place, never reconstruct-and-insert: doing the
-    /// latter on every rescan mints a fresh `id` for an already-known
-    /// `fileID` each time, and `PlaybackState`'s bare-`UUID` queue references
-    /// have no relationship to fall back on when that happens.
+    /// **Renamed from `testInsertingTheSameFileIDTwiceKeepsOneRow`.** That
+    /// test pinned SwiftData's `@Attribute(.unique)` upsert on `fileID` —
+    /// Task 1 removed the attribute because CloudKit rejects it, so the old
+    /// name and the old assertion are both false now: at this raw-model
+    /// layer nothing stops two `DriveTrack` objects built with the same
+    /// `fileID` from becoming two separate rows.
     ///
-    /// The `id`s are snapshotted into `let`s *before* saving because reading
-    /// a property off an object already inserted into the context — even one
-    /// that turned out to be a duplicate — reflects the current row state
-    /// after the merge, not what was set at construction.
-    func testInsertingTheSameFileIDTwiceKeepsOneRow() throws {
+    /// The requirement this used to guard — one row per `fileID` — has not
+    /// gone away, and is still pinned; just not here. `DriveLibraryService
+    /// .scan` is who enforces it now: it fetches every existing `DriveTrack`
+    /// by `fileID` before inserting and only inserts for a `fileID` it has
+    /// not seen, never reconstructing-and-inserting for one it has. That
+    /// fetch-then-mutate guard never depended on the removed attribute, so
+    /// its tests needed no change — see `DriveLibraryServiceTests
+    /// .testRescanningIsIdempotent` and
+    /// `.testScanningASecondFolderWithAnAlreadyKnownFileIDKeepsTheOriginalRow`,
+    /// which pin the no-duplicate-row guarantee (including that `id` is
+    /// preserved, not silently reassigned) at the layer that actually owns
+    /// it. This test now pins the new, weaker raw-model-layer behaviour
+    /// explicitly, so a future reader sees it was a deliberate choice and not
+    /// an oversight.
+    func testTwoRawInsertsForOneFileIDNowProduceTwoRows() throws {
         let library = try InMemoryLibrary.make()
         let first = DriveTrack(fileID: "A1", folderID: "F1", fileName: "a.mp3")
-        let firstID = first.id
         library.context.insert(first)
         try library.save()
 
         let second = DriveTrack(fileID: "A1", folderID: "F1", fileName: "a.mp3")
-        let secondID = second.id
         library.context.insert(second)
         try library.save()
 
         let rows = try library.context.fetch(FetchDescriptor<DriveTrack>())
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].id, secondID)
-        XCTAssertNotEqual(rows[0].id, firstID)
+        XCTAssertEqual(
+            rows.count, 2,
+            "no @Attribute(.unique) means raw inserts no longer collapse a duplicate fileID — only DriveLibraryService.scan's fetch-then-mutate guard does that now"
+        )
     }
 }

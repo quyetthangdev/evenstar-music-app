@@ -31,16 +31,18 @@ final class JamendoLibraryService {
     /// two overlapping calls (e.g. a double-tap on the save button, whose
     /// `isSaved` only flips after the whole round trip completes — see
     /// `JamendoDiscoveryView.save(_:)`) both see no existing row, both
-    /// download a cover, and both insert a `JamendoTrack`. `jamendoID`
-    /// carries `@Attribute(.unique)`, so SwiftData's upsert collapses the two
-    /// rows to one on save — but, per `JamendoTrack`'s own doc comment, the
-    /// survivor's `id` is not guaranteed to be either caller's original `id`.
-    /// A `PlaybackState` that captured the loser's `id` a moment earlier is
-    /// then orphaned, which is exactly the restore failure C1 fixes. The
-    /// loser's downloaded cover is also orphaned on disk, with nothing left
-    /// pointing at it. Coalescing concurrent calls onto one `Task` per id
-    /// makes the second call a no-op that returns the first call's row,
-    /// rather than a second attempt racing it.
+    /// download a cover, and both insert a `JamendoTrack`. `jamendoID` no
+    /// longer carries `@Attribute(.unique)` — CloudKit rejects it — so there
+    /// is no SwiftData-level upsert left to collapse those two rows into one;
+    /// both inserts simply stand as two separate rows. A `PlaybackState` that
+    /// captured one of their `id`s a moment earlier now points at a row that
+    /// may not be the one the user expects, which is exactly the restore
+    /// failure C1 fixes. The loser's downloaded cover is also orphaned on
+    /// disk, with nothing left pointing at it. Coalescing concurrent calls
+    /// onto one `Task` per id makes the second call a no-op that returns the
+    /// first call's row, rather than a second attempt racing it — and, since
+    /// this task removed the attribute, is now the *only* thing preventing
+    /// the duplicate row.
     ///
     /// `Task<Void, Error>`, not `Task<JamendoTrack, Error>`: `JamendoTrack`
     /// is a `@Model` class, which SwiftData does not make `Sendable`, and

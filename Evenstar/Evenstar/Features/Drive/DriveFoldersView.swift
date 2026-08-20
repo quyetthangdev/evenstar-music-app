@@ -273,10 +273,15 @@ struct DriveFoldersView: View {
     /// `link()` succeeds and `scan()` throws. The plan's version left `link`
     /// and `name` untouched in that case, so the folder sat in "Đã liên kết"
     /// while the still-filled, still-enabled "Liên kết" button invited a
-    /// second tap. `folderID` carries `@Attribute(.unique)`, and SwiftData
-    /// resolves a second insert with the same key as a silent upsert — no
-    /// throw, just `linkedAt` (and, before this fix, `lastScannedAt`) reset
-    /// out from under the row that is already there.
+    /// second tap. At the time this was written, `folderID` carried
+    /// `@Attribute(.unique)`, and SwiftData resolved a second insert with the
+    /// same key as a silent upsert — no throw, just `linkedAt` (and, before
+    /// this fix, `lastScannedAt`) reset out from under the row that is
+    /// already there. CloudKit sync (Task 1) later removed that attribute —
+    /// CloudKit rejects it — so a second insert now would not upsert at all;
+    /// it would produce a second row outright. Either way the fix below is
+    /// what actually prevents the duplicate: `link()`'s fetch-existing-or-insert
+    /// guard never depended on the attribute.
     ///
     /// Two changes close both the accidental and the deliberate path to that
     /// duplicate insert:

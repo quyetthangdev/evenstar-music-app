@@ -98,14 +98,19 @@ final class DriveLibraryServiceTests: XCTestCase {
     /// Drive supports multi-parent files: the same file can be a direct child
     /// of two folders the user links separately. Scanning the second folder
     /// must not construct-and-insert a fresh row for a `fileID` the first
-    /// folder's scan already created — that would collide with the store-wide
-    /// `@Attribute(.unique)` on `DriveTrack.fileID`, and SwiftData resolves the
-    /// collision by keeping the row count at one while handing the survivor a
-    /// freshly minted `id`, orphaning anything (e.g. a saved queue) that
-    /// referenced the original. Mirrors
-    /// `DriveModelTests.testInsertingTheSameFileIDTwiceKeepsOneRow`, but
-    /// exercised through two `DriveFolder`s and two `scan` calls, because a
-    /// row-count assertion alone would pass whether or not the `id` moved.
+    /// folder's scan already created — `DriveTrack.fileID` no longer carries
+    /// `@Attribute(.unique)` (CloudKit rejects it), so a construct-and-insert
+    /// here would not collide and collapse; it would silently produce a
+    /// second row for the same `fileID`, orphaning anything (e.g. a saved
+    /// queue) that referenced the original `id`. This test — and `scan`'s
+    /// store-wide fetch-by-`fileID` guard it exercises — is what now stands
+    /// between a rescan and that duplicate row; the row-count assertion in
+    /// `testRescanningIsIdempotent` covers the same-folder case. Mirrors
+    /// `DriveModelTests.testTwoRawInsertsForOneFileIDNowProduceTwoRows`,
+    /// which pins the opposite outcome one layer down — a raw insert with no
+    /// guard — but exercised through two `DriveFolder`s and two `scan` calls,
+    /// because a row-count assertion alone would pass whether or not the
+    /// `id` moved.
     func testScanningASecondFolderWithAnAlreadyKnownFileIDKeepsTheOriginalRow() async throws {
         let (service, library) = try makeService()
         let folderA = try service.link(folderID: "F1", displayName: "Folder A")

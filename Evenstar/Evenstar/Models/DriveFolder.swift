@@ -8,9 +8,9 @@ import SwiftData
 /// is not an option here.
 @Model
 final class DriveFolder {
-    @Attribute(.unique) var folderID: String
-    var displayName: String
-    var linkedAt: Date
+    var folderID: String = ""
+    var displayName: String = ""
+    var linkedAt: Date = Date.now
     /// `nil` until the first successful scan, which is what distinguishes
     /// "never scanned" from "scanned and empty".
     var lastScannedAt: Date?

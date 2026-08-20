@@ -4,9 +4,9 @@ import SwiftData
 @Model
 final class PlaybackState {
     var currentTrackID: UUID?
-    var positionSeconds: Double
-    var queueTrackIDs: [UUID]
-    var queueIndex: Int
+    var positionSeconds: Double = 0
+    var queueTrackIDs: [UUID] = []
+    var queueIndex: Int = 0
     /// `RepeatMode.rawValue`.
     ///
     /// A raw `String` with a literal default rather than the enum itself: the

@@ -67,12 +67,14 @@ final class JamendoLibraryServiceTests: XCTestCase {
     /// **Dedupe is by Jamendo's id.** Saving the same track twice must leave one
     /// row, not two rows the user then has to delete individually.
     ///
-    /// Row count alone does not prove the dedupe guard ran:
-    /// `JamendoTrack.jamendoID` carries `@Attribute(.unique)`, so SwiftData
-    /// itself would collapse two same-id inserts into one row at save time
-    /// even with the guard deleted. The `requestedURLs` assertion is what
-    /// actually pins the guard down — without it, the second `save` would
-    /// re-hit the network for a cover it already has.
+    /// `JamendoTrack.jamendoID` no longer carries `@Attribute(.unique)` —
+    /// CloudKit rejects it — so `existingRow`'s guard in `save` is now the
+    /// *only* thing standing between two calls and two rows; nothing at the
+    /// SwiftData layer would collapse them for free the way `.unique` once
+    /// did. The row-count assertion below is therefore a direct check on the
+    /// guard, not merely suggestive of it. The `requestedURLs` assertion adds
+    /// what row count alone still cannot show: without the guard, the second
+    /// `save` would re-hit the network for a cover it already has.
     func testSavingTheSameTrackTwiceLeavesOneRow() async throws {
         let (service, _) = try makeService()
         StubURLProtocol.responses = [
@@ -192,9 +194,12 @@ final class JamendoLibraryServiceTests: XCTestCase {
     /// cover download, then inserted — nothing held the actor across that
     /// `await`, so a double-tap on the save button (whose `isSaved` only
     /// flips after the full round trip) started two saves: two covers
-    /// downloaded, and — per `JamendoTrack`'s doc comment — the row that
-    /// survives SwiftData's unique-attribute upsert is not guaranteed to
-    /// keep either caller's original `id`.
+    /// downloaded, and two inserted rows. `JamendoTrack.jamendoID` no longer
+    /// carries `@Attribute(.unique)` — CloudKit rejects it — so there is no
+    /// SwiftData-level upsert left to collapse those two rows into one; the
+    /// second insert simply stands. `inFlightSaves` is what makes that
+    /// impossible now, by coalescing the second call onto the first `Task`
+    /// instead of letting it insert its own row.
     ///
     /// Two `Task`s started back to back, with no `await` between them, so their
     /// synchronous prefixes (the `existingRow` check and the `inFlightSaves`

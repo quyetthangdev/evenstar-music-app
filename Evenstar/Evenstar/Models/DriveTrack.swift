@@ -8,19 +8,21 @@ import SwiftData
 /// filter, and missing one would leak Drive rows into the local library. Two
 /// models make the compiler enforce the split instead of a reviewer.
 ///
-/// **Reconciling a scan against existing rows must fetch by `fileID` and
-/// mutate in place — never construct a fresh `DriveTrack(fileID:...)` and
-/// insert it for a `fileID` that may already exist.** SwiftData's
-/// `@Attribute(.unique)` on `fileID` does keep the row count at one either
-/// way, but on a collision it is `id` — not the caller — that decides which
-/// object's `id` the surviving row keeps, and it is not necessarily the
-/// original. Re-inserting a known `fileID` on every rescan therefore mints a
-/// new `id` for that row on every rescan. `PlaybackState` persists queue
-/// membership as bare `UUID`s (`currentTrackID`, `queueTrackIDs`) with no
-/// relationship back to this table, so nothing re-links them when a row's
-/// `id` changes underneath it — a restored queue silently loses any track
-/// whose `id` moved. See `testInsertingTheSameFileIDTwiceKeepsOneRow` for the
-/// reproduction.
+/// **Mọi lượt quét lại phải fetch theo `fileID` rồi sửa tại chỗ — không bao giờ
+/// dựng một `DriveTrack(fileID:...)` mới và insert cho một `fileID` có thể đã
+/// tồn tại.** Trước đây ràng buộc duy nhất (`unique`) giữ số hàng ở một dù làm cách nào;
+/// **ràng buộc ấy đã bị bỏ** vì CloudKit không chấp nhận nó, nên giờ một lượt
+/// insert lặp lại thực sự sinh ra hàng thứ hai.
+///
+/// Kể cả khi còn `unique` thì cách ấy vẫn sai: khi va chạm, chính `id` chứ
+/// không phải người gọi quyết định hàng sống sót mang `id` nào, và nó không
+/// nhất thiết là `id` gốc. `PlaybackState` giữ thành viên hàng đợi bằng `UUID`
+/// trần không có quan hệ ngược, nên không ai nối lại hộ khi một hàng đổi `id` —
+/// hàng đợi khôi phục xong mất bài trong im lặng. Xem
+/// `DriveModelTests.testTwoRawInsertsForOneFileIDNowProduceTwoRows` cho hành
+/// vi ở tầng model, và `DriveLibraryServiceTests
+/// .testScanningASecondFolderWithAnAlreadyKnownFileIDKeepsTheOriginalRow` cho
+/// nơi ràng buộc thật sự được giữ.
 @Model
 final class DriveTrack {
     /// What `PlaybackState` persists to identify a queued track. Distinct
@@ -29,11 +31,13 @@ final class DriveTrack {
     /// *Not* stable across a `fileID` collision — see the type-level doc
     /// comment. Only stable if every reconcile fetches the existing row by
     /// `fileID` and mutates it, rather than reconstructing and inserting.
-    @Attribute(.unique) var id: UUID
-    @Attribute(.unique) var fileID: String
-    var folderID: String
-    var fileName: String
-    var title: String
+    /// Không còn ràng buộc duy nhất nào ở đây, và mặc định là bắt buộc — xem
+    /// ghi chú tương ứng trong `Track`.
+    var id: UUID = UUID()
+    var fileID: String = ""
+    var folderID: String = ""
+    var fileName: String = ""
+    var title: String = ""
     /// Stored optional, because "not read yet" is real and distinct from
     /// "read, and the file has no artist tag". `Playable` exposes non-optional
     /// `artistName`/`albumTitle` computed from these — see `Playable.swift`.
@@ -41,12 +45,12 @@ final class DriveTrack {
     var albumTitleOrNil: String?
     /// 0 until `metadataResolved`. Not optional: `Playable` needs a number, and
     /// two ways to say "unknown" in one row is one too many.
-    var durationSeconds: Double
+    var durationSeconds: Double = 0
     /// False until the track has been played once and its real tags read over
     /// the network. Scanning deliberately does not read tags — see the spec.
-    var metadataResolved: Bool
-    var dateAdded: Date
-    var playCount: Int
+    var metadataResolved: Bool = false
+    var dateAdded: Date = Date.now
+    var playCount: Int = 0
     var lastPlayedAt: Date?
 
     init(id: UUID = UUID(),

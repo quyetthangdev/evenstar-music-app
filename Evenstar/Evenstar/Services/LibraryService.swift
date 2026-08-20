@@ -210,11 +210,15 @@ final class LibraryService {
     /// The local half of session restore, and the first of the three asked —
     /// see `findDriveTrack` and `findJamendoTrack`, which share its shape.
     ///
-    /// `fetchLimit = 1` for the same reason they carry it: the id is unique, so
-    /// one row is all there can be, and saying so lets SwiftData stop looking
-    /// rather than materialise every remaining `Track` to hand back a list this
-    /// throws away. It was the only one of the three without it — the outlier,
-    /// on the table most likely to be the largest.
+    /// `fetchLimit = 1` for the same reason they carry it: `id` is never
+    /// deliberately reused, so one row is all there should be, and saying so
+    /// lets SwiftData stop looking rather than materialise every remaining
+    /// `Track` to hand back a list this throws away. (`Track.id` no longer
+    /// carries `@Attribute(.unique)` — CloudKit rejects it — so this is now a
+    /// convention this method trusts rather than a constraint the database
+    /// enforces; a genuine duplicate would just silently return whichever row
+    /// SwiftData happens to fetch first.) It was the only one of the three
+    /// without it — the outlier, on the table most likely to be the largest.
     func findTrack(byID id: UUID) throws -> Track? {
         var descriptor = FetchDescriptor<Track>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1

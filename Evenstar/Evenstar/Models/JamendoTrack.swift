@@ -6,31 +6,29 @@ import SwiftData
 /// Stores what the catalogue returned **at save time**. Rendering a row never
 /// re-queries: a library that needs the network to draw itself is not a library.
 ///
-/// `@Attribute(.unique)` on `jamendoID` and not on the title: two different
-/// recordings can share a title, and the same recording must not be saved twice.
+/// **Không còn ràng buộc duy nhất nào trên bảng này** — CloudKit không chấp
+/// nhận ràng buộc duy nhất (`unique`). Trước đây nó cũng chưa bao giờ là hàng rào thật:
+/// khi va chạm, SwiftData upsert, và `id` của hàng sống sót *không nhất thiết*
+/// là `id` gốc. `PlaybackState` giữ thành viên hàng đợi bằng `UUID` trần không
+/// có quan hệ ngược, nên một hàng đổi `id` làm hàng đợi mất bài trong im lặng.
 ///
-/// **A `jamendoID` collision — two `JamendoTrack(jamendoID:...)` inserts for
-/// the same id — does not raise an error.** SwiftData's `@Attribute(.unique)`
-/// upserts: the two rows collapse to one, but on a collision it is `id`, not
-/// the caller, that decides which object's `id` the surviving row keeps, and
-/// it is not necessarily either original. `PlaybackState` persists queue
-/// membership as bare `UUID`s (`currentTrackID`, `queueTrackIDs`) with no
-/// relationship back to this table, so nothing re-links them when a row's
-/// `id` changes underneath it — a restored queue silently loses any track
-/// whose `id` moved. This is exactly what an unguarded double-`save()` could
-/// produce; see `JamendoLibraryService.inFlightSaves` for why a second
-/// concurrent `save()` for the same id is coalesced onto the first rather
-/// than allowed to insert its own row. Same shape as `DriveTrack`'s
-/// type-level doc comment, for the same reason.
+/// Thứ chống trùng thật là `JamendoLibraryService.inFlightSaves`, gom mọi
+/// `save()` đồng thời cho cùng một `jamendoID` về một `Task` duy nhất. Nó từng
+/// là dây an toàn thứ hai; **giờ nó là dây duy nhất**, nên đừng gỡ.
+///
+/// Ca mà `inFlightSaves` không với tới là hai máy cùng lưu một bài khi ngoại
+/// tuyến — không có `Task` chung để gom. Đó là việc của `DuplicateSweep`.
 @Model
 final class JamendoTrack {
-    @Attribute(.unique) var id: UUID
-    @Attribute(.unique) var jamendoID: String
-    var title: String
-    var artistName: String
-    var albumTitle: String
-    var durationSeconds: Double
-    var audioURLString: String
+    /// Không còn ràng buộc duy nhất nào ở đây, và mặc định là bắt buộc — xem
+    /// ghi chú tương ứng trong `Track`.
+    var id: UUID = UUID()
+    var jamendoID: String = ""
+    var title: String = ""
+    var artistName: String = ""
+    var albumTitle: String = ""
+    var durationSeconds: Double = 0
+    var audioURLString: String = ""
     /// The licence this track is offered under. Shown to the user — CC-BY
     /// obliges visible credit — and `nil` only when the catalogue omitted it.
     var licenceURLString: String?
@@ -39,8 +37,8 @@ final class JamendoTrack {
     /// Documents-relative, downloaded when the track was saved. See
     /// `JamendoLibraryService.save`.
     var artworkRelativePath: String?
-    var dateAdded: Date
-    var playCount: Int
+    var dateAdded: Date = Date()
+    var playCount: Int = 0
     var lastPlayedAt: Date?
 
     init(
