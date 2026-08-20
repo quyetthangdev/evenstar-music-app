@@ -122,6 +122,20 @@ struct EvenstarApp: App {
                 .environment(jamendoLibrary)
                 .environment(libraryStore)
                 .environment(searchResults)
+                .task {
+                    // Một lượt mỗi lần mở app. Hàng trùng đến trong phiên này
+                    // được dọn ở lần mở sau — xem `DuplicateSweep`.
+                    //
+                    // Thất bại chỉ ghi log: một lượt dọn dẹp không chạy được
+                    // không phải lý do để chặn người dùng nghe nhạc.
+                    do {
+                        try DuplicateSweep.run(context: modelContainer.mainContext)
+                    } catch {
+                        AppLog.library.error(
+                            "Lượt gộp trùng thất bại: \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
         }
         .modelContainer(modelContainer)
     }
