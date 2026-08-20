@@ -28,7 +28,22 @@ final class MockAudioPlayer: AudioPlayerProtocol {
     private(set) var playCallCount = 0
     private(set) var pauseCallCount = 0
 
+    /// Every URL handed to `load(url:)`, in call order — successes and
+    /// failures alike.
+    ///
+    /// `loadedURL` is written only on success, so it cannot witness a skip: a
+    /// test that only checks `loadedURL` (or a terminal state like
+    /// `isPlaying`) after a run of failures cannot tell three tried-and-failed
+    /// tracks apart from one, because a regression that gives up after the
+    /// first failure reaches the same terminal state. This records the whole
+    /// attempted sequence so a test can assert *how many* tracks the skip
+    /// loop tried, and *in what order* — including a wrap back to the start
+    /// of the queue, which a bare count would not distinguish from more
+    /// forward attempts.
+    private(set) var loadAttempts: [URL] = []
+
     func load(url: URL) throws {
+        loadAttempts.append(url)
         if failingURLs.contains(url) {
             throw MockAudioPlayerError.loadFailed
         }

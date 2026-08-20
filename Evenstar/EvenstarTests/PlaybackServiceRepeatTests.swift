@@ -518,6 +518,14 @@ final class PlaybackServiceRepeatTests: XCTestCase {
     /// wrap as well as advance: with *nothing* loadable it must still terminate
     /// rather than circle the queue forever. A regression here hangs the suite
     /// rather than failing it, which is why it is stated explicitly.
+    ///
+    /// **The terminal-state asserts alone cannot tell "tried all three" from
+    /// "gave up after the first."** A regression that replaces the `catch`
+    /// block with an immediate `stopPlayback(); return` on the first failure
+    /// reaches the same `isPlaying == false`, `currentTrack == nil`,
+    /// `queue.isEmpty` — the very first attempt in this queue already fails.
+    /// `player.loadAttempts` records every `load(url:)` call regardless of
+    /// outcome, which is the only thing that can distinguish the two.
     func testAllTracksFailWithRepeatAllStillStopsWithoutHanging() throws {
         let (service, player, library) = try makeStack()
         let list = try tracks(3, library: library)
@@ -531,6 +539,8 @@ final class PlaybackServiceRepeatTests: XCTestCase {
         XCTAssertFalse(service.isPlaying)
         XCTAssertNil(service.currentTrack)
         XCTAssertTrue(service.queue.isEmpty)
+        XCTAssertEqual(player.loadAttempts, list.map { $0.playbackURL() },
+                       "Must try every queued track, in order, before giving up.")
     }
 
     /// Restore's own skip loop, which is the same shape one method down. Lower

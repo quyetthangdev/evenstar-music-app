@@ -61,6 +61,15 @@ final class AbsentTrackPlaybackTests: XCTestCase {
     ///
     /// Bó test treo cứng ở đây thì đó chính là lỗi cần bắt, và nó bắt được vì
     /// vòng lặp có chặn trên `queue.count`.
+    ///
+    /// **`isPlaying == false` không đủ.** Một quy hồi tự nhiên — thay `catch`
+    /// bằng `stopPlayback(); return` ngay lần thất bại đầu tiên, xoá bộ đếm
+    /// `attempts` và cái chặn — cũng dừng ở `isPlaying == false`, vì lần thử
+    /// đầu tiên trong hàng đợi này vốn đã thất bại. `loadedURL` cũng không
+    /// giúp gì: nó chỉ ghi khi thành công, nên vẫn là `nil` dù vòng lặp thử
+    /// một bài hay cả ba. `player.loadAttempts` ghi lại mọi lần gọi
+    /// `load(url:)` bất kể thành hay bại, nên đây là thứ duy nhất phân biệt
+    /// được "thử cả ba rồi mới dừng" với "thử một rồi dừng".
     func testAQueueOfEntirelyAbsentTracksStopsRatherThanLooping() throws {
         let (service, player, library) = try makeStack()
         let all = try tracks(3, library: library)
@@ -69,6 +78,8 @@ final class AbsentTrackPlaybackTests: XCTestCase {
         service.play(all[0], in: all)
 
         XCTAssertFalse(service.isPlaying, "Không mở được bài nào thì phải dừng.")
+        XCTAssertEqual(player.loadAttempts, all.map { $0.playbackURL() },
+                       "Phải thử đúng cả ba bài, theo đúng thứ tự hàng đợi, trước khi dừng.")
     }
 
     /// Cùng ca trên nhưng có repeat bật. `loadCurrentAndPlay()` quay về đầu
@@ -78,15 +89,27 @@ final class AbsentTrackPlaybackTests: XCTestCase {
     /// `repeatMode` chỉ đọc được từ ngoài (`private(set)`); cách duy nhất để
     /// bật nó là `cycleRepeatMode()`, đi từ `.off` sang `.all` sau đúng một
     /// lần gọi — xem `PlaybackServiceRepeatTests.testCycleRunsOffAllOneOff`.
+    ///
+    /// **Cùng điểm mù với test trên, và còn dễ bỏ sót hơn:** dưới quy hồi
+    /// "dừng ngay lần thất bại đầu", `next()` thử đúng một bài (`all[1]`) rồi
+    /// dừng, và `isPlaying == false` giống hệt kết quả đúng. Chỉ có chuỗi
+    /// `loadAttempts` mới lộ ra rằng vòng lặp đúng phải thử hết `all[1]`,
+    /// `all[2]`, rồi **quay về `all[0]`** — cái quay vòng chính là thứ một
+    /// con số đếm đơn thuần không phân biệt được với ba lần thử xuôi liên
+    /// tiếp.
     func testRepeatAllDoesNotLoopForeverOverAbsentTracks() throws {
         let (service, player, library) = try makeStack()
         let all = try tracks(3, library: library)
         service.play(all[0], in: all)
         service.cycleRepeatMode()  // .all
         player.failingURLs = Set(all.map { $0.playbackURL() })
+        let attemptsBeforeNext = player.loadAttempts.count
 
         service.next()
 
         XCTAssertFalse(service.isPlaying)
+        let attemptedDuringNext = Array(player.loadAttempts[attemptsBeforeNext...])
+        XCTAssertEqual(attemptedDuringNext, [all[1], all[2], all[0]].map { $0.playbackURL() },
+                       "Phải thử all[1], all[2], rồi quay vòng về all[0] trước khi dừng.")
     }
 }
