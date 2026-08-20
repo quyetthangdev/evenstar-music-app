@@ -436,6 +436,11 @@ struct SongsView: View {
         // announces the row itself, so the ordering this view used to be
         // responsible for cannot be got wrong by the next caller. See
         // `LibraryService.onTrackWillBeDeleted`.
+        //
+        // Unchanged: queue adjustment still lands before the DB delete, so if
+        // `library.delete` throws, the row can survive pointing at
+        // already-adjusted playback state and possibly-removed files.
+        // Recovering from that is Phase 2d's job.
         do {
             try library.delete(track)
         } catch {
