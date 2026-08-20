@@ -64,6 +64,14 @@ struct SongsView: View {
     /// empty screen they did not ask for.
     @State private var source: LibrarySource = .local
 
+    /// Bài đang chờ xác nhận xoá vì nó không có trên máy này. `nil` khi không
+    /// có hộp thoại nào đang mở.
+    ///
+    /// Giữ chính hàng chứ không giữ `persistentModelID`: khác với
+    /// `artworkTarget`, đường này không đi qua một picker của hệ thống có thể
+    /// đóng mà không báo, và hàng vẫn sống suốt lúc hộp thoại mở.
+    @State private var pendingAbsentDelete: Track?
+
     enum LibrarySource: String, CaseIterable {
         case local, drive, jamendo
         /// See `LibraryTab.label` for why this is `String(localized:)` and
@@ -215,6 +223,21 @@ struct SongsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(pickerErrorMessage ?? "")
+        }
+        .alert(
+            "Xoá khỏi mọi máy?",
+            isPresented: Binding(
+                get: { pendingAbsentDelete != nil },
+                set: { isPresented in
+                    if !isPresented { pendingAbsentDelete = nil }
+                }
+            ),
+            presenting: pendingAbsentDelete
+        ) { track in
+            Button("Xoá", role: .destructive) { performDelete(track) }
+            Button("Huỷ", role: .cancel) {}
+        } message: { _ in
+            Text("Bài này không có trên máy này. Xoá sẽ gỡ nó khỏi mọi máy.")
         }
     }
 
@@ -394,17 +417,25 @@ struct SongsView: View {
         inaccessibleFailures = []
     }
 
+    /// Vào đây từ cú vuốt. Bài có mặt thì xoá luôn; bài vắng mặt thì hỏi trước.
+    ///
+    /// Xoá một bài vắng mặt trông như dọn một hàng rác nhưng nó gỡ bài khỏi
+    /// **mọi máy**, kể cả máy đang giữ file thật. Xem `TrackPresence.deleteAction`.
     private func deleteTrack(_ track: Track) {
+        switch TrackPresence.deleteAction(isPresent: store.isPresent(track)) {
+        case .deleteNow:
+            performDelete(track)
+        case .confirmFirst:
+            pendingAbsentDelete = track
+        }
+    }
+
+    private func performDelete(_ track: Track) {
         // No `playback.handleTrackDeleted(track)` here any more, and its absence
         // is the fix rather than an omission: `LibraryService.delete(_:)` now
         // announces the row itself, so the ordering this view used to be
         // responsible for cannot be got wrong by the next caller. See
         // `LibraryService.onTrackWillBeDeleted`.
-        //
-        // Unchanged: queue adjustment still lands before the DB delete, so if
-        // `library.delete` throws, the row can survive pointing at
-        // already-adjusted playback state and possibly-removed files.
-        // Recovering from that is Phase 2d's job.
         do {
             try library.delete(track)
         } catch {

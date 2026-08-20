@@ -2190,6 +2190,38 @@
           }
         }
       }
+    },
+    "Xoá khỏi mọi máy?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete from all devices?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xoá khỏi mọi máy?"
+          }
+        }
+      }
+    },
+    "Bài này không có trên máy này. Xoá sẽ gỡ nó khỏi mọi máy." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This song isn't on this device. Deleting removes it from all your devices."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bài này không có trên máy này. Xoá sẽ gỡ nó khỏi mọi máy."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
