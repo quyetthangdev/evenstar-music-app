@@ -18,6 +18,17 @@ struct SongRow: View {
     /// folder name instead. Local lists pass nothing and get the artist.
     var subtitle: String?
 
+    /// Bài này không có file trên máy đang chạy.
+    ///
+    /// Mặc định `false`, nên `DriveSongsList` và `JamendoSongsList` không phải
+    /// đổi một chữ: một `DriveTrack` hay `JamendoTrack` là URL mạng, và "có
+    /// trên máy này" không có nghĩa gì với chúng.
+    ///
+    /// Nhãn chữ chứ không chỉ làm mờ, và đó không phải trang trí: độ mờ một
+    /// mình không đọc được bằng VoiceOver, và cũng không phân biệt được với
+    /// một hàng đang bị vô hiệu vì lý do khác.
+    var isAbsent: Bool = false
+
     var body: some View {
         HStack(spacing: 12) {
             ArtworkThumbnail(relativePath: track.artworkRelativePath, size: 44)
@@ -25,13 +36,21 @@ struct SongRow: View {
                 Text(track.title)
                     .font(.body)
                     .lineLimit(1)
-                Text(subtitle ?? track.artistName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if isAbsent {
+                    Label("Không có trên máy này", systemImage: "icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(subtitle ?? track.artistName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Spacer()
         }
         .padding(.vertical, 4)
+        .opacity(isAbsent ? 0.55 : 1)
     }
 }

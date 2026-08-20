@@ -2174,6 +2174,22 @@
           }
         }
       }
+    },
+    "Không có trên máy này" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not on this device"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có trên máy này"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

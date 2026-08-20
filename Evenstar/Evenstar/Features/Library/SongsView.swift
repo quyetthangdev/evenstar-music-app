@@ -259,9 +259,16 @@ struct SongsView: View {
             EmptyLibraryView(onImportTap: { showFileImporter = true })
         } else {
             List(tracks) { track in
-                SongRow(track: track)
+                SongRow(track: track, isAbsent: !store.isPresent(track))
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        // Chạm vào hàng vắng mặt không làm gì, và **không** bật
+                        // một hộp thoại giải thích: hàng đã mờ và đã mang chữ
+                        // "Không có trên máy này" trước khi ngón tay chạm vào.
+                        // Một hộp thoại cho mỗi cú chạm nhầm là tiếng ồn, và nó
+                        // dạy người dùng bấm-qua-không-đọc đúng lúc lời cảnh
+                        // báo lúc xoá cần được đọc.
+                        guard store.isPresent(track) else { return }
                         playback.play(track, in: tracks)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
