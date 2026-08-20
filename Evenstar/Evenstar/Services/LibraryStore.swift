@@ -34,6 +34,17 @@ final class LibraryStore {
     /// library state the database does not agree with.
     private(set) var tracks: [Track]
 
+    /// Đường dẫn tương đối của những file thật sự nằm trên máy này.
+    ///
+    /// **Không phải một thuộc tính của `Track`, và không bao giờ được thành
+    /// một** — xem `TrackPresence` về lý do. Nó sống ở đây vì đây đã là chỗ
+    /// duy nhất mọi màn hình đọc thư viện.
+    private(set) var presentRelativePaths: Set<String>
+
+    /// Thư mục để quét. Tham số hoá chỉ để test được với một thư mục tạm; ở
+    /// bản chạy thật nó luôn là `FileLocation.musicFolderURL()`.
+    private let musicFolder: URL
+
     /// Seeded at launch from a plain fetch rather than left empty for the
     /// bridge to fill on the first update pass.
     ///
@@ -42,8 +53,17 @@ final class LibraryStore {
     /// "Chưa có album"/"Chưa có nghệ sĩ". Leaving the first frame to guess
     /// wrong risks showing a user with a full library the screen that says they
     /// have no music, for however long the first pass takes.
-    init(tracks: [Track] = []) {
+    init(tracks: [Track] = [],
+         presentRelativePaths: Set<String> = [],
+         musicFolder: URL = FileLocation.musicFolderURL()) {
         self.tracks = tracks
+        self.presentRelativePaths = presentRelativePaths
+        self.musicFolder = musicFolder
+    }
+
+    /// Bài này có phát được trên máy này không.
+    func isPresent(_ track: Track) -> Bool {
+        TrackPresence.isPresent(track.relativePath, in: presentRelativePaths)
     }
 
     /// Takes a fresh fetch, and ignores one that says nothing new.
@@ -53,9 +73,19 @@ final class LibraryStore {
     /// are five screens. The comparison is by persistent identity — SwiftData
     /// rows are `Equatable` that way — so it answers "same rows, same order",
     /// which is exactly the question the screens care about.
+    ///
+    /// **Quét lại tập có mặt nằm sau cái chốt ấy, và chỗ đặt là có tính toán.**
+    /// Đặt trước chốt thì mỗi lần lưu bất kỳ thuộc tính nào cũng tốn một lượt
+    /// đọc thư mục. Đặt sau chốt thì nó chỉ chạy khi tập hàng thật sự đổi —
+    /// nghĩa là lúc nhập và lúc xoá, đúng hai lúc file trên đĩa có thể đã khác.
+    ///
+    /// Cái nó **không** bắt được là file bị xoá từ ngoài app trong lúc app đang
+    /// chạy: không hàng nào đổi nên không quét lại. Chịu được, vì vòng bỏ-qua
+    /// trong `PlaybackService.loadCurrentAndPlay()` vẫn không cho nhạc dừng.
     func replace(with fetched: [Track]) {
         guard fetched != tracks else { return }
         tracks = fetched
+        presentRelativePaths = TrackPresence.scan(musicFolder: musicFolder)
     }
 
     /// Drops a row that is about to be deleted, **before** it is deleted.

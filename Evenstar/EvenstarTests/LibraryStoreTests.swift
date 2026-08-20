@@ -176,4 +176,37 @@ final class LibraryStoreTests: XCTestCase {
     //
     // What stays over there rather than here: everything about the hook. What
     // stays here: `remove(_:)`'s own behaviour, above.
+
+    // MARK: - presentRelativePaths / isPresent(_:)
+
+    /// Hàng có file trên máy này thì phát được; hàng đến từ máy khác thì không.
+    func testAtrackIsPresentOnlyWhenItsFileIsInTheScannedSet() throws {
+        let here = InMemoryLibrary.makeTrack(relativePath: "Music/here.mp3")
+        let elsewhere = InMemoryLibrary.makeTrack(relativePath: "Music/elsewhere.mp3")
+        let store = LibraryStore(
+            tracks: [here, elsewhere],
+            presentRelativePaths: ["Music/here.mp3"]
+        )
+        XCTAssertTrue(store.isPresent(here))
+        XCTAssertFalse(store.isPresent(elsewhere))
+    }
+
+    /// Vừa nhập xong một bài mà nó hiện mờ với chữ "không có trên máy này" là
+    /// một lỗi nhìn thấy ngay, và nó xảy ra nếu tập có mặt chỉ được nạp một lần
+    /// lúc khởi động. Nên nó được quét lại mỗi khi tập hàng đổi.
+    func testTheScannedSetIsRefreshedWhenTheRowSetChanges() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let store = LibraryStore(musicFolder: folder)
+        let imported = InMemoryLibrary.makeTrack(relativePath: "Music/new.mp3")
+        XCTAssertFalse(store.isPresent(imported), "Chưa có file thì chưa có mặt.")
+
+        try Data().write(to: folder.appendingPathComponent("new.mp3"))
+        store.replace(with: [imported])
+
+        XCTAssertTrue(store.isPresent(imported), "Sau khi tập hàng đổi, phải quét lại.")
+    }
 }

@@ -55,13 +55,18 @@ struct EvenstarApp: App {
         // A failed seed is survivable and so is not fatal: the bridge fills the
         // store on the first update pass regardless.
         let store: LibraryStore
+        // Cùng lượt quét mà `replace(with:)` sẽ chạy lại về sau, làm ngay ở đây
+        // để khung hình đầu tiên vẽ đúng hàng nào mờ — không phải vẽ đủ rồi mờ
+        // đi ở khung thứ hai.
+        let present = TrackPresence.scan()
         do {
-            store = LibraryStore(tracks: try libService.fetchAllTracks())
+            store = LibraryStore(tracks: try libService.fetchAllTracks(),
+                                 presentRelativePaths: present)
         } catch {
             // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
             // path for the library not opening at all belongs to 2d.
             AppLog.library.error("Initial library fetch failed: \(error.localizedDescription, privacy: .public)")
-            store = LibraryStore()
+            store = LibraryStore(presentRelativePaths: present)
         }
         // The local library's half of the same wiring the two remote sources get
         // below. `SongsView.deleteTrack` used to make this call by hand, which
