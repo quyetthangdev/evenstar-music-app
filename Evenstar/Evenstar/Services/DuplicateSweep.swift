@@ -31,8 +31,12 @@ import OSLog
 /// ─────────────────────────────────────────────────────────────────────────
 /// KHI NÀO CHẠY
 /// ─────────────────────────────────────────────────────────────────────────
-/// Một lượt lúc khởi động, từ `EvenstarApp`. Nghĩa là hàng trùng đến trong phiên
-/// này chỉ được dọn ở **lần mở app sau**, và đó là đánh đổi có chủ ý: bám theo
+/// Một lượt lúc khởi động, từ `EvenstarApp`, **trước**
+/// `PlaybackService.restoreFromPersistedState()` và tuần tự trong cùng một
+/// `.task` với nó. Thứ tự ấy là bắt buộc; lý do đầy đủ ở ngay chỗ gọi.
+///
+/// Nghĩa là hàng trùng đến trong phiên này chỉ được dọn ở **lần mở app sau**,
+/// và đó là đánh đổi có chủ ý: bám theo
 /// `NSPersistentStoreRemoteChange` thì dọn sớm hơn nhưng thêm một luồng sự kiện
 /// bắn liên tục vào một thao tác có xoá hàng. Hàng trùng nằm lại thêm một phiên
 /// là chuyện chịu được.
@@ -50,10 +54,18 @@ import OSLog
 /// `NSObjectInaccessibleException`, ngoại lệ Objective-C mà Swift không bắt
 /// được.
 ///
-/// Ca thật, không phải giả định: lúc khởi động, `.task` của `RootView` khôi
-/// phục hàng đợi đã lưu trong khi `.task` của `EvenstarApp` chạy lượt quét này.
-/// SwiftUI **không** xếp thứ tự hai cái đó. Nếu khôi phục xong trước, hàng đợi
-/// trong bộ nhớ đang giữ đúng hàng mà lượt quét sắp xoá.
+/// Ca thật, không phải giả định — và nay đã bị chặn ở chỗ gọi: có một thời
+/// `.task` của `RootView` khôi phục hàng đợi đã lưu **song song** với `.task`
+/// của `EvenstarApp` chạy lượt quét này, mà SwiftUI không xếp thứ tự hai cái
+/// đó. Khôi phục xong trước thì hàng đợi trong bộ nhớ đang giữ đúng hàng mà
+/// lượt quét sắp xoá. Giờ hai việc chạy tuần tự trong một `.task`, quét trước
+/// khôi phục sau, nên lúc lượt quét chạy thì hàng đợi vẫn còn rỗng.
+///
+/// Cái báo trước vì thế **vẫn giữ nhưng đã thành dây bảo hiểm**, không còn là
+/// thứ đứng chắn duy nhất: nó bảo vệ mọi chỗ gọi tương lai chạy lượt quét khi
+/// hàng đợi đã có bài — một lượt quét theo `NSPersistentStoreRemoteChange`
+/// chẳng hạn, thứ mục "KHI NÀO CHẠY" bên trên để ngỏ. Đừng bỏ nó đi vì "đã có
+/// thứ tự rồi": thứ tự chỉ đúng cho đúng một chỗ gọi.
 ///
 /// Hỏng thứ hai, không cần crash nào: `PlaybackService` ghi lại các `id`
 /// **trong bộ nhớ** ở nhịp ghi tiết chế kế tiếp, đè lên `PlaybackState` mà lượt

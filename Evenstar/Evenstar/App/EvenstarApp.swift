@@ -26,9 +26,11 @@ struct EvenstarApp: App {
     init() {
         let container: ModelContainer
         do {
-            container = try ModelContainer(
-                for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self, JamendoTrack.self
-            )
+            // Một container, **hai** kho: bốn bảng thư viện đồng bộ qua
+            // CloudKit, `PlaybackState` ở lại máy này. Toàn bộ lý lẽ — kể cả
+            // vì sao kho thư viện phải giữ tên mặc định — nằm ở
+            // `EvenstarStores`.
+            container = try EvenstarStores.makeContainer()
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -127,21 +129,50 @@ struct EvenstarApp: App {
                 .environment(jamendoLibrary)
                 .environment(libraryStore)
                 .environment(searchResults)
+                // ─────────────────────────────────────────────────────────
+                // MỘT `.task` LÚC MỞ APP, VÀ THỨ TỰ BÊN TRONG LÀ BẮT BUỘC
+                // ─────────────────────────────────────────────────────────
+                // Quét trùng **trước**, khôi phục hàng đợi **sau**, tuần tự
+                // trong cùng một task. Đừng tách ra thành hai `.task` song
+                // song cho app mở nhanh hơn: đó chính là hình dạng vừa bị sửa,
+                // và đây là chuyện nó làm.
+                //
+                // Trước, lượt quét nằm ở `.task` này còn khôi phục nằm ở một
+                // `.task` bên trong `RootView`. **SwiftUI không xếp thứ tự hai
+                // `.task` anh em.** Nếu khôi phục thắng, hàng đợi trong bộ nhớ
+                // đang giữ đúng hàng mà lượt quét sắp xoá — và lượt quét báo
+                // từng hàng sắp xoá qua `PlaybackService.handleTrackDeleted`.
+                // Nhánh xấu nhất: hàng bị gộp đi là bài **đang phát**, nằm
+                // **cuối** hàng đợi, repeat **tắt**. `handleTrackDeleted` rơi
+                // vào `queueIndex >= queue.count`, gọi `stopPlayback()`, rồi
+                // ghi đè `PlaybackState` bằng một hàng đợi rỗng. Người dùng mở
+                // lại app và thấy hàng đợi lẫn vị trí đang nghe biến mất sạch.
+                //
+                // Chạy tuần tự thì lượt quét xong khi hàng đợi trong bộ nhớ
+                // vẫn còn **rỗng** — chưa có gì để `handleTrackDeleted` phá —
+                // và `PlaybackState` mà `restoreFromPersistedState` đọc ngay
+                // sau đó đã được trỏ lại và khử trùng lặp xong. Cái móc báo
+                // trước vẫn giữ, nhưng từ đây nó là dây bảo hiểm chứ không còn
+                // là thứ đứng giữa người dùng và một hàng đợi bị xoá trắng.
+                //
+                // Ở đây chứ không trong `RootView`: đây là chỗ duy nhất cả
+                // `modelContainer` lẫn `playback` đều sẵn trong tầm, và thân
+                // `RootView` mang `.id(language)`, thứ có thể dựng lại một
+                // `.task` nằm bên trong khi người dùng đổi ngôn ngữ. `.task`
+                // này bám vào `RootView()` ở `WindowGroup`, ngoài chỗ `.id`
+                // với tới được, nên nó chạy đúng **một** lượt mỗi lần mở app.
                 .task {
                     // Một lượt mỗi lần mở app. Hàng trùng đến trong phiên này
                     // được dọn ở lần mở sau — xem `DuplicateSweep`.
                     //
                     // `onRowWillBeDeleted` là bản thứ tư của cùng cái móc mà
                     // `libService`, `driveLib` và `jamendoLib` đã có ở trên, và
-                    // nó phải có ở đây vì lượt quét cũng xoá hàng. `.task` này
-                    // và `.task` khôi phục hàng đợi của `RootView` **không**
-                    // được SwiftUI xếp thứ tự: nếu khôi phục xong trước, hàng
-                    // đợi trong bộ nhớ đang giữ đúng hàng mà lượt quét sắp xoá,
-                    // và nhịp đọc vị trí kế tiếp đọc một hàng đã chết. Xem ghi
-                    // chú ở đầu `DuplicateSweep`.
+                    // nó phải có ở đây vì lượt quét cũng xoá hàng.
                     //
                     // Thất bại chỉ ghi log: một lượt dọn dẹp không chạy được
-                    // không phải lý do để chặn người dùng nghe nhạc.
+                    // không phải lý do để chặn người dùng nghe nhạc — và cũng
+                    // không phải lý do để bỏ luôn bước khôi phục bên dưới, nên
+                    // `catch` nằm quanh riêng lượt quét.
                     do {
                         try DuplicateSweep.run(
                             context: modelContainer.mainContext,
@@ -152,6 +183,11 @@ struct EvenstarApp: App {
                             "Lượt gộp trùng thất bại: \(error.localizedDescription, privacy: .public)"
                         )
                     }
+                    // Khôi phục hàng đợi đã lưu là việc của lúc mở app, nên nó
+                    // ở gốc chứ không ở một tab nào. Ở Bài hát thì nó chỉ chạy
+                    // được nhờ tab ấy tình cờ được chọn trước, và sẽ âm thầm
+                    // hỏng vào ngày tab mặc định đổi.
+                    await playback.restoreFromPersistedState()
                 }
         }
         .modelContainer(modelContainer)

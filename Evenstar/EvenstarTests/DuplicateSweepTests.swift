@@ -11,13 +11,11 @@ import SwiftData
 @MainActor
 final class DuplicateSweepTests: XCTestCase {
 
+    /// `InMemoryLibrary.makeContainer()` chứ không dựng một cấu hình đơn tại
+    /// chỗ: từ khi app tách làm hai kho, một cấu hình đơn trên cùng năm model
+    /// không insert nổi `PlaybackState`. Lý do đầy đủ ở `InMemoryLibrary`.
     private func makeContext() throws -> ModelContext {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(
-            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self, JamendoTrack.self,
-            configurations: config
-        )
-        return ModelContext(container)
+        ModelContext(try InMemoryLibrary.makeContainer())
     }
 
     private func jamendo(_ id: UUID, jamendoID: String, added: TimeInterval, plays: Int) -> JamendoTrack {
@@ -242,9 +240,15 @@ final class DuplicateSweepTests: XCTestCase {
         XCTAssertEqual(titles.count, 2, "Đọc được `title` nghĩa là hàng còn sống lúc báo.")
     }
 
-    /// Ca thật ở lúc khởi động: `.task` khôi phục hàng đợi của `RootView` chạy
-    /// xong **trước** `.task` chạy lượt quét — SwiftUI không xếp thứ tự hai cái
-    /// đó — nên hàng đợi trong bộ nhớ đang giữ đúng hàng sắp bị xoá.
+    /// Hàng đợi trong bộ nhớ đang giữ đúng hàng sắp bị xoá.
+    ///
+    /// Ca sinh ra nó là lúc khởi động, hồi `.task` khôi phục hàng đợi của
+    /// `RootView` còn chạy song song với `.task` chạy lượt quét — SwiftUI không
+    /// xếp thứ tự hai cái đó. Chỗ gọi nay đã chạy tuần tự, quét trước khôi phục
+    /// sau (xem `EvenstarApp`), nên ở đường chạy thật hàng đợi còn rỗng lúc
+    /// quét. Test này **vẫn ở lại**: cái móc báo trước là hợp đồng của
+    /// `DuplicateSweep.run`, đúng cho mọi chỗ gọi, kể cả chỗ gọi tương lai chạy
+    /// lượt quét khi hàng đợi đã có bài.
     ///
     /// Đây là bó test duy nhất chạy đúng dây nối mà `EvenstarApp` dựng, nên nó
     /// dựng cả `PlaybackService` thật chứ không đếm số lần gọi closure.
@@ -296,5 +300,58 @@ final class DuplicateSweepTests: XCTestCase {
         _ = try DuplicateSweep.run(context: context)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
                        "File bìa của hàng bị gộp phải đi theo hàng, như `unsave` vẫn làm.")
+    }
+
+    // MARK: - Thứ tự lúc khởi động
+
+    /// Chạy đúng trình tự `EvenstarApp` chạy lúc mở app — **quét trước, khôi
+    /// phục sau** — trên đúng ca xấu nhất, và ghim kết quả.
+    ///
+    /// Ca ấy: hàng bị gộp đi là bài **đang phát**, nằm **cuối** hàng đợi, repeat
+    /// **tắt**. Nếu khôi phục chạy trước (hình dạng cũ: hai `.task` anh em
+    /// không được SwiftUI xếp thứ tự), hàng đợi trong bộ nhớ giữ hàng sắp chết,
+    /// lượt quét báo qua `handleTrackDeleted`, chỗ ấy rơi vào
+    /// `queueIndex >= queue.count`, gọi `stopPlayback()` và ghi đè
+    /// `PlaybackState` bằng hàng đợi rỗng — người dùng mất sạch hàng đợi lẫn vị
+    /// trí đang nghe.
+    ///
+    /// Theo thứ tự đúng thì `PlaybackState` đã được trỏ lại xong trước khi
+    /// khôi phục đọc nó, nên bài ấy quay lại dưới `id` của hàng được giữ.
+    func testSweepTruocRestoreGiuNguyenHangDoiVaViTri() async throws {
+        let context = try makeContext()
+        let library = LibraryService(context: context)
+
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        context.insert(jamendo(keptID, jamendoID: "j1", added: 100, plays: 0))
+        context.insert(jamendo(goneID, jamendoID: "j1", added: 200, plays: 0))
+
+        // Hàng đợi đã lưu ở phiên trước: đúng một bài, và nó là hàng sắp bị gộp
+        // đi. `queueIndex = 0` trên một mảng một phần tử là "đang phát, và là
+        // bài cuối" — nhánh mà `handleTrackDeleted` dừng nhạc.
+        let state = library.playbackState
+        state.queueTrackIDs = [goneID]
+        state.unshuffledQueueTrackIDs = [goneID]
+        state.queueIndex = 0
+        state.currentTrackID = goneID
+        state.positionSeconds = 42
+        state.repeatModeRaw = RepeatMode.off.rawValue
+        try library.save()
+
+        let playback = PlaybackService(player: MockAudioPlayer(),
+                                       nowPlaying: MockNowPlayingPublisher(),
+                                       library: library)
+
+        // Đúng thứ tự của `EvenstarApp.task`.
+        _ = try DuplicateSweep.run(context: context) { playback.handleTrackDeleted($0) }
+        await playback.restoreFromPersistedState()
+
+        XCTAssertEqual(playback.queue.map(\.id), [keptID],
+                       "Hàng đợi phải sống sót, trỏ sang hàng được giữ.")
+        XCTAssertEqual(playback.currentTrack?.id, keptID)
+        XCTAssertEqual(playback.position, 42, accuracy: 0.001,
+                       "Vị trí đang nghe phải còn nguyên.")
+        XCTAssertEqual(library.playbackState.queueTrackIDs, [keptID],
+                       "Và hàng đã lưu cũng vậy — không bị ghi đè bằng mảng rỗng.")
     }
 }

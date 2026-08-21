@@ -1258,10 +1258,8 @@ final class ReduceMotionRootViewWiringTests: XCTestCase {
     /// the screens inside its `TabView`, and a missing one is a crash on
     /// render rather than a compile error, so they are all here.
     private func renderRootView(reduceMotion injected: Bool) throws {
-        let container = try ModelContainer(
-            for: Track.self, PlaybackState.self, DriveFolder.self, DriveTrack.self, JamendoTrack.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        // Hai kho, như app — xem `InMemoryLibrary`.
+        let container = try InMemoryLibrary.makeContainer()
         let library = LibraryService(context: ModelContext(container))
         let playback = PlaybackService(
             player: MockAudioPlayer(),

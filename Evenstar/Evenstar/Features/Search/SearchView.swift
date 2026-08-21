@@ -180,7 +180,11 @@ struct SearchView: View {
     do {
         container = try ModelContainer(
             for: Track.self, PlaybackState.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            // `.none` chứ không để mặc định `.automatic`: mặc định đọc
+            // entitlement iCloud của target, nên một preview mở ra trên máy
+            // đã đăng nhập iCloud sẽ dựng cả CloudKit — và đẩy lược đồ lên
+            // môi trường Development, thứ chỉ thêm được chứ không sửa được.
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
     } catch {
         fatalError("Failed to create preview ModelContainer: \(error)")

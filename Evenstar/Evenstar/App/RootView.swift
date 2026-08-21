@@ -414,10 +414,10 @@ struct RootView: View {
         // Reading `language` is what makes the line above re-evaluate; without
         // it the environment would keep the locale resolved at first launch.
         .id(language)
-        // Restoring the saved queue is an app-launch concern, so it belongs on
-        // the root and not on any one tab. On Bài hát it would work only by
-        // accident of that tab being selected first, and would silently stop
-        // the day the default tab changes.
-        .task { await playback.restoreFromPersistedState() }
+        // Khôi phục hàng đợi đã lưu **không** còn ở đây. Nó đã dời lên `.task`
+        // của `EvenstarApp`, ngay sau lượt quét trùng, và phải chạy sau lượt
+        // ấy — xem ghi chú dài ở chỗ đó. Đừng thêm lại một `.task` khôi phục ở
+        // đây: hai `.task` anh em không được SwiftUI xếp thứ tự, và cái giá là
+        // một hàng đợi bị xoá trắng.
     }
 }
