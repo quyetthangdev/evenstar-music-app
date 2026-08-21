@@ -177,7 +177,7 @@ final class LibraryStoreTests: XCTestCase {
     // What stays over there rather than here: everything about the hook. What
     // stays here: `remove(_:)`'s own behaviour, above.
 
-    // MARK: - presentRelativePaths / isPresent(_:)
+    // MARK: - presence / isPresent(_:)
 
     /// Hàng có file trên máy này thì phát được; hàng đến từ máy khác thì không.
     func testAtrackIsPresentOnlyWhenItsFileIsInTheScannedSet() throws {
@@ -185,7 +185,7 @@ final class LibraryStoreTests: XCTestCase {
         let elsewhere = InMemoryLibrary.makeTrack(relativePath: "Music/elsewhere.mp3")
         let store = LibraryStore(
             tracks: [here, elsewhere],
-            presentRelativePaths: ["Music/here.mp3"]
+            presence: .known(["Music/here.mp3"])
         )
         XCTAssertTrue(store.isPresent(here))
         XCTAssertFalse(store.isPresent(elsewhere))
@@ -208,5 +208,14 @@ final class LibraryStoreTests: XCTestCase {
         store.replace(with: [imported])
 
         XCTAssertTrue(store.isPresent(imported), "Sau khi tập hàng đổi, phải quét lại.")
+    }
+
+    /// Một lỗi đọc bất ngờ **không** được làm cả thư viện trông như vắng mặt —
+    /// xem `TrackPresence.Snapshot`. Đây là nửa của `LibraryStore` trong cùng
+    /// một quyết định: mở khoá phải đi hết đường tới `isPresent`.
+    func testAnUnreadableScanMakesEveryTrackCountAsPresent() throws {
+        let track = InMemoryLibrary.makeTrack(relativePath: "Music/here.mp3")
+        let store = LibraryStore(tracks: [track], presence: .unreadable)
+        XCTAssertTrue(store.isPresent(track))
     }
 }

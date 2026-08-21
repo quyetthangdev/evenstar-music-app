@@ -140,6 +140,8 @@ private struct ArtistCell: View {
     return ArtistsView(isMinimised: .constant(false))
         .environment(library)
         .environment(playback)
-        .environment(LibraryStore(tracks: tracksToInsert))
+        // `presence` phải kể tên đường dẫn của mấy bài mẫu — xem ghi chú trong
+        // preview của `AlbumDetailView`.
+        .environment(LibraryStore(tracks: tracksToInsert, presence: .known(["a.mp3", "b.mp3", "c.mp3"])))
         .modelContainer(container)
 }

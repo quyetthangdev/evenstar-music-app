@@ -79,7 +79,9 @@ struct ArtistDetailView: View {
         ArtistDetailView(artist: artist, isMinimised: .constant(false))
     }
     .environment(playback)
-    // Seeded by hand — see the same note in `AlbumDetailView`'s preview.
-    .environment(LibraryStore(tracks: tracks))
+    // Seeded by hand — see the same note in `AlbumDetailView`'s preview,
+    // including why `presence` has to name the sample tracks' paths.
+    .environment(LibraryStore(tracks: tracks,
+                              presence: .known(["a.mp3", "b.mp3", "c.mp3"])))
     .modelContainer(container)
 }

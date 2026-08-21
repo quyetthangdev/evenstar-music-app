@@ -61,12 +61,12 @@ struct EvenstarApp: App {
         let present = TrackPresence.scan()
         do {
             store = LibraryStore(tracks: try libService.fetchAllTracks(),
-                                 presentRelativePaths: present)
+                                 presence: present)
         } catch {
             // 2a: log only, like `SongsView.deleteTrack`. A user-facing failure
             // path for the library not opening at all belongs to 2d.
             AppLog.library.error("Initial library fetch failed: \(error.localizedDescription, privacy: .public)")
-            store = LibraryStore(presentRelativePaths: present)
+            store = LibraryStore(presence: present)
         }
         // The local library's half of the same wiring the two remote sources get
         // below. `SongsView.deleteTrack` used to make this call by hand, which

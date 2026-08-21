@@ -204,7 +204,10 @@ struct SearchView: View {
     return SearchView(query: "biển")
         .environment(library)
         .environment(playback)
-        .environment(LibraryStore(tracks: tracksToInsert))
+        // `presence` phải kể tên đường dẫn của mấy bài mẫu — xem ghi chú trong
+        // preview của `AlbumDetailView`.
+        .environment(LibraryStore(tracks: tracksToInsert,
+                                  presence: .known(["a.mp3", "c.mp3"])))
         // Empty here, and filled by the screen's own task the way it is in the
         // app — in `EvenstarApp` this object is also what the delete hook
         // prunes, which a preview has no delete to exercise.

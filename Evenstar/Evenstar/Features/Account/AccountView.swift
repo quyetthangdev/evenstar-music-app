@@ -229,6 +229,8 @@ struct AccountView: View {
         .environment(library)
         .environment(playback)
         .environment(driveLibrary)
-        .environment(LibraryStore(tracks: tracksToInsert))
+        // `presence` phải kể tên đường dẫn của mấy bài mẫu — xem ghi chú trong
+        // preview của `AlbumDetailView`.
+        .environment(LibraryStore(tracks: tracksToInsert, presence: .known(["a.mp3", "c.mp3"])))
         .modelContainer(container)
 }

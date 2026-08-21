@@ -114,6 +114,11 @@ struct AlbumDetailView: View {
     // Seeded by hand: `LibraryQueryBridge` lives in `RootView`, so a preview of
     // one screen has no query keeping the store in step with the container —
     // and this screen resolves its rows from the store.
-    .environment(LibraryStore(tracks: tracks))
+    //
+    // `presence` phải kể tên đúng đường dẫn của mấy bài mẫu. Bỏ trống thì
+    // `.known([])` nghĩa là "không bài nào có trên máy này", nên preview vẽ cả
+    // danh sách mờ tịt kèm chữ "Không có trên máy này" — một preview nói dối
+    // về màn hình nó xem trước.
+    .environment(LibraryStore(tracks: tracks, presence: .known(["a.mp3", "b.mp3"])))
     .modelContainer(container)
 }

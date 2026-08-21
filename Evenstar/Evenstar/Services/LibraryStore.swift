@@ -34,12 +34,18 @@ final class LibraryStore {
     /// library state the database does not agree with.
     private(set) var tracks: [Track]
 
-    /// Đường dẫn tương đối của những file thật sự nằm trên máy này.
+    /// Những file thật sự nằm trên máy này — hoặc "không đọc được, coi như có
+    /// đủ".
     ///
     /// **Không phải một thuộc tính của `Track`, và không bao giờ được thành
     /// một** — xem `TrackPresence` về lý do. Nó sống ở đây vì đây đã là chỗ
     /// duy nhất mọi màn hình đọc thư viện.
-    private(set) var presentRelativePaths: Set<String>
+    ///
+    /// `TrackPresence.Snapshot` chứ không phải `Set<String>`, và cái khác biệt
+    /// ấy là cả một lỗi: một tập rỗng nghĩa là "mọi bài đều vắng mặt", nên một
+    /// lỗi đọc thoáng qua từng làm cả thư viện mờ đi, từ chối mọi cú chạm và
+    /// bật cảnh báo xoá-khỏi-mọi-máy vĩnh viễn. Xem `TrackPresence.Snapshot`.
+    private(set) var presence: TrackPresence.Snapshot
 
     /// Thư mục để quét. Tham số hoá chỉ để test được với một thư mục tạm; ở
     /// bản chạy thật nó luôn là `FileLocation.musicFolderURL()`.
@@ -54,16 +60,16 @@ final class LibraryStore {
     /// wrong risks showing a user with a full library the screen that says they
     /// have no music, for however long the first pass takes.
     init(tracks: [Track] = [],
-         presentRelativePaths: Set<String> = [],
+         presence: TrackPresence.Snapshot = .known([]),
          musicFolder: URL = FileLocation.musicFolderURL()) {
         self.tracks = tracks
-        self.presentRelativePaths = presentRelativePaths
+        self.presence = presence
         self.musicFolder = musicFolder
     }
 
     /// Bài này có phát được trên máy này không.
     func isPresent(_ track: Track) -> Bool {
-        TrackPresence.isPresent(track.relativePath, in: presentRelativePaths)
+        TrackPresence.isPresent(track.relativePath, in: presence)
     }
 
     /// Takes a fresh fetch, and ignores one that says nothing new.
@@ -85,7 +91,7 @@ final class LibraryStore {
     func replace(with fetched: [Track]) {
         guard fetched != tracks else { return }
         tracks = fetched
-        presentRelativePaths = TrackPresence.scan(musicFolder: musicFolder)
+        presence = TrackPresence.scan(musicFolder: musicFolder)
     }
 
     /// Drops a row that is about to be deleted, **before** it is deleted.
