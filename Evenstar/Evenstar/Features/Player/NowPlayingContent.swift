@@ -397,7 +397,14 @@ struct NowPlayingContent: View {
     /// One icon, trailing. Apple Music puts three here — lyrics, AirPlay and
     /// the queue — and this app has nothing to put behind the other two.
     private var queueToggleRow: some View {
+        // Hai nút, hai đầu, một khoảng trống ở giữa.
+        //
+        // Nút hàng đợi vốn đứng một mình nép phải. Thêm hẹn giờ vào nép trái
+        // cho hàng một trục đối xứng: mắt đọc ra hai thứ ngang hàng nhau chứ
+        // không phải một cái chính và một cái phụ vừa được nhét thêm. Hai việc
+        // ấy đúng là ngang hàng — "xem gì sắp tới" và "bao giờ thì ngừng".
         HStack {
+            sleepTimerButton
             Spacer()
             TouchDownButton {
                 withAnimation(BottomBarStyle.queue) {
@@ -446,6 +453,75 @@ struct NowPlayingContent: View {
             ))
             .accessibilityAddTraits(showingQueue ? [.isButton, .isSelected] : .isButton)
         }
+    }
+
+    /// Hẹn giờ ngủ, đối xứng với nút hàng đợi ở đầu kia hàng.
+    ///
+    /// `Menu` chứ không sheet: sáu mốc, một mục "hết bài này" và một nút tắt
+    /// không đáng một màn hình, và một sheet dựng từ đây sẽ đẩy player card đi —
+    /// thứ `PlayerExpansion` đã tốn nhiều công để nó đứng yên.
+    ///
+    /// Số phút đọc từ `minutesRemaining`, thứ chỉ đổi mỗi phút chứ không mỗi
+    /// giây — xem `SleepTimer` về lý do nó là thuộc tính lưu trữ. Ở chế độ "hết
+    /// bài này" nó là `nil` và nút chỉ còn glyph đặc, vì ở đó không có con số
+    /// nào tồn tại để mà hiện.
+    private var sleepTimerButton: some View {
+        Menu {
+            ForEach(SleepTimer.presetMinutes, id: \.self) { minutes in
+                Button {
+                    playback.sleepTimer.start(minutes: minutes)
+                } label: {
+                    Text("\(minutes) phút", bundle: AppLanguage.resolvedBundle)
+                }
+            }
+            Divider()
+            Button {
+                playback.sleepTimer.startAtEndOfTrack()
+            } label: {
+                Text("Hết bài này", bundle: AppLanguage.resolvedBundle)
+            }
+            if playback.sleepTimer.isRunning {
+                Divider()
+                Button(role: .destructive) {
+                    playback.sleepTimer.cancel()
+                } label: {
+                    Text("Tắt hẹn giờ", bundle: AppLanguage.resolvedBundle)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: playback.sleepTimer.isRunning ? "moon.fill" : "moon")
+                    .font(.system(size: 18, weight: .semibold))
+                if let minutes = playback.sleepTimer.minutesRemaining {
+                    Text("\(minutes)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                }
+            }
+            // Cùng thang với nút hàng đợi bên kia: trắng đặc khi đang bật,
+            // `.secondary` khi tắt, `.tertiary` khi không có gì để hẹn.
+            .foregroundStyle(
+                playback.currentTrack == nil ? AnyShapeStyle(.tertiary)
+                    : playback.sleepTimer.isRunning ? AnyShapeStyle(Color.white)
+                                                    : AnyShapeStyle(.secondary)
+            )
+            .frame(height: Self.queueGlyphFrame)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .disabled(playback.currentTrack == nil)
+        .accessibilityLabel(String(
+            localized: "Hẹn giờ ngủ",
+            bundle: AppLanguage.resolvedBundle,
+            locale: AppLanguage.resolvedLocale
+        ))
+        .accessibilityValue(
+            playback.sleepTimer.minutesRemaining.map { "\($0)" } ?? String(
+                localized: "Tắt",
+                bundle: AppLanguage.resolvedBundle,
+                locale: AppLanguage.resolvedLocale
+            )
+        )
     }
 
     // The `.frame` modifiers this used to carry at the call site were a

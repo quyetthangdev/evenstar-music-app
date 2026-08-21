@@ -1603,9 +1603,22 @@ struct PlayerCard: View {
     /// khác biệt lớn nhất so với Apple Music — player không-bìa của họ là một
     /// mảng xám tối đều, ở cả hai chế độ.
     ///
-    /// Hai màu chứ không một: đỉnh sáng hơn đáy một chút, nên dải nền vẫn có
-    /// chiều sâu thay vì là một mảng phẳng.
-    private static let artworklessTint = Color(white: 0.26)
+    /// **Đen tuyền, và dải nền cố tình phẳng.** Câu ở đây từng viết "hai màu
+    /// chứ không một: đỉnh sáng hơn đáy một chút, nên dải nền vẫn có chiều sâu
+    /// thay vì là một mảng phẳng" — 0.26 xuống 0.13. Chiều sâu ấy là chiều sâu
+    /// của một thứ không có gì để mà sâu: dốc màu trong thẻ có bìa tồn tại để
+    /// hoà từ tấm bìa xuống nền, và bài không bìa thì không có tấm bìa nào ở
+    /// đầu dốc. Cái còn lại chỉ là một mảng xám hơi loang, đọc ra như nền chưa
+    /// tải xong.
+    ///
+    /// Đen thật thì mảng ấy đọc ra như một quyết định. Trên màn OLED nó cũng
+    /// tắt điểm ảnh thật, nên viền thẻ biến mất vào thân máy thay vì hiện ra
+    /// thành một hình chữ nhật xám nổi trên nền đen của hệ thống.
+    ///
+    /// Ô placeholder của tấm bìa vẫn xám (`placeholderTileBrightness` 0.38, tính
+    /// từ sắc màu này) — nó phải nhìn thấy được, nếu không thì chỗ đáng lẽ có
+    /// bìa trở thành một lỗ hổng không đọc ra là gì.
+    private static let artworklessTint = Color.black
 
     /// Một pixel trong suốt, để ô bìa luôn có **một** tấm `Image` trong cây kể
     /// cả khi chưa có gì để vẽ. Xem chú thích ở chỗ dùng trong `artworkView`
@@ -1642,7 +1655,8 @@ struct PlayerCard: View {
     }
 
     private static let placeholderTileBrightness: CGFloat = 0.38
-    private static let artworklessBase = Color(white: 0.13)
+    /// Đáy dải, bằng đúng đỉnh — xem `artworklessTint` về lý do phẳng.
+    private static let artworklessBase = Color.black
 
     /// Between the safe area and the grabber capsule's own top edge.
     ///

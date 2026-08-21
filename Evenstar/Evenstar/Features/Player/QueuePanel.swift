@@ -254,81 +254,8 @@ struct QueuePanel: View {
                 playback.toggleAutoplay()
             }
 
-            Spacer(minLength: 0)
-            sleepTimerButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Hẹn giờ ngủ, ở phần tư bên phải mà ba viên thuốc để trống.
-    ///
-    /// Ở đây chứ không phải cạnh nút hàng đợi trên player card, và cũng không
-    /// phải trong Cài đặt. Hàng này đã là chỗ gom các chế độ phát — ngẫu nhiên,
-    /// lặp, tự phát tiếp — và "bao giờ thì ngừng" thuộc cùng nhóm câu hỏi ấy.
-    /// Chỗ trống một phần tư kia vốn là khoảng thở có chủ ý, nhưng một nút đơn
-    /// độc nằm đó không lấy mất khoảng thở: ba viên vẫn đủ ba phần tư, và mắt
-    /// vẫn đọc ra hàng là một bộ điều khiển.
-    ///
-    /// **Không phải viên thuốc thứ tư.** Ba viên kia là công tắc hai trạng thái
-    /// bật/tắt ngay khi chạm; cái này mở ra một danh sách để chọn. Cho nó cùng
-    /// hình dáng là hứa sai về việc chạm vào sẽ xảy ra chuyện gì.
-    ///
-    /// `Menu` chứ không sheet: bốn mốc và một nút tắt không đáng một màn hình,
-    /// và một sheet dựng lên từ đây sẽ đè lên chính tấm panel vừa mở ra.
-    ///
-    /// Số phút đọc từ `minutesRemaining`, thứ chỉ đổi mỗi phút chứ không mỗi
-    /// giây — xem `SleepTimer` về lý do nó là thuộc tính lưu trữ.
-    private var sleepTimerButton: some View {
-        Menu {
-            ForEach(SleepTimer.presetMinutes, id: \.self) { minutes in
-                Button {
-                    playback.sleepTimer.start(minutes: minutes)
-                } label: {
-                    Text("\(minutes) phút", bundle: AppLanguage.resolvedBundle)
-                }
-            }
-            Divider()
-            Button {
-                playback.sleepTimer.startAtEndOfTrack()
-            } label: {
-                Text("Hết bài này", bundle: AppLanguage.resolvedBundle)
-            }
-            if playback.sleepTimer.isRunning {
-                Divider()
-                Button(role: .destructive) {
-                    playback.sleepTimer.cancel()
-                } label: {
-                    Text("Tắt hẹn giờ", bundle: AppLanguage.resolvedBundle)
-                }
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: playback.sleepTimer.isRunning ? "moon.fill" : "moon")
-                    .font(.system(size: 15, weight: .semibold))
-                if let minutes = playback.sleepTimer.minutesRemaining {
-                    Text("\(minutes)")
-                        .font(.system(size: 13, weight: .semibold))
-                        .monospacedDigit()
-                }
-            }
-            .foregroundStyle(playback.sleepTimer.isRunning ? AnyShapeStyle(tint)
-                                                           : AnyShapeStyle(.secondary))
-            .frame(height: Self.pillHeight)
-            .padding(.horizontal, Self.pillHitPad + 4)
-            .contentShape(Rectangle())
-        }
-        .accessibilityLabel(String(
-            localized: "Hẹn giờ ngủ",
-            bundle: AppLanguage.resolvedBundle,
-            locale: AppLanguage.resolvedLocale
-        ))
-        .accessibilityValue(
-            playback.sleepTimer.minutesRemaining.map { "\($0)" } ?? String(
-                localized: "Tắt",
-                bundle: AppLanguage.resolvedBundle,
-                locale: AppLanguage.resolvedLocale
-            )
-        )
     }
 
     /// Ba viên chiếm bao nhiêu phần bề ngang. Xem `pillRow`.
