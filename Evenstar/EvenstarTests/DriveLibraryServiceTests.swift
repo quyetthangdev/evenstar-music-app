@@ -135,6 +135,31 @@ final class DriveLibraryServiceTests: XCTestCase {
     /// the same `folderID` never double-inserts, and a retyped display name
     /// is honored on the existing row rather than silently dropped. See
     /// `DriveLibraryService.link`'s doc comment.
+    /// **Ca mà `scan` từng trap trên đúng trạng thái nó tồn tại để chịu đựng.**
+    /// Hai máy liên kết cùng một thư mục Drive dùng chung và quét khi ngoại
+    /// tuyến; cả hai cùng đẩy lên `fileID = "X"`. Đồng bộ xong, máy này giữ
+    /// hai hàng — hợp lệ, và `DuplicateSweep` ở lần mở app sau mới dọn. Người
+    /// dùng bấm quét lại **trước** lúc ấy: `Dictionary(uniqueKeysWithValues:)`
+    /// trap với `Fatal error: Duplicate values for key`.
+    ///
+    /// `DriveTrack.fileID` không còn `@Attribute(.unique)` từ Task 1 — CloudKit
+    /// không nhận — nên không còn hàng rào nào ở tầng SwiftData.
+    func testAScanSurvivesTwoRowsSharingOneFileID() async throws {
+        let (service, library) = try makeService()
+        let folder = try service.link(folderID: "F1", displayName: "Chill mix")
+        // Đúng thứ CloudKit giao về: hai hàng, cùng `fileID`, khác `id`.
+        library.context.insert(DriveTrack(fileID: "1", folderID: "F1", fileName: "a.mp3"))
+        library.context.insert(DriveTrack(fileID: "1", folderID: "F1", fileName: "a.mp3"))
+        try library.save()
+        StubURLProtocol.responses = [.init(status: 200, body: page([("1", "a.mp3")]))]
+
+        _ = try await service.scan(folder)
+
+        let rows = try library.context.fetch(FetchDescriptor<DriveTrack>())
+        XCTAssertEqual(rows.count, 2, "Quét lại không được chèn thêm, và cũng không được tự xoá bớt — dọn là việc của `DuplicateSweep`.")
+        XCTAssertEqual(Set(rows.map(\.fileID)), ["1"])
+    }
+
     func testLinkingTheSameFolderIDTwiceReusesTheRowAndUpdatesTheName() throws {
         let (service, library) = try makeService()
         let first = try service.link(folderID: "F1", displayName: "Old name")

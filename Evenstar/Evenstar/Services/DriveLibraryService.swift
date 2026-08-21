@@ -161,13 +161,38 @@ final class DriveLibraryService {
         // under a *different* folder and construct-and-insert a second row
         // for it. `DriveTrack.fileID` no longer carries `@Attribute(.unique)`
         // — CloudKit rejects it — so there is no SwiftData-level uniqueness
-        // constraint left to collapse that duplicate: this fetch is now the
-        // only thing that keeps one `fileID` to one row across folders, and
-        // without it a second insert would silently orphan anything (e.g. a
+        // constraint left to collapse that duplicate: this fetch is what keeps
+        // *this scan* from adding a second row for a `fileID` already known,
+        // and without it a second insert would silently orphan anything (e.g. a
         // saved queue) that referenced the original `id`. See
         // `DriveTrack.swift`'s type-level doc comment.
+        //
+        // What it does **not** do — and the comment above used to claim it did
+        // — is keep one `fileID` to one row store-wide. Nothing local can:
+        // two devices that link the same shared folder and scan it offline
+        // each insert their own row for `fileID = "X"`, and CloudKit delivers
+        // both. This device then legitimately holds two, and the only repair
+        // is `DuplicateSweep` on the next launch.
+        //
+        // So the map has to survive that state rather than trap in it.
+        // `Dictionary(uniqueKeysWithValues:)` **trapped** — `Fatal error:
+        // Duplicate values for key` — which meant a rescan tapped before the
+        // next launch crashed the app, on exactly the state this reconciliation
+        // exists to tolerate. Worse, the sweep's failure path in `EvenstarApp`
+        // is log-only, so a sweep that throws leaves the app one rescan away
+        // from that crash indefinitely.
+        //
+        // The survivor is chosen by the **lowest `id.uuidString`**, and the
+        // determinism is the point rather than the choice itself: the two
+        // devices must agree about which row is "the" row for a `fileID`, or
+        // each keeps a different one and their scans disagree forever. It is
+        // the same tie-break `DuplicateMerge.merge` uses for the same reason —
+        // do not replace it with "whichever the fetch returned first", which
+        // is `Dictionary` and fetch ordering, i.e. not a decision at all.
         let existingAnywhere = try library.context.fetch(FetchDescriptor<DriveTrack>())
-        let existingByFileIDAnywhere = Dictionary(uniqueKeysWithValues: existingAnywhere.map { ($0.fileID, $0) })
+        let existingByFileIDAnywhere = Dictionary(existingAnywhere.map { ($0.fileID, $0) }) {
+            lhs, rhs in lhs.id.uuidString <= rhs.id.uuidString ? lhs : rhs
+        }
 
         // When a file already has a row under a different folder, that row is
         // left exactly as it is — not retagged to this folder. One
