@@ -6,9 +6,20 @@
 
 ## Mục tiêu
 
-Thư viện, playlist và trạng thái phát đi theo Apple Account của người dùng, giữa
-các máy của **chính họ**. Không tài khoản riêng, không server riêng, không đồng
-bộ file nhạc.
+Thư viện và playlist đi theo Apple Account của người dùng, giữa các máy của
+**chính họ**. Không tài khoản riêng, không server riêng, không đồng bộ file nhạc.
+
+**Trạng thái phát KHÔNG đi theo tài khoản** — sửa ngày 2026-08-21, sau khi review
+toàn nhánh. `PlaybackState` không có khoá tự nhiên và không có trường nào cắt hoà
+tất định, nên nó sẽ nhân đôi qua CloudKit như mọi bảng khác, mà
+`LibraryService.playbackState` lại lấy `.first` của một lượt fetch không thứ tự.
+Hệ quả là máy nào khôi phục hàng đợi nào có thể lật giữa các lần mở app, và hai
+hàng ghi đè vị trí của nhau.
+
+Nó là trạng thái của **từng máy**, đúng nghĩa như "file có trên máy này" — nên
+nó ở lại từng máy. Giá phải trả: nghe dở nửa bài trên iPhone thì mở iPad phải tự
+tìm lại. Đổi lại không có gì lật, và không phải thêm một trường vào lược đồ chỉ
+để làm khoá cắt hoà, thứ sẽ kéo theo một lượt kiểm migration nữa.
 
 Nói rõ cái **không** làm, vì đó là thứ giữ cho thiết kế nhỏ:
 
@@ -300,6 +311,16 @@ người dùng "tắt app rồi mở lại" là một công tắc tệ hơn khô
 còn nguyên và ngừng đồng bộ, nhưng bản sao trong iCloud vẫn nằm đó cho tới khi
 người dùng tự xoá.
 
+**Kho thư viện phải giữ nguyên tên mặc định.** Đặt tên cho configuration đồng bộ
+sẽ đổi tên file store, và mọi thư viện người dùng đang có nằm trong `default.store`
+— đổi tên là bỏ rơi hết. Ghim bằng `testKhoThuVienVanLaDefaultStore`.
+
+**Dùng `.private(container)` chứ không `.automatic`.** `.automatic` đọc entitlement
+của target lúc chạy, nên bất kỳ `ModelConfiguration` nào quên khai — kể cả trong
+một `#Preview` — sẽ dựng CloudKit thật trên máy đang đăng nhập iCloud, và có thể
+đẩy một lược đồ Development lên server. Lược đồ CloudKit chỉ thêm được, không sửa
+ngược. Bảy `#Preview` trong repo vì thế đều khai `cloudKitDatabase: .none`.
+
 ---
 
 ## Mục 5 — Test
@@ -334,9 +355,22 @@ Repo này đã dính đúng cái bẫy ấy một lần —
 
 ### 567 test hiện có
 
-Không đụng tới. `EvenstarTests/InMemoryLibrary.swift` dựng
-`ModelConfiguration(isStoredInMemoryOnly: true)` riêng, nên container CloudKit
-của app không đi vào đường ấy.
+**Đoán sai — sửa 2026-08-21, sau khi thi công.** Câu cũ ở đây viết rằng không
+phải đụng tới test nào, vì `InMemoryLibrary` dựng `ModelConfiguration` riêng nên
+container CloudKit của app không đi vào đường ấy.
+
+Thực tế: tách `PlaybackState` sang kho thứ hai làm hỏng hơn **bốn mươi** test, và
+CloudKit không phải nguyên nhân. `NSManagedObjectModel` được cache **theo tiến
+trình**. App host chạy `EvenstarApp.init()` trong lúc test, tách mô hình làm hai,
+và từ đó *mọi* container một-configuration trên cùng năm kiểu ấy trong cùng tiến
+trình đều không chèn nổi `PlaybackState` — nó ném `NSInvalidArgumentException`,
+exception Objective-C nên không bắt được trong Swift, nên thành abort.
+
+Cách chữa: mọi container trong test đi qua `InMemoryLibrary.makeContainer()`, và
+hàm ấy dựng cấu hình **từ chính** `EvenstarStores.syncedModels` / `localOnlyModels`
+chứ không chép lại danh sách. Thêm một model vào app là mọi container test tự
+theo. Quy tắc rút ra, đã ghi trong `InMemoryLibrary`: **đừng viết
+`ModelConfiguration` một mình trong test.**
 
 ---
 
