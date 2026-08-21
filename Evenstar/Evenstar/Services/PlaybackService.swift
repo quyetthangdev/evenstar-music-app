@@ -974,6 +974,16 @@ final class PlaybackService {
     /// broken button.
     private func handleFinish() {
         guard !queue.isEmpty else { return }
+        // Hẹn "hết bài này" chặn ở đây, TRƯỚC mọi nhánh chuyển bài.
+        //
+        // Đặt sau `switch` thì `advance` đã chạy: bài kế đã nạp, đã phát, và
+        // người dùng nghe được một quãng đầu của bài họ vừa bảo đừng phát. Đặt
+        // trước thì hàng đợi và `queueIndex` vẫn nguyên ở bài vừa hết, nên mở
+        // lại là nghe tiếp đúng từ đó.
+        if sleepTimer.stopsAtTrackEnd {
+            sleepTimer.trackDidEnd()
+            return
+        }
         switch repeatMode {
         case .one:
             advance(to: queueIndex)

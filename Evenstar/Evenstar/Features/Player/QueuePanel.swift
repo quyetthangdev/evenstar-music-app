@@ -287,6 +287,12 @@ struct QueuePanel: View {
                     Text("\(minutes) phút", bundle: AppLanguage.resolvedBundle)
                 }
             }
+            Divider()
+            Button {
+                playback.sleepTimer.startAtEndOfTrack()
+            } label: {
+                Text("Hết bài này", bundle: AppLanguage.resolvedBundle)
+            }
             if playback.sleepTimer.isRunning {
                 Divider()
                 Button(role: .destructive) {

@@ -32,6 +32,22 @@ final class SleepTimerPlaybackTests: XCTestCase {
         return t
     }
 
+    /// Chờ tới khi điều kiện đúng, có hạn chót.
+    ///
+    /// `didFinishCallback` đi qua `Task { @MainActor in ... }`, nên nó chạy ở
+    /// lượt sau chứ không ngay trong lời gọi `simulateFinish()`. Assert thẳng
+    /// sau đó là đọc trạng thái cũ. Cùng hình dạng với `PlaybackServiceRepeatTests`,
+    /// và vì cùng lý do: một số lượt `yield` cố định thì chạy được ở máy rảnh và
+    /// hỏng khi máy bận.
+    @discardableResult
+    private func yieldUntil(_ condition: () -> Bool) async -> Bool {
+        let deadline = Date.now.addingTimeInterval(5)
+        while !condition(), Date.now < deadline {
+            await Task.yield()
+        }
+        return condition()
+    }
+
     /// Hết giờ thì tạm dừng, và hàng đợi phải còn nguyên.
     ///
     /// Đây là lời hứa trung tâm của tính năng. `stopPlayback()` xoá cả hàng đợi
@@ -119,5 +135,62 @@ final class SleepTimerPlaybackTests: XCTestCase {
         XCTAssertTrue(player.volumeChanges.isEmpty,
                       "không có hẹn thì không được chỉnh âm lượng lần nào")
         XCTAssertTrue(service.isPlaying)
+    }
+
+    // MARK: - Hết bài hiện tại
+
+    /// Bài kết thúc thì dừng, và **không nhảy sang bài kế**.
+    ///
+    /// Đây là chỗ dễ sai nhất của chế độ này. Nếu chốt đặt sau `switch repeatMode`
+    /// thì `advance` đã chạy: bài kế đã nạp, đã phát, và người dùng nghe được một
+    /// quãng đầu của đúng bài họ vừa bảo đừng phát.
+    func testEndOfTrackStopsInsteadOfAdvancing() async throws {
+        let (service, player, library) = try makeStack()
+        let a = try makeTrack(library)
+        let b = try makeTrack(library)
+        service.play(a, in: [a, b])
+        XCTAssertEqual(service.currentTrack?.id, a.id)
+
+        service.sleepTimer.startAtEndOfTrack()
+        player.simulateFinish()
+        await yieldUntil { !service.sleepTimer.isRunning }
+
+        XCTAssertFalse(service.isPlaying, "phải im sau khi bài hết")
+        XCTAssertEqual(service.currentTrack?.id, a.id,
+                       "không được nhảy sang bài kế")
+        XCTAssertEqual(service.queue.count, 2, "hàng đợi phải còn nguyên")
+        XCTAssertFalse(service.sleepTimer.isRunning, "hẹn đã xong thì tắt")
+    }
+
+    /// Không có hẹn thì bài hết vẫn chuyển tiếp như thường.
+    ///
+    /// Chốt mới nằm ngay đầu `handleFinish`, nên nó là chỗ có thể chặn nhầm
+    /// đường đi bình thường của mọi lần chuyển bài trong app.
+    func testWithoutTheTimerFinishingStillAdvances() async throws {
+        let (service, player, library) = try makeStack()
+        let a = try makeTrack(library)
+        let b = try makeTrack(library)
+        service.play(a, in: [a, b])
+
+        player.simulateFinish()
+        await yieldUntil { service.currentTrack?.id == b.id }
+
+        XCTAssertEqual(service.currentTrack?.id, b.id, "phải sang bài kế như thường")
+    }
+
+    /// Hẹn đếm ngược không được chặn việc chuyển bài.
+    func testACountdownDoesNotStopTheTrackFromAdvancing() async throws {
+        let (service, player, library) = try makeStack()
+        let a = try makeTrack(library)
+        let b = try makeTrack(library)
+        service.play(a, in: [a, b])
+
+        service.sleepTimer.start(minutes: 30)
+        player.simulateFinish()
+        await yieldUntil { service.currentTrack?.id == b.id }
+
+        XCTAssertEqual(service.currentTrack?.id, b.id,
+                       "hẹn ba mươi phút thì bài hết vẫn sang bài kế")
+        XCTAssertTrue(service.sleepTimer.isRunning, "và hẹn vẫn còn chạy")
     }
 }

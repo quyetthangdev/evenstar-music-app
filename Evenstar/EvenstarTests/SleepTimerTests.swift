@@ -192,4 +192,62 @@ final class SleepTimerTests: XCTestCase {
         timer.start(minutes: 30)
         XCTAssertEqual(faded, [5, 0], "hẹn mới phải trả âm lượng về trước khi đếm lại")
     }
+
+    // MARK: - Hết bài hiện tại
+
+    /// Chế độ này không có đồng hồ, và đó là điểm khác biệt cốt lõi.
+    ///
+    /// Người ta chọn nó chính vì **không** biết bài còn bao lâu — không diễn đạt
+    /// được bằng phút. Nên `remaining` và `minutesRemaining` phải là `nil`, và
+    /// nút không được hiện con số nào.
+    func testEndOfTrackHasNoCountdown() {
+        let timer = makeTimer()
+        timer.startAtEndOfTrack()
+
+        XCTAssertTrue(timer.isRunning)
+        XCTAssertTrue(timer.stopsAtTrackEnd)
+        XCTAssertNil(timer.remaining, "không có mốc thời gian nào để đếm tới")
+        XCTAssertNil(timer.minutesRemaining, "nút không được hiện số phút")
+    }
+
+    /// Thời gian trôi không làm gì cả ở chế độ này.
+    func testEndOfTrackNeverExpiresOnItsOwn() {
+        let timer = makeTimer()
+        timer.startAtEndOfTrack()
+
+        clock.advance(3 * 60 * 60)
+        timer.tick()
+        timer.tick()
+
+        XCTAssertEqual(expiredCount, 0, "chỉ bài kết thúc mới kết thúc hẹn này")
+        XCTAssertEqual(faded, [], "không mờ dần — bài tự hết, không ai cắt nó")
+        XCTAssertTrue(timer.isRunning)
+    }
+
+    func testCancellingEndOfTrackStopsIt() {
+        let timer = makeTimer()
+        timer.startAtEndOfTrack()
+        timer.cancel()
+        XCTAssertFalse(timer.isRunning)
+        XCTAssertFalse(timer.stopsAtTrackEnd)
+    }
+
+    /// Hai chế độ thay thế nhau, không chồng lên nhau.
+    func testTheTwoModesReplaceEachOther() {
+        let timer = makeTimer()
+
+        timer.start(minutes: 30)
+        timer.startAtEndOfTrack()
+        XCTAssertTrue(timer.stopsAtTrackEnd)
+        XCTAssertNil(timer.remaining, "hẹn đếm ngược phải bị thay hẳn")
+
+        timer.start(minutes: 30)
+        XCTAssertFalse(timer.stopsAtTrackEnd, "và ngược lại")
+        XCTAssertEqual(timer.remaining, 30 * 60)
+    }
+
+    /// Mốc bày ra trong menu, khớp thứ tự người dùng đọc.
+    func testThePresetsAreTheOnesOffered() {
+        XCTAssertEqual(SleepTimer.presetMinutes, [5, 10, 15, 30, 45, 60])
+    }
 }

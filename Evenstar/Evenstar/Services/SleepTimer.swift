@@ -25,10 +25,28 @@ final class SleepTimer {
     static let fadeDuration: TimeInterval = 15
 
     /// Các mốc bày ra trong menu.
-    static let presetMinutes = [15, 30, 45, 60]
+    ///
+    /// Năm và mười phút có mặt vì "tôi sắp ngủ rồi, cho nốt vài bài" là một ý
+    /// định thật và không diễn đạt được bằng mười lăm. Trên sáu mươi thì dừng:
+    /// ai còn muốn nghe lâu hơn một tiếng thì thật ra không muốn hẹn giờ.
+    static let presetMinutes = [5, 10, 15, 30, 45, 60]
+
+    /// Hai chế độ, thay thế nhau chứ không chồng nhau.
+    ///
+    /// Tách thành `enum` chứ không phải một `Bool` cạnh `endsAt`: hai trạng thái
+    /// độc lập cho phép viết ra thứ vô nghĩa — vừa đếm ngược vừa chờ hết bài —
+    /// và rồi phải nhớ tự tay loại trừ nó ở mọi chỗ đọc. Kiểu dữ liệu làm việc
+    /// ấy thay, một lần.
+    private enum Mode: Equatable {
+        /// Đếm tới một mốc thời gian.
+        case countdown(endsAt: Date)
+        /// Chờ bài đang phát kết thúc. Không có đồng hồ nào ở đây, và đó là lý
+        /// do người ta chọn nó: không ai biết bài còn bao lâu.
+        case endOfTrack
+    }
 
     private let now: () -> Date
-    private var endsAt: Date?
+    private var mode: Mode?
     private var hasStartedFade = false
 
     /// Gọi khi tới lúc mờ dần, kèm số giây nên mờ trong đó.
@@ -44,11 +62,15 @@ final class SleepTimer {
         self.now = now
     }
 
-    var isRunning: Bool { endsAt != nil }
+    var isRunning: Bool { mode != nil }
 
-    /// Số giây còn lại, hoặc `nil` khi không có hẹn nào.
+    /// Đang chờ bài hiện tại kết thúc. `PlaybackService.handleFinish` đọc cái này.
+    var stopsAtTrackEnd: Bool { mode == .endOfTrack }
+
+    /// Số giây còn lại, hoặc `nil` khi không có hẹn nào — **và cũng `nil` ở chế
+    /// độ chờ hết bài**, vì ở đó không có mốc nào để đếm tới.
     var remaining: TimeInterval? {
-        guard let endsAt else { return nil }
+        guard case let .countdown(endsAt) = mode else { return nil }
         return max(0, endsAt.timeIntervalSince(now()))
     }
 
@@ -79,15 +101,38 @@ final class SleepTimer {
         // Đặt đè lên một hẹn đang mờ phải trả âm lượng về trước, nếu không nhạc
         // sẽ tiếp tục ở mức đã tụt và không có đường nào chỉnh lại trong app.
         restoreVolumeIfFading()
-        endsAt = now().addingTimeInterval(seconds)
+        mode = .countdown(endsAt: now().addingTimeInterval(seconds))
+        hasStartedFade = false
+        refreshMinutes()
+    }
+
+    /// Dừng khi bài đang phát kết thúc.
+    ///
+    /// Không mờ dần: bài tự đi hết chứ không bị ai cắt ngang, nên kéo âm lượng
+    /// xuống ở mười lăm giây cuối sẽ làm hỏng đúng đoạn kết mà người dùng chọn
+    /// chế độ này để được nghe trọn.
+    func startAtEndOfTrack() {
+        restoreVolumeIfFading()
+        mode = .endOfTrack
         hasStartedFade = false
         refreshMinutes()
     }
 
     func cancel() {
         restoreVolumeIfFading()
-        endsAt = nil
+        mode = nil
         refreshMinutes()
+    }
+
+    /// Bài vừa kết thúc, và đang có hẹn chờ đúng điều đó.
+    ///
+    /// `PlaybackService` gọi vào đây thay vì tự đọc `stopsAtTrackEnd` rồi tự
+    /// dọn, để chỗ tắt hẹn nằm cùng chỗ với chỗ bật nó.
+    func trackDidEnd() {
+        guard mode == .endOfTrack else { return }
+        mode = nil
+        refreshMinutes()
+        onExpire?()
     }
 
     /// Nhịp đếm, gọi từ ngoài vào.
@@ -96,11 +141,13 @@ final class SleepTimer {
     /// một nhịp nửa giây chạy sẵn trong lúc phát nhạc, và dựng thêm một nhịp thứ
     /// hai chỉ để đếm cùng một thứ là tốn mà không mua được gì.
     func tick() {
-        guard let endsAt else { return }
+        // Chờ hết bài thì thời gian trôi không có nghĩa gì — chỉ `trackDidEnd()`
+        // kết thúc được hẹn ấy.
+        guard case let .countdown(endsAt) = mode else { return }
         let left = endsAt.timeIntervalSince(now())
 
         if left <= 0 {
-            self.endsAt = nil
+            mode = nil
             hasStartedFade = false
             refreshMinutes()
             onExpire?()
