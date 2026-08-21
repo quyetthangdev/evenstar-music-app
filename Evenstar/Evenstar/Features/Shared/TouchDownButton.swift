@@ -46,6 +46,18 @@ struct TouchDownButton<Label: View>: View {
         // environment, so callers keep applying `.buttonStyle` and `.disabled`
         // exactly as before) and what carries the button trait to VoiceOver.
         Button {} label: { label() }
+            // Phản hồi hình ảnh đọc từ ĐÂY, không từ `configuration.isPressed`.
+            //
+            // Hành động đã bắn ở `onChanged` ngay lúc ngón tay chạm xuống, còn
+            // `isPressed` của `Button` phải chờ SwiftUI phân định cú chạm này
+            // với cử chỉ kéo thẻ của `PlayerCard` trước khi nhận là mình bị
+            // nhấn. Nên nút *làm* việc ngay mà *trông như* chưa nhận — và đó
+            // đúng là khoảng im lặng người dùng cảm được.
+            //
+            // `TransportButtonStyle` hợp cờ này với `isPressed` bằng OR, nên
+            // nút vẫn sáng đúng khi được bấm qua bàn phím hay Switch Control,
+            // những đường không đi qua `DragGesture`.
+            .environment(\.touchDownPressed, fired)
             // VoiceOver's activation never produces a touch sequence, so the
             // gesture below cannot serve it. This is the path it takes, and
             // without it the control would be inert to anyone using it.
@@ -63,5 +75,22 @@ struct TouchDownButton<Label: View>: View {
                     }
                     .onEnded { _ in fired = false }
             )
+    }
+}
+
+/// Cờ "ngón tay đang chạm", do `TouchDownButton` phát xuống cho style đọc.
+///
+/// Một `ButtonStyle` không đọc được `@State` của view bọc ngoài nó, và
+/// `configuration.isPressed` là thứ duy nhất nó vốn có — nhưng chính con số ấy
+/// mới là thứ đến muộn. Environment là đường ngắn nhất nối hai bên mà không phải
+/// đổi chữ ký của mọi chỗ gọi.
+private struct TouchDownPressedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var touchDownPressed: Bool {
+        get { self[TouchDownPressedKey.self] }
+        set { self[TouchDownPressedKey.self] = newValue }
     }
 }

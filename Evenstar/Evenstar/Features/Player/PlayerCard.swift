@@ -1654,7 +1654,17 @@ struct PlayerCard: View {
                              alpha: 1))
     }
 
-    private static let placeholderTileBrightness: CGFloat = 0.38
+    /// 0.38 → 0.28, sau khi nền bài không-bìa chuyển sang đen tuyền.
+    ///
+    /// Con số cũ được chọn khi nền còn là dốc xám 0.26→0.13, và một ô 0.38 trên
+    /// nền ấy là chênh vừa phải. Trên nền đen thì cùng con số ấy thành mảng sáng
+    /// nhất màn hình — mắt đi thẳng vào một ô trống, đúng thứ đáng lẽ phải lùi
+    /// lại phía sau.
+    ///
+    /// Không hạ sâu hơn, và đây là chỗ dễ quá tay: ô này cũng là thứ nhìn thấy
+    /// trong khoảnh khắc bài CÓ bìa đang giải mã. Hạ tới gần đen thì khoảnh khắc
+    /// ấy thành một cú tối sập rồi ảnh loé lên — tệ hơn hẳn một ô hơi sáng.
+    private static let placeholderTileBrightness: CGFloat = 0.28
     /// Đáy dải, bằng đúng đỉnh — xem `artworklessTint` về lý do phẳng.
     private static let artworklessBase = Color.black
 

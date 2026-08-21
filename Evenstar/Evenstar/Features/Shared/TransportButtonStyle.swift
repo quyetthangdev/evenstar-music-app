@@ -162,7 +162,9 @@ struct TransportButtonStyle: ButtonStyle {
         // `isPressed` and the label are unpacked out of the configuration here
         // rather than passed as one — see `Interaction`'s doc for why that is
         // worth two arguments instead of one.
-        Interaction(label: configuration.label, isPressed: configuration.isPressed, style: self)
+        Interaction(label: configuration.label,
+                    isPressedFromButton: configuration.isPressed,
+                    style: self)
     }
 
     /// Named for what it does, not `Body` — that collides with `ButtonStyle`'s
@@ -189,8 +191,16 @@ struct TransportButtonStyle: ButtonStyle {
         /// 0.92 scale on a glyph is not much of an answer.
         @State private var presses = 0
         let label: Label
-        let isPressed: Bool
+        let isPressedFromButton: Bool
         let style: TransportButtonStyle
+
+        /// Cờ chạm-xuống từ `TouchDownButton`, xem chỗ khai báo ở đó.
+        @Environment(\.touchDownPressed) private var touchDownPressed
+
+        /// OR chứ không thay thế: `touchDownPressed` chỉ đúng cho những nút đi
+        /// qua `TouchDownButton`. Bàn phím, Switch Control và mọi đường khác
+        /// vẫn chỉ có `configuration.isPressed`, và chúng phải sáng như thường.
+        private var isPressed: Bool { isPressedFromButton || touchDownPressed }
 
         var body: some View {
             // Read here, in `body`, and handed to the keyframe builder as a

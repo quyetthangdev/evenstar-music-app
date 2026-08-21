@@ -803,7 +803,7 @@ final class TransportPressDimTests: XCTestCase {
             // Everything this test sees therefore came from `isPressed`.
             TransportButtonStyle.Interaction(
                 label: Color.blue.frame(width: 20, height: 20),
-                isPressed: pressed,
+                isPressedFromButton: pressed,
                 style: .transportSkip(trigger: 0, direction: 1)
             )
             .frame(width: 60, height: 40)
@@ -933,7 +933,7 @@ final class TransportSymbolSwapTests: XCTestCase {
                     .font(.title3)
                     .symbolReplace()
                     .frame(width: 32, height: 32),
-                isPressed: pressed,
+                isPressedFromButton: pressed,
                 style: .transportToggle(trigger: 0)
             )
             .frame(width: 60, height: 60)
@@ -1810,7 +1810,7 @@ final class TransportDisabledTintTests: XCTestCase {
             // the kick.
             TransportButtonStyle.Interaction(
                 label: Rectangle().frame(width: 20, height: 20),
-                isPressed: pressed,
+                isPressedFromButton: pressed,
                 style: .transportSkip(trigger: 0, direction: 1)
             )
             .disabled(!enabled)
