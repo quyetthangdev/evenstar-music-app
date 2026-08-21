@@ -646,11 +646,15 @@ enum BottomBarStyle {
     /// duy nhất nó lọt qua là không ai nhân 3 với 16.7ms. Người dùng nhìn thấy
     /// ba viên thuốc nán lại và báo trước khi tôi đọc ra chỗ vênh.
     ///
-    /// 0.05 là đầu chậm của khoảng đã đo, chọn thế vì đây là một cú hoà mờ chứ
-    /// không phải cú cắt: ba khung còn đọc ra là tan, hai khung bắt đầu đọc ra
-    /// là biến mất.
+    /// **0.05 → 0.033 sau khi nhìn thật.** Ba khung vẫn còn đọc ra là ba viên
+    /// thuốc *nán lại*, và chúng nằm đúng trên đường tấm bìa đang lớn dần —
+    /// nên bất kỳ khoảnh khắc nào chúng còn ở đó cũng là một tấm bảng chắn.
+    ///
+    /// 0.033 là **hai khung**, đầu nhanh của khoảng đã đo. Đây là sàn: dưới nữa
+    /// thì không còn là hoà mờ mà là cú cắt, và một khung biến mất trong một
+    /// khung sẽ đọc ra như khung hình bị rớt chứ không như một chuyển động.
     @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
-    private static let queueContentOutFull = Animation.easeIn(duration: 0.05)
+    private static let queueContentOutFull = Animation.easeIn(duration: 0.033)
     private static let queueContentOutFlat = queueContentOutFull
 
     /// Khối chữ lớn của `NowPlayingContent` tan đi khi hàng đợi mở.

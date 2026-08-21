@@ -145,10 +145,12 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.press, .easeOut(duration: 0.09))
         XCTAssertEqual(BottomBarStyle.control, .easeOut(duration: 0.15))
         XCTAssertEqual(BottomBarStyle.queueContentIn, .easeOut(duration: 0.13))
-        // 0.10 → 0.05: hằng số cũ mâu thuẫn với chính phép đo ghi ngay trên nó
-        // trong `BottomBarStyle` — "hai tới ba khung", tức 0.033–0.05 giây ở
-        // 60fps. 0.10 là sáu khung. Ba viên thuốc nán lại đủ lâu để nhìn thấy.
-        XCTAssertEqual(BottomBarStyle.queueContentOut, .easeIn(duration: 0.05))
+        // 0.10 → 0.033, qua hai bước. Hằng số 0.10 mâu thuẫn với chính phép đo
+        // ghi ngay trên nó trong `BottomBarStyle` — "hai tới ba khung", tức
+        // 0.033–0.05 giây ở 60fps; 0.10 là sáu khung. Đưa về 0.05 rồi nhìn
+        // thật: ba khung vẫn còn đọc ra là nán lại, nên xuống 0.033 — hai
+        // khung, đầu nhanh của khoảng đo, và là sàn.
+        XCTAssertEqual(BottomBarStyle.queueContentOut, .easeIn(duration: 0.033))
         XCTAssertEqual(BottomBarStyle.queueTitleOut, .easeIn(duration: 0.06).delay(0.04))
         XCTAssertEqual(BottomBarStyle.queueTitleIn, .easeOut(duration: 0.10).delay(0.13))
     }
