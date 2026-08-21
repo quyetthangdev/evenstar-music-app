@@ -108,10 +108,25 @@ enum EvenstarStores {
     static let localStoreName = "Playback"
 
     /// Kho thư viện: bốn bảng, có CloudKit, ở `default.store`.
-    static func syncedConfiguration() -> ModelConfiguration {
+    /// Đang chạy dưới XCTest.
+    ///
+    /// `XCTestConfigurationFilePath` do chính XCTest đặt vào môi trường tiến
+    /// trình trước khi bất cứ mã nào của app chạy, nên nó đúng ngay từ `init()`
+    /// — sớm hơn mọi cờ mà app tự dựng được.
+    static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// Cấu hình kho thư viện.
+    ///
+    /// Tham số `cloudKit` mặc định `true` vì đây là **sự thật của bản chạy
+    /// thật**, và test đọc hàm này để kiểm đúng điều đó — `testChiKhoThuVienKhai
+    /// CloudKit` sẽ vô nghĩa nếu hàm tự tắt CloudKit khi thấy mình đang bị test.
+    /// Chỗ quyết định tắt nằm ở `makeContainer()`, nơi container thật được dựng.
+    static func syncedConfiguration(cloudKit: Bool = true) -> ModelConfiguration {
         ModelConfiguration(
             schema: Schema(syncedModels),
-            cloudKitDatabase: .private(cloudKitContainerIdentifier)
+            cloudKitDatabase: cloudKit ? .private(cloudKitContainerIdentifier) : .none
         )
     }
 
@@ -129,10 +144,23 @@ enum EvenstarStores {
     }
 
     /// Container thật của app. Một container, hai kho.
+    /// Container thật của app.
+    ///
+    /// **Không đồng bộ khi đang chạy test, và đó không phải chuyện dọn tiếng ồn
+    /// trong log.** App host chạy `EvenstarApp.init()` trong mỗi lượt test, nên
+    /// mỗi lượt test dựng một `NSPersistentCloudKitContainer` thật. Trên máy
+    /// chưa đăng nhập iCloud nó chỉ in `CKAccountStatusNoAccount` rồi thôi —
+    /// nhưng trên máy CÓ đăng nhập, chạy test là **đẩy lược đồ lên server**, và
+    /// lược đồ CloudKit chỉ thêm được chứ không sửa ngược.
+    ///
+    /// Nghĩa là trước bản sửa này, một lượt `xcodebuild test` trên máy lập trình
+    /// viên bất kỳ có thể khoá vĩnh viễn hình dạng dữ liệu production — bằng một
+    /// lược đồ chưa ai duyệt, từ một nhánh chưa ai merge.
     static func makeContainer() throws -> ModelContainer {
         try ModelContainer(
             for: Schema(syncedModels + localOnlyModels),
-            configurations: syncedConfiguration(), localOnlyConfiguration()
+            configurations: syncedConfiguration(cloudKit: !isRunningTests),
+                            localOnlyConfiguration()
         )
     }
 }

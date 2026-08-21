@@ -186,4 +186,44 @@ final class EvenstarStoresTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         return dir
     }
+
+    // MARK: - Test không được đồng bộ thật
+
+    /// Chốt đang có tác dụng ngay lúc này.
+    ///
+    /// Nếu `isRunningTests` sai ở đây thì mọi thứ dưới đây vô nghĩa, và nó sai
+    /// im lặng — không có gì trong app đỏ lên khi một cờ môi trường đổi tên.
+    func testDangChayDuoiTest() {
+        XCTAssertTrue(EvenstarStores.isRunningTests,
+                      "chính lượt chạy này là một lượt test; nếu cờ nói khác thì cờ hỏng")
+    }
+
+    /// Container thật, dựng trong lúc test, **không** khai CloudKit.
+    ///
+    /// Đây là chỗ đáng canh nhất trong file. App host chạy `EvenstarApp.init()`
+    /// mỗi lượt test, nên mỗi lượt test dựng một container thật. Trên máy CÓ
+    /// đăng nhập iCloud, một container thật là một lượt đẩy lược đồ lên server —
+    /// và lược đồ CloudKit chỉ thêm được, không sửa ngược. Một lượt
+    /// `xcodebuild test` không được phép khoá vĩnh viễn hình dạng dữ liệu
+    /// production.
+    func testContainerDungTrongTestKhongDongBo() {
+        XCTAssertNil(
+            EvenstarStores.syncedConfiguration(cloudKit: !EvenstarStores.isRunningTests)
+                .cloudKitContainerIdentifier,
+            "container dựng lúc test phải không có CloudKit"
+        )
+    }
+
+    /// Nhưng bản chạy thật thì vẫn khai, và đó là mặc định.
+    ///
+    /// Cặp với test trên: nếu ai đó "sửa" bằng cách cho `syncedConfiguration()`
+    /// tự tắt CloudKit khi thấy mình đang bị test, thì test này đỏ — và nó phải
+    /// đỏ, vì cách sửa ấy làm `testChiKhoThuVienKhaiCloudKit` mất hết ý nghĩa.
+    func testMacDinhVanLaBanChayThat() {
+        XCTAssertEqual(
+            EvenstarStores.syncedConfiguration().cloudKitContainerIdentifier,
+            EvenstarStores.cloudKitContainerIdentifier,
+            "mặc định phải mô tả bản chạy thật, bất kể ai đang gọi"
+        )
+    }
 }
