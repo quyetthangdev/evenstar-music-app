@@ -6,8 +6,15 @@
 
 ## Mục tiêu
 
-Thư viện và playlist đi theo Apple Account của người dùng, giữa các máy của
-**chính họ**. Không tài khoản riêng, không server riêng, không đồng bộ file nhạc.
+Thư viện đi theo Apple Account của người dùng, giữa các máy của **chính họ**.
+Không tài khoản riêng, không server riêng, không đồng bộ file nhạc.
+
+*Câu này từng viết "thư viện và playlist" — sai, sửa 2026-08-21. App chưa có
+playlist: không có model `Playlist`, không màn hình nào, chỉ có một bản mẫu giao
+diện ở `Features/Prototypes/PlaylistReorderDemo.swift`. Khi nào làm playlist thật,
+nó sẽ tự đồng bộ vì đã nằm trong cùng container — nhưng nó sẽ cần luật gộp trùng
+riêng cho trường hợp hai máy cùng sửa một playlist, và thành viên phải lưu bằng
+`UUID` như `PlaybackState` đang làm, vì bài đến từ ba nguồn khác nhau.*
 
 **Trạng thái phát KHÔNG đi theo tài khoản** — sửa ngày 2026-08-21, sau khi review
 toàn nhánh. `PlaybackState` không có khoá tự nhiên và không có trường nào cắt hoà
