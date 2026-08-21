@@ -131,9 +131,11 @@ struct SearchView: View {
                 )
             } else {
                 List(results) { track in
-                    SongRow(track: track)
+                    SongRow(track: track, isAbsent: !store.isPresent(track))
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            // Xem ghi chú cùng chỗ trong `AlbumDetailView`.
+                            guard store.isPresent(track) else { return }
                             // The queue is the current result set, not the
                             // whole library, so the "next" track is the one
                             // below the tapped row in this list.

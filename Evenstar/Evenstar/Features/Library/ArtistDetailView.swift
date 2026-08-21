@@ -26,9 +26,11 @@ struct ArtistDetailView: View {
         let tracks = LibraryGrouping.tracks(byArtist: artist, from: store.tracks)
         return List {
             ForEach(tracks) { track in
-                SongRow(track: track)
+                SongRow(track: track, isAbsent: !store.isPresent(track))
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        // Xem ghi chú cùng chỗ trong `AlbumDetailView`.
+                        guard store.isPresent(track) else { return }
                         playback.play(track, in: tracks)
                     }
             }

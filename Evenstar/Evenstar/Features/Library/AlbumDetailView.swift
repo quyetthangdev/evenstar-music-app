@@ -57,9 +57,20 @@ struct AlbumDetailView: View {
             // — it must not be sorted again here, and never sorted by title.
             Section {
                 ForEach(tracks) { track in
-                    SongRow(track: track)
+                    SongRow(track: track, isAbsent: !store.isPresent(track))
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            // Chạm vào hàng vắng mặt không làm gì, và **không**
+                            // bật hộp thoại giải thích — hàng đã mờ và đã mang
+                            // chữ "Không có trên máy này" trước khi ngón tay
+                            // chạm vào. Cùng hình dạng với `SongsView`, và phải
+                            // giống hệt: ba màn hình này vẽ **cùng** những hàng
+                            // `Track` ấy qua **cùng** `SongRow`, nên chỗ nào
+                            // thiếu chốt này thì ở đó người dùng chạm một bài
+                            // rồi nghe **bài khác** — vòng bỏ-qua trong
+                            // `PlaybackService.loadCurrentAndPlay()` đi tiếp —
+                            // mà không có gì giải thích.
+                            guard store.isPresent(track) else { return }
                             playback.play(track, in: tracks)
                         }
                 }
