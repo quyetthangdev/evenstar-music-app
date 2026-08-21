@@ -302,22 +302,30 @@ final class DuplicateSweepTests: XCTestCase {
                        "File bìa của hàng bị gộp phải đi theo hàng, như `unsave` vẫn làm.")
     }
 
-    // MARK: - Thứ tự lúc khởi động
+    // MARK: - Trình tự lúc khởi động, và thứ không test được
 
-    /// Chạy đúng trình tự `EvenstarApp` chạy lúc mở app — **quét trước, khôi
-    /// phục sau** — trên đúng ca xấu nhất, và ghim kết quả.
+    /// **Ghim kết quả, KHÔNG ghim thứ tự.** Test này tự gọi lượt quét rồi tự
+    /// gọi khôi phục, theo đúng trình tự `EvenstarApp` chạy lúc mở app, và
+    /// khẳng định kết quả *khi đã có* trình tự ấy. Nó **không** kiểm chuyện
+    /// `EvenstarApp` có thật sự chạy hai việc theo trình tự ấy hay không: đổi
+    /// chỗ gọi về hai `.task` anh em thì test này vẫn xanh.
     ///
-    /// Ca ấy: hàng bị gộp đi là bài **đang phát**, nằm **cuối** hàng đợi, repeat
-    /// **tắt**. Nếu khôi phục chạy trước (hình dạng cũ: hai `.task` anh em
-    /// không được SwiftUI xếp thứ tự), hàng đợi trong bộ nhớ giữ hàng sắp chết,
-    /// lượt quét báo qua `handleTrackDeleted`, chỗ ấy rơi vào
-    /// `queueIndex >= queue.count`, gọi `stopPlayback()` và ghi đè
-    /// `PlaybackState` bằng hàng đợi rỗng — người dùng mất sạch hàng đợi lẫn vị
-    /// trí đang nghe.
+    /// Và không có test nào làm được chuyện đó. SwiftUI không cho quan sát thứ
+    /// tự của hai `.task`, nên **thứ tự ấy hiện không được test nào canh** —
+    /// thứ duy nhất giữ nó là ghi chú dài ở chỗ gọi trong `EvenstarApp`. Ai
+    /// định dọn chỗ ấy cho app mở nhanh hơn thì phải đọc ghi chú kia, vì bó
+    /// test sẽ không kêu.
     ///
-    /// Theo thứ tự đúng thì `PlaybackState` đã được trỏ lại xong trước khi
-    /// khôi phục đọc nó, nên bài ấy quay lại dưới `id` của hàng được giữ.
-    func testSweepTruocRestoreGiuNguyenHangDoiVaViTri() async throws {
+    /// Cái nó ghim thật, trên đúng ca xấu nhất: hàng bị gộp đi là bài **đang
+    /// phát**, nằm **cuối** hàng đợi, repeat **tắt**. Chạy khôi phục trước thì
+    /// hàng đợi trong bộ nhớ giữ hàng sắp chết, lượt quét báo qua
+    /// `handleTrackDeleted`, chỗ ấy rơi vào `queueIndex >= queue.count`, gọi
+    /// `stopPlayback()` và ghi đè `PlaybackState` bằng hàng đợi rỗng — người
+    /// dùng mất sạch hàng đợi lẫn vị trí đang nghe. Chạy quét trước thì
+    /// `PlaybackState` đã được trỏ lại xong lúc khôi phục đọc nó, nên bài ấy
+    /// quay lại dưới `id` của hàng được giữ, và đó là thứ bốn khẳng định dưới
+    /// đây đo.
+    func testQuetRoiKhoiPhucGiuNguyenHangDoiVaViTri() async throws {
         let context = try makeContext()
         let library = LibraryService(context: context)
 

@@ -77,6 +77,37 @@ import OSLog
 /// xoá. Hàng đợi trong bộ nhớ mất bài ấy cho tới lần dựng hàng đợi sau. Đó là
 /// đánh đổi có chủ ý — mất một bài khỏi hàng đợi là chuyện chịu được, đọc một
 /// hàng đã chết thì không — và nó cùng hướng với bước khử trùng lặp bên dưới.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// LƯỢT `save()` Ở CUỐI **KHÔNG CÒN** LÀ MỘT GIAO DỊCH
+/// ─────────────────────────────────────────────────────────────────────────
+/// Từ khi app tách làm hai kho (xem `EvenstarStores`), một lời gọi
+/// `context.save()` duy nhất ở cuối `run(context:)` chạm vào **hai** file kho:
+/// những lượt `delete` nằm ở `default.store`, còn `PlaybackState` được trỏ lại
+/// nằm ở `Playback.store`. Core Data phát **một lệnh lưu cho mỗi kho** và
+/// không có commit hai pha bắc qua chúng. Trước khi tách, cả hai nửa nằm gọn
+/// trong một giao dịch SQLite; nay thì không, và không có gì ở chỗ gọi nói ra
+/// chuyện đó.
+///
+/// Nghĩa là một lỗi giữa chừng — đĩa đầy, SQLite hỏng — có thể để lại **một
+/// nửa**: hàng trùng đã xoá mà `state.queueTrackIDs` vẫn trỏ vào những `UUID`
+/// vừa chết, hoặc ngược lại, `PlaybackState` đã trỏ lại mà hàng trùng vẫn còn.
+///
+/// Vẫn chịu được, và đây là hai cơ chế tự chữa, mỗi cơ chế lo một nửa:
+///
+/// - **Nửa "id trỏ vào hàng đã chết"**: `restoreFromPersistedState` dựng lại
+///   hàng đợi bằng `compactMap { resolveTrack(byID:) }`, nên một `id` không
+///   phân giải được chỉ đơn giản rơi ra khỏi hàng đợi khôi phục, và
+///   `queueIndex` được kẹp vào khoảng còn sống. Không có đường nào từ đó tới
+///   một hàng đã chết trong bộ nhớ.
+/// - **Nửa "hàng trùng còn nguyên"**: lượt quét là tất định và chạy lại mỗi
+///   lần mở app. Lần mở sau gặp đúng nhóm trùng ấy, chọn đúng hàng giữ lại như
+///   lần trước (xem `DuplicateMerge`), và làm nốt.
+///
+/// Nên chỗ này cố tình **không** có commit hai pha: giá của nó là một máy trạng
+/// thái cho một ca mà hai đường trên đã dọn sạch trong vòng một lần mở app.
+/// Nhưng đừng thêm việc gì vào `run(context:)` mà dựa vào chuyện hai kho lưu
+/// được-ăn-cả-ngã-về-không — cái bảo đảm ấy không còn nữa.
 @MainActor
 enum DuplicateSweep {
 
@@ -163,6 +194,10 @@ enum DuplicateSweep {
             )
         }
 
+        // **Một lời gọi, hai kho, không phải một giao dịch.** Lượt xoá nằm ở
+        // `default.store`, `PlaybackState` vừa sửa ở trên nằm ở
+        // `Playback.store`. Xem mục cuối trong ghi chú ở đầu kiểu về chuyện gì
+        // xảy ra khi chỉ một nửa lưu được, và hai cơ chế dọn nó.
         try context.save()
         AppLog.library.info("Gộp trùng: xoá \(repointing.count, privacy: .public) hàng.")
         return repointing.count

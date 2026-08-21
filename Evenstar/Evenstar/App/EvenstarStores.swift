@@ -36,10 +36,26 @@ import SwiftData
 /// **giữ nguyên tên mặc định**, và kho mới là kho của `PlaybackState`.
 ///
 /// Cái mất một lần, có chủ ý: hàng `PlaybackState` cũ nằm trong `default.store`
-/// không đi theo sang kho mới. Người dùng mất **một** hàng đợi đã lưu ở lần
-/// nâng cấp, và `restoreFromPersistedState` coi trạng thái rỗng là không làm
-/// gì. Đổi lại là không phải viết một `SchemaMigrationPlan` chép hàng giữa hai
-/// kho cho một thứ vốn sẽ được ghi đè ngay lần bấm play kế tiếp.
+/// không đi theo sang kho mới. Mất **cả hàng**, không chỉ hàng đợi — nói cho
+/// đủ, vì đọc lướt sẽ tưởng chỉ hàng đợi đi còn cài đặt ở lại:
+///
+/// - `queueTrackIDs`, `unshuffledQueueTrackIDs`, `currentTrackID`,
+///   `queueIndex`, `positionSeconds` — hàng đợi và chỗ đang nghe dở.
+/// - `repeatModeRaw`, `isShuffled`, `isAutoplay` — **ba cài đặt** về mặc định.
+///   Người bật repeat-all và autoplay mở app sau nâng cấp thấy cả hai tắt, im
+///   lặng, không có thông báo nào.
+///
+/// Chỗ này dễ đọc thành mâu thuẫn nên nói luôn:
+/// `restoreFromPersistedState` cố tình đọc `repeatMode`, `isShuffled` và
+/// `isAutoplay` **phía trên** cái guard hàng-đợi-rỗng của nó, đúng để ba thứ ấy
+/// sống sót qua một trạng thái rỗng — mà rỗng chính là thứ một `Playback.store`
+/// mới toanh sinh ra. Cơ chế giữ chúng nằm sẵn ở đó; thứ vô hiệu hoá nó là bản
+/// thân **hàng** nằm ở kho kia, nên chẳng có gì để đọc.
+///
+/// Vẫn chấp nhận được — ba cài đặt bật lại bằng ba cú chạm — và đổi lại là
+/// không phải viết một `SchemaMigrationPlan` chép hàng giữa hai kho cho một thứ
+/// vốn sẽ được ghi đè ngay lần bấm play kế tiếp. Nhưng nếu ai đó quyết định ba
+/// cài đặt kia đáng giữ, đây là chỗ ghi vì sao chúng mất.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
 /// SỬA TÊN CONTAINER THÌ PHẢI SỬA Ở HAI CHỖ

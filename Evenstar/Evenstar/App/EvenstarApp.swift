@@ -155,6 +155,13 @@ struct EvenstarApp: App {
                 // trước vẫn giữ, nhưng từ đây nó là dây bảo hiểm chứ không còn
                 // là thứ đứng giữa người dùng và một hàng đợi bị xoá trắng.
                 //
+                // **Bó test sẽ không kêu nếu ai đó tách lại.** SwiftUI không
+                // cho quan sát thứ tự của hai `.task`, nên không viết được
+                // test nào canh trình tự này;
+                // `DuplicateSweepTests.testQuetRoiKhoiPhucGiuNguyenHangDoiVaViTri`
+                // chỉ ghim *kết quả khi đã có* trình tự, và vẫn xanh khi trình
+                // tự bị phá. Ghi chú này là thứ duy nhất đứng canh.
+                //
                 // Ở đây chứ không trong `RootView`: đây là chỗ duy nhất cả
                 // `modelContainer` lẫn `playback` đều sẵn trong tầm, và thân
                 // `RootView` mang `.id(language)`, thứ có thể dựng lại một
