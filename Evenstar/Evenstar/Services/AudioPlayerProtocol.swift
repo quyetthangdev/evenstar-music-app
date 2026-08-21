@@ -40,10 +40,27 @@ protocol AudioPlayerProtocol: AnyObject {
     func load(url: URL) throws
     func play()
     func pause()
+
+    /// Đặt âm lượng của riêng bản phát này, có thể trượt dần tới đó.
+    ///
+    /// Chỉ hẹn giờ ngủ dùng: mờ về 0 trước khi tắt, và trả về 1 khi người dùng
+    /// huỷ hẹn hoặc đặt lại. **Không phải âm lượng hệ thống** — `SystemVolumeSlider`
+    /// mới là thứ chỉnh cái đó, và hai thứ nhân với nhau. Mờ ở tầng này nên nếu
+    /// app bị giết giữa lúc mờ, âm lượng máy vẫn nguyên như người dùng để.
+    ///
+    /// `fadeDuration` bằng 0 nghĩa là đổi ngay.
+    func setVolume(_ volume: Float, fadeDuration: TimeInterval)
 }
 
 extension AudioPlayerProtocol {
     var isDurationKnown: Bool { true }
+
+    /// Mặc định không làm gì.
+    ///
+    /// Một bản phát không chỉnh được âm lượng thì hẹn giờ ngủ vẫn phải chạy —
+    /// nó tắt nhạc đúng giờ, chỉ là tắt thẳng thay vì mờ dần. Ép mọi bản phát
+    /// phải hiện thực chỉ để trả về một chỗ trống thì không mua được gì.
+    func setVolume(_ volume: Float, fadeDuration: TimeInterval) {}
 }
 
 final class AVAudioPlayerWrapper: NSObject, AudioPlayerProtocol, AVAudioPlayerDelegate {
@@ -79,6 +96,11 @@ final class AVAudioPlayerWrapper: NSObject, AudioPlayerProtocol, AVAudioPlayerDe
 
     func pause() {
         player?.pause()
+    }
+
+    /// `AVAudioPlayer` tự trượt âm lượng, nên ở đây không phải tự nội suy.
+    func setVolume(_ volume: Float, fadeDuration: TimeInterval) {
+        player?.setVolume(volume, fadeDuration: fadeDuration)
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully _: Bool) {

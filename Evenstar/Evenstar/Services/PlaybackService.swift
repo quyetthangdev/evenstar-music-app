@@ -137,6 +137,13 @@ final class PlaybackService {
     /// back, which is not the same question. Without this, a call that arrived
     /// during a pause would end with the app starting to play on its own.
     private var shouldResumeAfterInterruption: Bool = false
+    /// Hẹn giờ ngủ. `nil` khi không có hẹn nào — xem `SleepTimer`.
+    ///
+    /// Đặt ở đây chứ không phải một `@Environment` riêng vì nó chỉ có nghĩa khi
+    /// có nhạc đang chạy, và mọi thứ nó cần tác động — `pause()`, âm lượng của
+    /// bản phát — đều nằm trong lớp này.
+    let sleepTimer = SleepTimer()
+
     private var positionTimer: Timer?
     private var playCountedForCurrent: Bool = false
     private var lastPersistAt: Date = .distantPast
@@ -230,6 +237,24 @@ final class PlaybackService {
         }
         self.player.didFailCallback = { [weak self] error, url in
             Task { @MainActor in self?.handleFailure(error, url: url) }
+        }
+        // Hẹn giờ ngủ chạm ra thế giới qua đúng hai chỗ này.
+        //
+        // Mờ ở tầng bản phát, không phải âm lượng hệ thống: nếu app bị giết
+        // giữa lúc mờ, mức âm lượng của máy vẫn nguyên như người dùng để.
+        self.sleepTimer.onFadeOut = { [weak self] duration in
+            self?.player.setVolume(duration > 0 ? 0 : 1, fadeDuration: duration)
+        }
+        // `pause()` chứ không phải `stopPlayback()`: hàng đợi và vị trí phải còn
+        // nguyên để sáng mai mở lên nghe tiếp đúng chỗ. `stopPlayback()` xoá cả
+        // hai, và người ngủ quên sẽ mất chỗ đang nghe dở.
+        self.sleepTimer.onExpire = { [weak self] in
+            guard let self else { return }
+            self.pause()
+            // Trả âm lượng NGAY sau khi đã im, không mờ: bài sau phải bắt đầu ở
+            // âm lượng bình thường, và lúc này không còn tiếng nào để cú nhảy
+            // ấy nghe thấy được.
+            self.player.setVolume(1, fadeDuration: 0)
         }
         observeAudioSession()
     }
@@ -1109,6 +1134,11 @@ final class PlaybackService {
 
     private func tickPosition() {
         position = player.currentTime
+        // Nhịp này chỉ chạy khi đang phát, và hẹn giờ ngủ cũng chỉ cần đúng
+        // lúc ấy: lúc tạm dừng thì không có tiếng nào để mờ và không có gì để
+        // tắt. `remaining` tính từ đồng hồ tường nên số phút trên nút vẫn đúng
+        // dù nhịp có ngưng.
+        sleepTimer.tick()
         // Audio has actually got somewhere, so whatever run of unplayable files
         // preceded it is over. See `failureSkipRun` for why "a track started" is
         // not good enough evidence on the streaming path.

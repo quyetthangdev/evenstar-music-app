@@ -56,6 +56,18 @@ final class MockAudioPlayer: AudioPlayerProtocol {
         isPlaying = true
     }
 
+    /// Mọi lời gọi `setVolume`, để test hẹn giờ ngủ nhìn được cú mờ.
+    ///
+    /// Ghi cả mức lẫn quãng, vì hai thứ ấy là toàn bộ nội dung của một cú mờ:
+    /// mờ về đâu, và trong bao lâu. Một mảng chứ không phải giá trị cuối, vì
+    /// thứ dễ sai nhất là gọi mờ HAI lần — lần thứ hai kéo âm lượng giật lại
+    /// về đầu dốc, và chỉ chuỗi lời gọi mới cho thấy điều đó.
+    private(set) var volumeChanges: [(volume: Float, fade: TimeInterval)] = []
+
+    func setVolume(_ volume: Float, fadeDuration: TimeInterval) {
+        volumeChanges.append((volume, fadeDuration))
+    }
+
     func pause() {
         pauseCallCount += 1
         isPlaying = false

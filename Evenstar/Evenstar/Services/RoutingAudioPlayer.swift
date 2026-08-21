@@ -137,6 +137,15 @@ final class RoutingAudioPlayer: AudioPlayerProtocol {
     func play() { activePlayer?.play() }
     func pause() { activePlayer?.pause() }
 
+    /// Chỉ bản phát đang hoạt động, giống mọi thứ khác trong khối này.
+    ///
+    /// Bản phát bị thay thế vẫn còn sống nhưng đã im, nên chỉnh âm lượng của
+    /// nó là chỉnh một thứ không ai nghe — và tệ hơn, nếu nó được kích hoạt
+    /// lại thì mức âm lượng cũ sẽ đi theo.
+    func setVolume(_ volume: Float, fadeDuration: TimeInterval) {
+        activePlayer?.setVolume(volume, fadeDuration: fadeDuration)
+    }
+
     // MARK: - Gated callbacks
 
     private func forwardFinish(from engine: Engine) {
