@@ -37,7 +37,7 @@ final class JamendoTrack {
     /// Documents-relative, downloaded when the track was saved. See
     /// `JamendoLibraryService.save`.
     var artworkRelativePath: String?
-    var dateAdded: Date = Date()
+    var dateAdded: Date = Date.now
     var playCount: Int = 0
     var lastPlayedAt: Date?
 
@@ -52,7 +52,7 @@ final class JamendoTrack {
         licenceURLString: String? = nil,
         shareURLString: String? = nil,
         artworkRelativePath: String? = nil,
-        dateAdded: Date = Date(),
+        dateAdded: Date = .now,
         playCount: Int = 0,
         lastPlayedAt: Date? = nil
     ) {
