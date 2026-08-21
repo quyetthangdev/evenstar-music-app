@@ -639,8 +639,18 @@ enum BottomBarStyle {
     /// tan trong hai tới ba khung là một phép hoà mờ, và kéo dài nó ra ở chế độ
     /// giảm chuyển động là đi ngược mục đích — thứ ở lại lâu hơn trên đường đi
     /// của tấm bìa mới là thứ gây khó chịu.
+    ///
+    /// **0.10 → 0.05: hằng số cũ không khớp với phép đo ngay phía trên nó.**
+    /// Đoạn văn kia nói "hai tới ba khung", và ở 60fps hai tới ba khung là
+    /// 0.033–0.05 giây. 0.10 giây là **sáu** khung — gấp đôi thứ đã đo, và cách
+    /// duy nhất nó lọt qua là không ai nhân 3 với 16.7ms. Người dùng nhìn thấy
+    /// ba viên thuốc nán lại và báo trước khi tôi đọc ra chỗ vênh.
+    ///
+    /// 0.05 là đầu chậm của khoảng đã đo, chọn thế vì đây là một cú hoà mờ chứ
+    /// không phải cú cắt: ba khung còn đọc ra là tan, hai khung bắt đầu đọc ra
+    /// là biến mất.
     @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
-    private static let queueContentOutFull = Animation.easeIn(duration: 0.10)
+    private static let queueContentOutFull = Animation.easeIn(duration: 0.05)
     private static let queueContentOutFlat = queueContentOutFull
 
     /// Khối chữ lớn của `NowPlayingContent` tan đi khi hàng đợi mở.
