@@ -270,14 +270,26 @@ struct SongsView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.footnote.weight(.semibold))
-                    Text(sort.label)
-                        .font(.footnote)
-                }
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
+                // Chỉ glyph, không kèm chữ — dạng Apple dùng cho điều khiển sắp
+                // xếp ở Ảnh và Tệp.
+                //
+                // Bản trước bày cả `sort.label` cạnh icon. Nó cho biết đang sắp
+                // theo gì, nhưng phải trả bằng một hàng chữ đổi bề rộng mỗi lần
+                // đổi kiểu — "Tên A→Z" và "Nghe nhiều nhất" lệch nhau khá xa,
+                // nên hàng nhích qua nhích lại. Trạng thái đã nằm trong `Menu`:
+                // mở ra là thấy dấu tick ở mục đang chọn.
+                //
+                // `.fill` khi khác mặc định, viền rỗng khi đang ở `.title`: đó
+                // là cách Apple nói "bộ lọc này đang có tác dụng" mà không cần
+                // thêm chữ nào.
+                Image(systemName: sort == .default
+                      ? "arrow.up.arrow.down.circle"
+                      : "arrow.up.arrow.down.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(sort == .default ? AnyShapeStyle(.secondary)
+                                                      : AnyShapeStyle(Color.accentColor))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel(String(
                 localized: "Sắp xếp",
@@ -287,7 +299,7 @@ struct SongsView: View {
             .accessibilityValue(sort.label)
         }
         .padding(.horizontal)
-        .padding(.bottom, 6)
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder

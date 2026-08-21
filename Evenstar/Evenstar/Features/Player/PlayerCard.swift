@@ -1959,6 +1959,23 @@ struct PlayerCard: View {
                     // nốt xám đậm trên mảng ấy, gần như không thấy.
                     .foregroundStyle(.white.opacity(0.62))
                     .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
+                    // **`scaleEffect` không đổi kích thước layout.**
+                    //
+                    // Nốt nhạc vẽ ở `font(size: 140)` nên nó CHIẾM một hộp 140pt
+                    // dù được thu nhỏ tới đâu. Trong thẻ mở rộng thì vừa. Trong
+                    // player thu nhỏ, ô bìa chỉ khoảng 40pt, và một hộp 140pt
+                    // nằm trong đó lấn ra ngoài — nốt nhạc tràn khỏi ô bìa và
+                    // đẩy hàng chữ bên cạnh.
+                    //
+                    // `.frame` ở đây ghim layout về đúng cạnh ô bìa. Nó không
+                    // cắt gì: nốt vẽ ra đúng `min(w,h) * 0.5` nên vẫn nằm gọn
+                    // bên trong. Và nó giữ được `scaleEffect` — thứ có hoạt hoá
+                    // được, lý do cả khối này không dùng `.font(size:)` tính
+                    // thẳng từ cạnh.
+                    //
+                    // Cùng loại bẫy với ghi chú `clipped()` trong
+                    // `MiniPlayerChrome`: glyph không co theo `.frame` bọc ngoài.
+                    .frame(width: min(width, height), height: min(width, height))
             }
         }
         .frame(width: width, height: height)
