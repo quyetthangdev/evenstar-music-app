@@ -18,7 +18,16 @@ struct SongsView: View {
 
     /// Read only from `localContent`, so picking the Drive or Jamendo chip
     /// leaves this screen with no dependency on the local library at all.
-    private var tracks: [Track] { store.tracks }
+    /// Danh sách đã sắp, thứ mọi chỗ trong màn này đọc.
+    ///
+    /// `store.tracks` vốn đã theo tên A→Z, nên kiểu `.title` chạy qua đây là một
+    /// lượt sắp lại thứ đã đúng thứ tự. Chấp nhận: giữ một đường đi duy nhất
+    /// đáng hơn tiết kiệm một lượt sort, và `TrackSort.title` so cùng kiểu mà
+    /// `LibraryStore` so nên kết quả trùng khít.
+    private var tracks: [Track] { sort.apply(to: store.tracks) }
+
+    /// Nhớ qua lần mở app, cùng cách `theme` và `language` đang làm.
+    @AppStorage("library.trackSort") private var sort: TrackSort = .default
 
     /// Owned by `RootView`, which drives both the tab bar and the player from
     /// it. Written here only by `minimisesBottomBar` on this screen's list.
@@ -241,6 +250,46 @@ struct SongsView: View {
         }
     }
 
+    /// Nút sắp xếp, chỉ ở nguồn **Trên máy**.
+    ///
+    /// Drive và Jamendo cũng mang `playCount`, nhưng danh sách của chúng do
+    /// service khác dựng và không đi qua `store.tracks` — kéo vào là ba đường
+    /// riêng thay vì một, cho một tính năng chưa ai đòi ở đó.
+    ///
+    /// `Menu` chứ không `Picker` phân đoạn thứ hai: hai thanh phân đoạn chồng
+    /// nhau đọc ra như hai bộ lọc ngang hàng, mà chúng không ngang hàng — nguồn
+    /// đổi *nội dung*, sắp xếp chỉ đổi *thứ tự* của nội dung ấy.
+    private var sortRow: some View {
+        HStack {
+            Spacer()
+            Menu {
+                Picker("Sắp xếp", selection: $sort) {
+                    ForEach(TrackSort.allCases) { option in
+                        Label(option.label, systemImage: option.systemImage)
+                            .tag(option)
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.footnote.weight(.semibold))
+                    Text(sort.label)
+                        .font(.footnote)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(String(
+                localized: "Sắp xếp",
+                bundle: AppLanguage.resolvedBundle,
+                locale: AppLanguage.resolvedLocale
+            ))
+            .accessibilityValue(sort.label)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 6)
+    }
+
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
@@ -252,6 +301,10 @@ struct SongsView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.bottom, 8)
+
+            if source == .local {
+                sortRow
+            }
 
             // `.clearsBottomBar()` sits on each branch rather than on this
             // `VStack`, and that placement is load-bearing.
@@ -282,7 +335,9 @@ struct SongsView: View {
             EmptyLibraryView(onImportTap: { showFileImporter = true })
         } else {
             List(tracks) { track in
-                SongRow(track: track, isAbsent: !store.isPresent(track))
+                SongRow(track: track,
+                        subtitle: sort.subtitle(for: track),
+                        isAbsent: !store.isPresent(track))
                     .contentShape(Rectangle())
                     .onTapGesture {
                         // Chạm vào hàng vắng mặt không làm gì, và **không** bật
