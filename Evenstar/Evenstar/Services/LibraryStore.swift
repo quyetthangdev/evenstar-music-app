@@ -51,6 +51,12 @@ final class LibraryStore {
     /// bản chạy thật nó luôn là `FileLocation.musicFolderURL()`.
     private let musicFolder: URL
 
+    /// Lượt đọc **cả thư mục**. Tham số hoá chỉ để test đếm được số lần nó
+    /// chạy — xem `LibraryStoreTests.testImportingManyFilesCostsOneFolderRead`,
+    /// là thứ duy nhất bắt được hình dạng O(N²) nếu nó quay lại. Ở bản chạy
+    /// thật nó luôn là `TrackPresence.scan(musicFolder:)`.
+    private let scanFolder: @MainActor (URL) -> TrackPresence.Snapshot
+
     /// Seeded at launch from a plain fetch rather than left empty for the
     /// bridge to fill on the first update pass.
     ///
@@ -61,10 +67,13 @@ final class LibraryStore {
     /// have no music, for however long the first pass takes.
     init(tracks: [Track] = [],
          presence: TrackPresence.Snapshot = .known([]),
-         musicFolder: URL = FileLocation.musicFolderURL()) {
+         musicFolder: URL = FileLocation.musicFolderURL(),
+         scanFolder: @escaping @MainActor (URL) -> TrackPresence.Snapshot
+            = { TrackPresence.scan(musicFolder: $0) }) {
         self.tracks = tracks
         self.presence = presence
         self.musicFolder = musicFolder
+        self.scanFolder = scanFolder
     }
 
     /// Bài này có phát được trên máy này không.
@@ -82,16 +91,81 @@ final class LibraryStore {
     ///
     /// **Quét lại tập có mặt nằm sau cái chốt ấy, và chỗ đặt là có tính toán.**
     /// Đặt trước chốt thì mỗi lần lưu bất kỳ thuộc tính nào cũng tốn một lượt
-    /// đọc thư mục. Đặt sau chốt thì nó chỉ chạy khi tập hàng thật sự đổi —
-    /// nghĩa là lúc nhập và lúc xoá, đúng hai lúc file trên đĩa có thể đã khác.
+    /// đọc thư mục. Đặt sau chốt thì nó chỉ chạy khi tập hàng thật sự đổi.
+    ///
+    /// **Cái chốt ấy một mình là chưa đủ, và lập luận cũ ở đây đã sai.** Nó
+    /// viết rằng quét lại là rẻ vì chỉ chạy "lúc nhập và lúc xoá". Nhưng *nhập*
+    /// không phải một sự kiện: `ImportService.importFiles` lặp theo từng file →
+    /// `LibraryService.insert` gọi `context.save()` cho **mỗi** file → mỗi lượt
+    /// lưu làm `@Query` của `LibraryQueryBridge` đổi → `onChange` của nó gọi
+    /// hàm này → và hàm này đọc cả thư mục. Nhập N file tốn ~N lượt đọc một thư
+    /// mục trung bình N/2 mục, trên main actor, **bên trong một lượt cập nhật
+    /// SwiftUI**. Đó đúng là hình dạng mà doc comment ở đầu kiểu này gọi tên
+    /// như con bọ cả lớp được viết ra để dẹp — chỉ là nó bò từ tầng `@Query`
+    /// xuống tầng hệ thống file.
+    ///
+    /// **Nên lượt đọc cả thư mục chỉ chạy khi không có nền để cộng thêm vào:**
+    ///
+    ///   - `presence` đang là `.unreadable` — không có tập nào để cộng vào, và
+    ///     một lần thử lại là đường phục hồi duy nhất khỏi trạng thái mở khoá.
+    ///   - phần **thêm mới** không nhỏ hơn cả mảng, tức là gần như mọi hàng đều
+    ///     mới: lần nạp đầu tiên, hoặc lượt xoá làm mảng rỗng. Một lượt đọc thư
+    ///     mục rẻ hơn N lệnh `stat`.
+    ///
+    /// Còn lại — và đường nhập **luôn** rơi vào đây, vì mỗi lượt lưu chỉ thêm
+    /// đúng một hàng — chỉ tốn một lệnh `stat` cho chính bài vừa thêm. Nhập N
+    /// file: **một** lượt đọc thư mục (cho file đầu tiên, lúc mảng còn toàn
+    /// hàng mới) và N lệnh `stat`, thay cho N lượt đọc thư mục.
+    ///
+    /// **Không có lượt quét lười nào trong `isPresent`**, và đó là điều kiện
+    /// chứ không phải sở thích: `isPresent` được gọi từ trong thân view, còn
+    /// `presence` là thuộc tính `@Observable`. Ghi vào nó trong lúc một thân
+    /// view đang đọc là đúng cái "mutation during view update" mà SwiftUI cảnh
+    /// báo, và nó tự nuôi nó. Mọi thay đổi nằm ở đây, nơi `onChange` gọi tới —
+    /// sau lượt cập nhật, không phải trong nó.
+    ///
+    /// **Đường xoá không quét lại nữa**, và đó không phải một chỗ sót. Xoá làm
+    /// đường dẫn của hàng ấy nằm lại trong tập, nhưng không ai hỏi được về nó
+    /// nữa: `relativePath` chứa `UUID` sinh riêng cho từng lượt nhập (xem
+    /// `ImportService`) nên không bao giờ dùng lại, và `isPresent` chỉ được hỏi
+    /// về hàng đang có trong `tracks`. Số rác ấy bị chặn trên bởi số lần xoá
+    /// trong một phiên, và lần nạp lại đầy kế tiếp dựng lại tập từ đầu.
     ///
     /// Cái nó **không** bắt được là file bị xoá từ ngoài app trong lúc app đang
     /// chạy: không hàng nào đổi nên không quét lại. Chịu được, vì vòng bỏ-qua
     /// trong `PlaybackService.loadCurrentAndPlay()` vẫn không cho nhạc dừng.
     func replace(with fetched: [Track]) {
         guard fetched != tracks else { return }
+        let previous = tracks
         tracks = fetched
-        presence = TrackPresence.scan(musicFolder: musicFolder)
+        refreshPresence(previous: previous, fetched: fetched)
+    }
+
+    /// Xem `replace(with:)` về vì sao chỗ này không phải lúc nào cũng đọc cả
+    /// thư mục.
+    private func refreshPresence(previous: [Track], fetched: [Track]) {
+        guard case .known(var paths) = presence else {
+            presence = scanFolder(musicFolder)
+            return
+        }
+        // So bằng `persistentModelID` chứ không bằng `relativePath`: đây là câu
+        // hỏi "hàng nào mới", và định danh là thứ trả lời nó mà không phải đọc
+        // một thuộc tính nào của hàng.
+        let before = Set(previous.map(\.persistentModelID))
+        let added = fetched.filter { !before.contains($0.persistentModelID) }
+        guard added.count < fetched.count else {
+            presence = scanFolder(musicFolder)
+            return
+        }
+        // Không có hàng mới thì không có file mới nào có thể đã xuất hiện, nên
+        // không có gì để cộng vào — và cũng không được đụng vào `presence`, vì
+        // mỗi lượt gán đánh thức năm màn hình.
+        guard !added.isEmpty else { return }
+        for track in added
+        where TrackPresence.isOnDisk(track.relativePath, musicFolder: musicFolder) {
+            paths.insert(track.relativePath)
+        }
+        presence = .known(paths)
     }
 
     /// Drops a row that is about to be deleted, **before** it is deleted.

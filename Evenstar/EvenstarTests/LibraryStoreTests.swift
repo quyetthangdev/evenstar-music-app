@@ -218,4 +218,77 @@ final class LibraryStoreTests: XCTestCase {
         let store = LibraryStore(tracks: [track], presence: .unreadable)
         XCTAssertTrue(store.isPresent(track))
     }
+
+    // MARK: - Giá của một lượt nhập
+
+    /// Đếm số lượt đọc **cả thư mục**, thứ duy nhất phân biệt được bản sửa với
+    /// hình dạng O(N²) nó thay thế.
+    private final class ScanCounter {
+        private(set) var count = 0
+        func scan(_ folder: URL) -> TrackPresence.Snapshot {
+            count += 1
+            return TrackPresence.scan(musicFolder: folder)
+        }
+    }
+
+    /// **Ghim con bọ I5.** `ImportService.importFiles` lặp theo từng file,
+    /// `LibraryService.insert` gọi `context.save()` cho mỗi file, mỗi lượt lưu
+    /// làm `@Query` của `LibraryQueryBridge` đổi, và `onChange` của nó gọi
+    /// `replace(with:)`. Nhập N file vì thế là N lời gọi `replace`, mỗi lời gọi
+    /// thêm đúng một hàng — đúng vòng lặp dựng lại ở đây.
+    ///
+    /// Trước bản sửa, mỗi lời gọi đọc cả thư mục: N lượt đọc một thư mục trung
+    /// bình N/2 mục, trên main actor, trong một lượt cập nhật SwiftUI. Test này
+    /// đỏ với con số **20** nếu hình dạng ấy quay lại.
+    func testImportingManyFilesCostsOneFolderRead() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("import-cost-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let counter = ScanCounter()
+        let store = LibraryStore(musicFolder: folder, scanFolder: { counter.scan($0) })
+
+        var accumulated: [Track] = []
+        for index in 0..<20 {
+            let name = "\(index).mp3"
+            // Chép file rồi mới chèn hàng — đúng thứ tự `ImportService` làm.
+            try Data().write(to: folder.appendingPathComponent(name))
+            accumulated.append(InMemoryLibrary.makeTrack(relativePath: "Music/\(name)"))
+            store.replace(with: accumulated)
+        }
+
+        XCTAssertLessThanOrEqual(
+            counter.count, 1,
+            "Nhập 20 file không được tốn 20 lượt đọc thư mục — xem `replace(with:)`."
+        )
+        // Và nó vẫn phải **đúng**: rẻ mà sai thì không phải sửa, là hỏng khác.
+        for track in accumulated {
+            XCTAssertTrue(store.isPresent(track), "\(track.relativePath) vừa nhập xong phải có mặt.")
+        }
+    }
+
+    /// Nửa còn lại của cùng quyết định: một hàng mới mà **không** có file trên
+    /// đĩa — hàng CloudKit gửi về từ máy khác — vẫn phải là vắng mặt. Nếu bước
+    /// cộng thêm chỉ tin vào việc "hàng này mới" mà không `stat`, mọi hàng đồng
+    /// bộ về sẽ sáng lên và người dùng chạm vào một bài không hề có.
+    func testARowThatArrivesWithoutItsFileIsStillAbsent() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("arrived-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let here = InMemoryLibrary.makeTrack(relativePath: "Music/here.mp3")
+        try Data().write(to: folder.appendingPathComponent("here.mp3"))
+        let store = LibraryStore(musicFolder: folder)
+        store.replace(with: [here])
+        XCTAssertTrue(store.isPresent(here))
+
+        // Lượt thứ hai đi đường cộng thêm: một hàng mới trên hai hàng.
+        let elsewhere = InMemoryLibrary.makeTrack(relativePath: "Music/elsewhere.mp3")
+        store.replace(with: [here, elsewhere])
+
+        XCTAssertTrue(store.isPresent(here))
+        XCTAssertFalse(store.isPresent(elsewhere), "Không có file thì không có mặt.")
+    }
 }
