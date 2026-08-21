@@ -57,9 +57,18 @@ final class SleepTimer {
     /// Làm tròn xuống thì còn chín mươi giây sẽ hiện "1 phút", và người đọc nghĩ
     /// mình còn ít hơn thực tế. Tệ hơn: ở giây cuối cùng nút sẽ hiện "0" trong
     /// lúc nhạc vẫn đang kêu.
-    var minutesRemaining: Int? {
-        guard let remaining else { return nil }
-        return Int(ceil(remaining / 60))
+    ///
+    /// **Lưu trữ chứ không tính toán, và đó là chỗ dễ làm sai.** Một thuộc tính
+    /// tính từ `now()` không đánh thức `@Observable` — không có gì thay đổi để
+    /// nó nhận ra — nên số trên nút sẽ đứng im suốt ba mươi phút. Gán ở đây, và
+    /// chỉ gán khi con số thật sự khác, nên player card vẽ lại **ba mươi lần**
+    /// thay vì một nghìn tám trăm lần. Card ấy đang chạy sát ngân sách một
+    /// khung hình, nên khoảng cách đó không phải chuyện làm đẹp.
+    private(set) var minutesRemaining: Int?
+
+    private func refreshMinutes() {
+        let next = remaining.map { Int(ceil($0 / 60)) }
+        if next != minutesRemaining { minutesRemaining = next }
     }
 
     func start(minutes: Int) {
@@ -72,11 +81,13 @@ final class SleepTimer {
         restoreVolumeIfFading()
         endsAt = now().addingTimeInterval(seconds)
         hasStartedFade = false
+        refreshMinutes()
     }
 
     func cancel() {
         restoreVolumeIfFading()
         endsAt = nil
+        refreshMinutes()
     }
 
     /// Nhịp đếm, gọi từ ngoài vào.
@@ -91,9 +102,12 @@ final class SleepTimer {
         if left <= 0 {
             self.endsAt = nil
             hasStartedFade = false
+            refreshMinutes()
             onExpire?()
             return
         }
+
+        refreshMinutes()
 
         if !hasStartedFade, left <= Self.fadeDuration {
             hasStartedFade = true
