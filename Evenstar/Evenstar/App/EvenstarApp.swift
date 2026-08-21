@@ -131,10 +131,22 @@ struct EvenstarApp: App {
                     // Một lượt mỗi lần mở app. Hàng trùng đến trong phiên này
                     // được dọn ở lần mở sau — xem `DuplicateSweep`.
                     //
+                    // `onRowWillBeDeleted` là bản thứ tư của cùng cái móc mà
+                    // `libService`, `driveLib` và `jamendoLib` đã có ở trên, và
+                    // nó phải có ở đây vì lượt quét cũng xoá hàng. `.task` này
+                    // và `.task` khôi phục hàng đợi của `RootView` **không**
+                    // được SwiftUI xếp thứ tự: nếu khôi phục xong trước, hàng
+                    // đợi trong bộ nhớ đang giữ đúng hàng mà lượt quét sắp xoá,
+                    // và nhịp đọc vị trí kế tiếp đọc một hàng đã chết. Xem ghi
+                    // chú ở đầu `DuplicateSweep`.
+                    //
                     // Thất bại chỉ ghi log: một lượt dọn dẹp không chạy được
                     // không phải lý do để chặn người dùng nghe nhạc.
                     do {
-                        try DuplicateSweep.run(context: modelContainer.mainContext)
+                        try DuplicateSweep.run(
+                            context: modelContainer.mainContext,
+                            onRowWillBeDeleted: { playback.handleTrackDeleted($0) }
+                        )
                     } catch {
                         AppLog.library.error(
                             "Lượt gộp trùng thất bại: \(error.localizedDescription, privacy: .public)"

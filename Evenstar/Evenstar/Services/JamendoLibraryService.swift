@@ -143,13 +143,27 @@ final class JamendoLibraryService {
     /// would leave one more unreachable file on the device permanently.
     func unsave(_ track: JamendoTrack) throws {
         onTrackWillBeDeleted?(track)
-        if let artworkPath = track.artworkRelativePath {
-            try? FileManager.default.removeItem(
-                at: FileLocation.absoluteURL(forRelative: artworkPath)
-            )
-        }
+        Self.removeDownloadedArtwork(for: track)
         library.context.delete(track)
         try library.save()
+    }
+
+    /// Xoá ảnh bìa mà `save` đã tải về cho hàng này. Best-effort, `try?` — xem
+    /// `unsave` về lý do một file bìa không xoá được không bao giờ được phép
+    /// chặn một lệnh xoá.
+    ///
+    /// Tách ra khỏi `unsave` và để `static` chỉ vì **`DuplicateSweep` cần
+    /// đúng hành vi này mà không có `JamendoLibraryService` nào trong tay.**
+    /// Lượt gộp trùng xoá hàng `JamendoTrack` thẳng qua `ModelContext`, nên
+    /// trước khi có hàm này, mỗi hàng bị gộp đi để lại vĩnh viễn một file JPEG
+    /// mà không còn `artworkRelativePath` nào trỏ tới — chính cái rò rỉ mà
+    /// `unsave` được viết ra để chặn. Hai chỗ xoá hàng thì phải cùng một chỗ
+    /// dọn file; đừng viết lại nó ở chỗ thứ hai.
+    static func removeDownloadedArtwork(for track: JamendoTrack) {
+        guard let artworkPath = track.artworkRelativePath else { return }
+        try? FileManager.default.removeItem(
+            at: FileLocation.absoluteURL(forRelative: artworkPath)
+        )
     }
 
     func isSaved(jamendoID: String) throws -> Bool {

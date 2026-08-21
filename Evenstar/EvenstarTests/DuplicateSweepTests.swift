@@ -143,4 +143,97 @@ final class DuplicateSweepTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<JamendoTrack>()).first?.playCount, 7,
                        "Lượt thứ hai không được cộng dồn lần nữa.")
     }
+
+    // MARK: - Báo trước khi xoá
+
+    /// **Hợp đồng của cả nhóm này.** Lượt quét từng là đường xoá duy nhất trong
+    /// app không đi qua `onTrackWillBeDeleted`. Hàng đợi trong bộ nhớ giữ hàng
+    /// của nó **mạnh**, nên một hàng xoá-rồi-lưu sau lưng `PlaybackService` làm
+    /// lần đọc thuộc tính kế tiếp ném `NSObjectInaccessibleException` — ngoại lệ
+    /// Objective-C, Swift không bắt được, nên nếu nó xảy ra thì cả bó test chết
+    /// chứ không đỏ.
+    ///
+    /// Đọc `title` **bên trong** closure là phần ghim "hàng còn sống lúc báo":
+    /// gọi sau `context.delete` + `save()` thì chính dòng ấy là chỗ nổ.
+    func testEveryDeletedRowIsAnnouncedWhileItIsStillReadable() throws {
+        let context = try makeContext()
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        context.insert(jamendo(keptID, jamendoID: "j1", added: 100, plays: 0))
+        context.insert(jamendo(goneID, jamendoID: "j1", added: 200, plays: 0))
+        context.insert(DriveTrack(fileID: "f1", folderID: "d", fileName: "a.mp3",
+                                  dateAdded: Date(timeIntervalSince1970: 100)))
+        let driveGone = DriveTrack(fileID: "f1", folderID: "d", fileName: "a.mp3",
+                                   dateAdded: Date(timeIntervalSince1970: 200))
+        context.insert(driveGone)
+        try context.save()
+
+        var announced: [UUID] = []
+        var titles: [String] = []
+        let removed = try DuplicateSweep.run(context: context) { row in
+            announced.append(row.id)
+            titles.append(row.title)
+        }
+
+        XCTAssertEqual(removed, 2)
+        XCTAssertEqual(Set(announced), [goneID, driveGone.id],
+                       "Mỗi hàng bị xoá phải được báo đúng một lần, và chỉ hàng bị xoá.")
+        XCTAssertEqual(titles.count, 2, "Đọc được `title` nghĩa là hàng còn sống lúc báo.")
+    }
+
+    /// Ca thật ở lúc khởi động: `.task` khôi phục hàng đợi của `RootView` chạy
+    /// xong **trước** `.task` chạy lượt quét — SwiftUI không xếp thứ tự hai cái
+    /// đó — nên hàng đợi trong bộ nhớ đang giữ đúng hàng sắp bị xoá.
+    ///
+    /// Đây là bó test duy nhất chạy đúng dây nối mà `EvenstarApp` dựng, nên nó
+    /// dựng cả `PlaybackService` thật chứ không đếm số lần gọi closure.
+    func testTheInMemoryQueueLosesTheMergedAwayRowThroughTheHook() throws {
+        let context = try makeContext()
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        let kept = jamendo(keptID, jamendoID: "j1", added: 100, plays: 0)
+        let gone = jamendo(goneID, jamendoID: "j1", added: 200, plays: 0)
+        context.insert(kept)
+        context.insert(gone)
+        try context.save()
+
+        let library = try InMemoryLibrary.make()
+        let playback = PlaybackService(player: MockAudioPlayer(),
+                                       nowPlaying: MockNowPlayingPublisher(),
+                                       library: library)
+        playback.play(kept, in: [kept, gone])
+        XCTAssertEqual(playback.queue.count, 2)
+
+        _ = try DuplicateSweep.run(context: context) { playback.handleTrackDeleted($0) }
+
+        XCTAssertEqual(playback.queue.map(\.id), [keptID],
+                       "Hàng bị gộp đi phải rời hàng đợi trong bộ nhớ, không chỉ rời cơ sở dữ liệu.")
+    }
+
+    /// `JamendoLibraryService.unsave` xoá file bìa cùng với hàng; lượt quét đi
+    /// vòng qua nó, nên trước bản sửa này **mỗi** hàng Jamendo bị gộp để lại
+    /// vĩnh viễn một JPEG không còn gì trỏ tới.
+    func testAMergedAwayJamendoRowTakesItsDownloadedCoverWithIt() throws {
+        let context = try makeContext()
+        let folder = FileLocation.artworkFolderURL()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = "sweep-\(UUID().uuidString).jpg"
+        let relative = "Artwork/\(name)"
+        let url = FileLocation.absoluteURL(forRelative: relative)
+        try Data([0xFF, 0xD8]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        context.insert(jamendo(keptID, jamendoID: "j1", added: 100, plays: 0))
+        let gone = jamendo(goneID, jamendoID: "j1", added: 200, plays: 0)
+        gone.artworkRelativePath = relative
+        context.insert(gone)
+        try context.save()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        _ = try DuplicateSweep.run(context: context)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "File bìa của hàng bị gộp phải đi theo hàng, như `unsave` vẫn làm.")
+    }
 }

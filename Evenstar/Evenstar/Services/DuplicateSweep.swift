@@ -36,12 +36,54 @@ import OSLog
 /// `NSPersistentStoreRemoteChange` thì dọn sớm hơn nhưng thêm một luồng sự kiện
 /// bắn liên tục vào một thao tác có xoá hàng. Hàng trùng nằm lại thêm một phiên
 /// là chuyện chịu được.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO LƯỢT QUÉT PHẢI BÁO TRƯỚC KHI XOÁ
+/// ─────────────────────────────────────────────────────────────────────────
+/// Đây từng là **đường xoá duy nhất trong app không đi qua
+/// `onTrackWillBeDeleted`**. `LibraryService`, `DriveLibraryService` và
+/// `JamendoLibraryService` đều có cái móc ấy, và cả ba doc comment đều ghi cùng
+/// một lý do: `PlaybackService.queue` và `currentTrack` giữ hàng của chúng
+/// **mạnh**, nên xoá-rồi-lưu sau lưng chúng để lại một `PersistentModel` chết
+/// trong hàng đợi; lần đọc thuộc tính kế tiếp — nhịp ghi lượt nghe 30 giây,
+/// lượt ghi `queue.map(\.id)` ≤5s, hay một cú chạm Next — ném
+/// `NSObjectInaccessibleException`, ngoại lệ Objective-C mà Swift không bắt
+/// được.
+///
+/// Ca thật, không phải giả định: lúc khởi động, `.task` của `RootView` khôi
+/// phục hàng đợi đã lưu trong khi `.task` của `EvenstarApp` chạy lượt quét này.
+/// SwiftUI **không** xếp thứ tự hai cái đó. Nếu khôi phục xong trước, hàng đợi
+/// trong bộ nhớ đang giữ đúng hàng mà lượt quét sắp xoá.
+///
+/// Hỏng thứ hai, không cần crash nào: `PlaybackService` ghi lại các `id`
+/// **trong bộ nhớ** ở nhịp ghi tiết chế kế tiếp, đè lên `PlaybackState` mà lượt
+/// quét vừa trỏ lại — huỷ sạch việc trỏ lại. Báo trước làm hàng chết rời khỏi
+/// hàng đợi trong bộ nhớ, nên lượt ghi đè sau đó là một trạng thái nhất quán
+/// chứ không phải một trạng thái cũ.
+///
+/// Cái báo trước **không** làm: nó không chèn hàng sống sót vào chỗ hàng bị
+/// xoá. Hàng đợi trong bộ nhớ mất bài ấy cho tới lần dựng hàng đợi sau. Đó là
+/// đánh đổi có chủ ý — mất một bài khỏi hàng đợi là chuyện chịu được, đọc một
+/// hàng đã chết thì không — và nó cùng hướng với bước khử trùng lặp bên dưới.
 @MainActor
 enum DuplicateSweep {
 
     /// Trả về số hàng đã xoá.
+    ///
+    /// - Parameter onRowWillBeDeleted: gọi với **từng** hàng sắp bị xoá, trong
+    ///   lúc hàng còn đọc được — trước `context.delete(_:)` và trước `save()`.
+    ///   Cùng hợp đồng với `LibraryService.onTrackWillBeDeleted` và hai bản sao
+    ///   của nó ở `DriveLibraryService`/`JamendoLibraryService`; xem ghi chú ở
+    ///   đầu kiểu về chuyện gì xảy ra khi không có nó. `EvenstarApp` nối nó vào
+    ///   `PlaybackService.handleTrackDeleted`.
+    ///
+    ///   Tuỳ chọn, và mặc định `nil`, chỉ để test gọi được mà không phải dựng
+    ///   `PlaybackService`. Ở bản chạy thật nó **luôn** được truyền.
     @discardableResult
-    static func run(context: ModelContext) throws -> Int {
+    static func run(
+        context: ModelContext,
+        onRowWillBeDeleted: (@MainActor (any Playable) -> Void)? = nil
+    ) throws -> Int {
         var repointing: [UUID: UUID] = [:]
 
         repointing.merge(try sweep(
@@ -52,7 +94,8 @@ enum DuplicateSweep {
             apply: { row, merged in
                 row.playCount = merged.playCount
                 row.lastPlayedAt = merged.lastPlayedAt
-            }
+            },
+            willDelete: { row in onRowWillBeDeleted?(row) }
         )) { existing, _ in existing }
 
         repointing.merge(try sweep(
@@ -63,6 +106,15 @@ enum DuplicateSweep {
             apply: { row, merged in
                 row.playCount = merged.playCount
                 row.lastPlayedAt = merged.lastPlayedAt
+            },
+            willDelete: { row in
+                onRowWillBeDeleted?(row)
+                // Hàng gộp đi mang theo file bìa `save` đã tải về. Không dọn ở
+                // đây thì mỗi hàng `JamendoTrack` bị gộp để lại vĩnh viễn một
+                // JPEG không còn gì trỏ tới — cùng cái rò rỉ mà
+                // `JamendoLibraryService.unsave` được viết ra để chặn, và đó
+                // là lý do hàm dọn ấy đã được tách ra thành `static`.
+                JamendoLibraryService.removeDownloadedArtwork(for: row)
             }
         )) { existing, _ in existing }
 
@@ -88,12 +140,17 @@ enum DuplicateSweep {
 
     /// Trả về ánh xạ `id bị xoá → id được giữ`, thứ mà `PlaybackState` cần để
     /// trỏ lại.
+    /// - Parameter willDelete: chạy với hàng sắp bị xoá, **trước**
+    ///   `context.delete(_:)`. Nằm ngay sát lệnh xoá, trong cùng một nhánh
+    ///   `else`, chứ không phải một lượt duyệt riêng phía trước: như thế không
+    ///   có cách nào sửa file này mà xoá được một hàng chưa báo.
     private static func sweep<M: PersistentModel>(
         _ type: M.Type,
         in context: ModelContext,
         key: (M) -> String,
         candidate: (M) -> MergeCandidate,
-        apply: (M, GroupMerge) -> Void
+        apply: (M, GroupMerge) -> Void,
+        willDelete: (M) -> Void
     ) throws -> [UUID: UUID] {
         let rows = try context.fetch(FetchDescriptor<M>())
         var groups: [String: [M]] = [:]
@@ -112,6 +169,7 @@ enum DuplicateSweep {
                     apply(row, merged)
                 } else {
                     repointing[id] = merged.keepID
+                    willDelete(row)
                     context.delete(row)
                 }
             }
