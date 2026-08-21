@@ -125,12 +125,30 @@ enum DuplicateSweep {
         // tạo trạng thái phát cho một người chưa từng bấm play.
         if let state = try context.fetch(FetchDescriptor<PlaybackState>()).first {
             state.currentTrackID = DuplicateMerge.repointing(state.currentTrackID, through: repointing)
-            state.queueTrackIDs = DuplicateMerge.repointing(state.queueTrackIDs, through: repointing)
-            state.unshuffledQueueTrackIDs = DuplicateMerge.repointing(
-                state.unshuffledQueueTrackIDs, through: repointing
+            // Trỏ lại **rồi** khử trùng lặp, và bước thứ hai là bắt buộc chứ
+            // không phải dọn dẹp cho gọn. Nếu cả hàng bị xoá lẫn hàng được giữ
+            // đều đang trong hàng đợi, trỏ lại làm cùng một `id` nằm hai chỗ —
+            // và `QueuePanel.upcomingList` dựng
+            // `Dictionary(uniqueKeysWithValues:)` từ đúng mảng ấy, một khởi
+            // tạo **trap** khi khoá lặp. Xem `DuplicateMerge.repointing` về
+            // quyết định này và về việc nó đảo lại điều gì.
+            //
+            // `queueIndex` đi cùng mảng trong một lời gọi chứ không được để
+            // nguyên: mảng ngắn đi thì một chỉ số giữ nguyên trỏ sang **bài
+            // khác**. `deduplicating(_:index:)` ánh xạ cả hai cùng lúc.
+            let queue = DuplicateMerge.deduplicating(
+                DuplicateMerge.repointing(state.queueTrackIDs, through: repointing),
+                index: state.queueIndex
             )
-            // `queueIndex` không đụng: `repointing` thay giá trị chứ không đổi
-            // độ dài mảng, nên chỉ số vẫn trỏ đúng vị trí cũ.
+            state.queueTrackIDs = queue.ids
+            state.queueIndex = queue.index
+            // Không có chỉ số riêng — `unshuffledQueue` chỉ là thứ tự để quay
+            // về khi tắt trộn bài. Khử theo cùng quy tắc "giữ lần đầu" thì hai
+            // mảng vẫn là hoán vị của nhau, đúng cái bất biến mà
+            // `PlaybackService.restoreFromPersistedState` dựa vào.
+            state.unshuffledQueueTrackIDs = DuplicateMerge.deduplicating(
+                DuplicateMerge.repointing(state.unshuffledQueueTrackIDs, through: repointing)
+            )
         }
 
         try context.save()

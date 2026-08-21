@@ -144,6 +144,67 @@ final class DuplicateSweepTests: XCTestCase {
                        "Lượt thứ hai không được cộng dồn lần nữa.")
     }
 
+    // MARK: - Khử trùng lặp trong hàng đợi đã lưu
+
+    /// **Ca crash mà bước này chữa.** Trước lượt quét, cả hai hàng trùng đều
+    /// thật và cả hai đều vào được hàng đợi. Trỏ lại xong, cùng một `id` nằm
+    /// hai chỗ — và `QueuePanel.upcomingList` dựng
+    /// `Dictionary(uniqueKeysWithValues:)` từ đúng mảng ấy, một khởi tạo trap
+    /// khi khoá lặp. Nên lượt quét phải trả về một hàng đợi không có `id` lặp.
+    func testARepointedQueueComesBackWithoutDuplicateIDs() throws {
+        let context = try makeContext()
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        let other = UUID()
+        context.insert(jamendo(keptID, jamendoID: "j1", added: 100, plays: 0))
+        context.insert(jamendo(goneID, jamendoID: "j1", added: 200, plays: 0))
+        context.insert(PlaybackState(
+            currentTrackID: keptID,
+            queueTrackIDs: [keptID, other, goneID],
+            queueIndex: 0,
+            unshuffledQueueTrackIDs: [goneID, keptID, other]
+        ))
+        try context.save()
+
+        _ = try DuplicateSweep.run(context: context)
+
+        let state = try XCTUnwrap(try context.fetch(FetchDescriptor<PlaybackState>()).first)
+        XCTAssertEqual(state.queueTrackIDs, [keptID, other])
+        XCTAssertEqual(Set(state.unshuffledQueueTrackIDs), Set(state.queueTrackIDs),
+                       "Hai mảng phải còn là hoán vị của nhau — `restoreFromPersistedState` dựa vào đó.")
+        XCTAssertEqual(state.unshuffledQueueTrackIDs.count, 2)
+    }
+
+    /// Chỉ số phải trỏ vào đúng **bài** cũ sau khi mảng ngắn lại, không phải
+    /// đúng vị trí cũ. Ba ca ánh xạ được ghim riêng trong `DuplicateMergeTests`;
+    /// đây là ca đi qua cả lượt quét thật.
+    func testTheQueueIndexStillPointsAtTheSameTrackAfterDeduplication() throws {
+        let context = try makeContext()
+        let keptID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let goneID = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        let after = UUID()
+        context.insert(jamendo(keptID, jamendoID: "j1", added: 100, plays: 0))
+        context.insert(jamendo(goneID, jamendoID: "j1", added: 200, plays: 0))
+        context.insert(PlaybackState(
+            currentTrackID: after,
+            // Sau khi trỏ lại: [kept, kept, after]. Chỉ số 2 nằm **sau** bản
+            // trùng bị bỏ, nên nó phải lùi về 1 — giữ nguyên 2 là trỏ ra ngoài
+            // mảng hai phần tử.
+            queueTrackIDs: [keptID, goneID, after],
+            queueIndex: 2,
+            unshuffledQueueTrackIDs: [keptID, goneID, after]
+        ))
+        try context.save()
+
+        _ = try DuplicateSweep.run(context: context)
+
+        let state = try XCTUnwrap(try context.fetch(FetchDescriptor<PlaybackState>()).first)
+        XCTAssertEqual(state.queueTrackIDs, [keptID, after])
+        XCTAssertEqual(state.queueIndex, 1)
+        XCTAssertEqual(state.queueTrackIDs[state.queueIndex], after,
+                       "Cùng bài, không phải cùng vị trí.")
+    }
+
     // MARK: - Báo trước khi xoá
 
     /// **Hợp đồng của cả nhóm này.** Lượt quét từng là đường xoá duy nhất trong

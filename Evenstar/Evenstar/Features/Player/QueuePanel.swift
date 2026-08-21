@@ -276,7 +276,33 @@ struct QueuePanel: View {
             // Cả cử chỉ lẫn chuyển động là của `ReorderableStack` — xem file ấy
             // về lý do cú giữ chạy bằng recogniser UIKit và vì sao thứ tự chỉ
             // đổi sau khi hàng đã bay tới nơi.
-            let byID = Dictionary(uniqueKeysWithValues: upcoming.map { ($0.id, $0) })
+            // `uniquingKeysWith:` chứ không phải `uniqueKeysWithValues:`, và
+            // đây là sửa một cú crash chắc chắn chứ không phải phòng xa.
+            // `uniqueKeysWithValues:` **trap** khi khoá lặp — `Fatal error:
+            // Duplicate values for key` — và từ khi có CloudKit, khoá lặp là
+            // chuyện có thật: hai máy ngoại tuyến cùng lưu một bài sinh hai
+            // hàng, cả hai đều thật, cả hai đều vào được hàng đợi và được lưu
+            // lại. Lần mở app sau, `DuplicateSweep` trỏ một hàng vào hàng kia
+            // và hàng đợi khôi phục lại giữ **cùng một đối tượng hai lần**;
+            // mở bảng hàng đợi là nổ ngay tại dòng này.
+            //
+            // `DuplicateSweep` đã khử trùng lặp trong `PlaybackState`, nhưng
+            // nó chạy một lượt lúc khởi động: cửa sổ trước lượt quét đầu tiên
+            // — hai hàng trùng còn nguyên, cả hai cùng vẽ ra — không ai khác
+            // che được.
+            //
+            // Giữ bản đầu tiên, và ở đây lựa chọn ấy không cần tất định theo
+            // máy: khoá **chính là** `id` của hàng, nên hai giá trị va nhau
+            // nhất thiết là cùng một đối tượng. Cái không tránh được là
+            // `playUpcoming(_:)` tra bằng `firstIndex(where:)` nên chạm vào
+            // bản thứ hai nhảy về bản thứ nhất — một chỉ số sai, đổi lấy việc
+            // không crash. Đó là đánh đổi đã chọn; xem `DuplicateMerge`.
+            //
+            // `ids:` bên dưới **cố ý** vẫn giữ cả bản trùng: `onMove` trả về
+            // vị trí trong danh sách đang vẽ, và `moveUpcoming` đọc chúng như
+            // vị trí trong `playback.upcoming`. Khử ở đây thì hai bên lệch
+            // nhau và một cú kéo sẽ dời nhầm bài.
+            let byID = Dictionary(upcoming.map { ($0.id, $0) }) { existing, _ in existing }
             ReorderableStack(
                 ids: upcoming.map(\.id),
                 rowHeight: Self.rowArtwork + 20,

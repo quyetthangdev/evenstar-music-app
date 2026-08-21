@@ -69,11 +69,34 @@ enum DuplicateMerge {
     /// comment ở `DriveTrack` và `JamendoTrack` đã ghi lại đúng lỗi này ở một
     /// hoàn cảnh khác.
     ///
-    /// **Không khử trùng lặp**, và đó là quyết định. Nếu cả hàng bị xoá lẫn hàng
-    /// được giữ đều đang trong hàng đợi thì cùng một bài nằm hai chỗ và phát hai
-    /// lần liền. Khử trùng lặp thì phải ánh xạ `queueIndex` sang mảy ngắn hơn,
-    /// và một phép ánh xạ sai ở đó làm hàng đợi nhảy sang **bài khác**. Nghe một
-    /// bài hai lần là khó chịu; nghe nhầm bài là hỏng.
+    /// **Hàm này không khử trùng lặp, và một `id` lặp lại KHÔNG phải chuyện vô
+    /// hại.** Bản kế hoạch trước đây viết ở đúng chỗ này rằng nghe một bài hai
+    /// lần "khó chịu chứ không hỏng". Điều đó **sai**, và nó đã bị đảo lại:
+    ///
+    ///   - `QueuePanel.upcomingList` dựng `Dictionary(uniqueKeysWithValues:)`
+    ///     từ `upcoming.map { ($0.id, $0) }`. Khởi tạo ấy **trap** — `Fatal
+    ///     error: Duplicate values for key`, không phải một lỗi ném ra — ngay
+    ///     khi người dùng mở bảng hàng đợi.
+    ///   - `ReorderableStack(ids:)` nhận cùng mảng `id` ấy và giả định chúng
+    ///     duy nhất.
+    ///   - `QueuePanel.playUpcoming(_:)` tra bằng `firstIndex(where:)`, nên
+    ///     chạm vào bản thứ hai nhảy về bản thứ nhất.
+    ///
+    /// Đánh đổi đúng là: một chỉ số **có thể** sai đổi lấy một cú crash **chắc
+    /// chắn**. Nên việc khử trùng lặp có thật, ở hai tầng, và không tầng nào
+    /// nằm trong hàm này:
+    ///
+    ///   - `deduplicating(_:index:)` ngay bên dưới, `DuplicateSweep` gọi sau
+    ///     khi trỏ lại — nó cũng ánh xạ `queueIndex` nên chỉ số vẫn trỏ đúng
+    ///     bài cũ.
+    ///   - Hai chỗ tra ở trên (`QueuePanel` và
+    ///     `DriveLibraryService.scan`) tự chịu được `id`/khoá lặp. Cửa sổ mà
+    ///     tầng thứ nhất **không** với tới là lúc chưa lượt quét nào chạy: hai
+    ///     hàng trùng lúc ấy đều là hàng thật và đều vẽ ra.
+    ///
+    /// Bản thân `repointing` giữ nguyên hành vi vì nó là hàm thuần và người gọi
+    /// khác có thể cần đúng độ dài mảng đầu vào; chỗ khử nằm ở hàm riêng bên
+    /// dưới để `queueIndex` và mảng ids được ánh xạ **cùng nhau**.
     static func repointing(_ ids: [UUID], through map: [UUID: UUID]) -> [UUID] {
         guard !map.isEmpty else { return ids }
         return ids.map { map[$0] ?? $0 }
@@ -83,5 +106,53 @@ enum DuplicateMerge {
     static func repointing(_ id: UUID?, through map: [UUID: UUID]) -> UUID? {
         guard let id else { return nil }
         return map[id] ?? id
+    }
+
+    /// Một hàng đợi đã khử trùng lặp, kèm chỉ số đã ánh xạ theo.
+    ///
+    /// Hai giá trị đi cùng nhau trong một kiểu chứ không phải hai lời gọi, và
+    /// đó là cả điểm của nó: ánh xạ chỉ số là bước dễ làm sai nhất ở đây, nên
+    /// nó không được phép là thứ người gọi có thể quên.
+    struct DeduplicatedQueue: Equatable {
+        let ids: [UUID]
+        let index: Int
+    }
+
+    /// Bỏ những `id` lặp lại, **giữ lần xuất hiện đầu**.
+    ///
+    /// Giữ lần đầu chứ không phải lần cuối vì đó là thứ tất định và không phụ
+    /// thuộc gì ngoài chính mảng đầu vào — cùng lý do với mọi quyết định khác
+    /// trong kiểu này: hai máy chạy lượt quét độc lập phải ra cùng kết quả.
+    static func deduplicating(_ ids: [UUID]) -> [UUID] {
+        var seen = Set<UUID>(minimumCapacity: ids.count)
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    /// Bản có ánh xạ `queueIndex`, cho `PlaybackState.queueTrackIDs`.
+    ///
+    /// **Quy tắc: chỉ số phải trỏ vào đúng bài nó đang trỏ vào.** Không phải
+    /// "cùng vị trí", mà cùng **bài**. Nên chỉ số mới là vị trí của *lần xuất
+    /// hiện đầu tiên* của `ids[index]` trong mảng đã khử — ba ca được ghim
+    /// riêng trong `DuplicateMergeTests`:
+    ///
+    ///   - chỉ số nằm **trước** bản trùng bị bỏ: không xê dịch.
+    ///   - chỉ số nằm **đúng** ở bản trùng bị bỏ: lùi về bản đầu tiên của cùng
+    ///     bài ấy.
+    ///   - chỉ số nằm **sau**: lùi đúng số bản đã bị bỏ phía trước nó.
+    ///
+    /// Chỉ số ngoài phạm vi được kẹp vào mảng mới thay vì trap — `PlaybackState`
+    /// là dữ liệu đã lưu và có thể đến từ một phiên bản app khác, nên nó là dữ
+    /// liệu đầu vào không tin được chứ không phải một bất biến.
+    static func deduplicating(_ ids: [UUID], index: Int) -> DeduplicatedQueue {
+        let deduped = deduplicating(ids)
+        guard deduped.count != ids.count else {
+            return DeduplicatedQueue(ids: ids, index: index)
+        }
+        if ids.indices.contains(index),
+           let mapped = deduped.firstIndex(of: ids[index]) {
+            return DeduplicatedQueue(ids: deduped, index: mapped)
+        }
+        return DeduplicatedQueue(ids: deduped,
+                                 index: min(max(0, index), max(0, deduped.count - 1)))
     }
 }
