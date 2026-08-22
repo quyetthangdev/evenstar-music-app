@@ -58,9 +58,25 @@ struct MiniPlayerChrome: View {
     /// con số ấy lệch 2pt, và mắt đọc mép chứ không đọc tâm: bên phải trông
     /// lỏng hơn bên trái. Lấy thẳng lề của ô bìa thì hai mép bằng nhau.
     private var trailingInset: CGFloat {
-        Self.expandedTrailingInset
-            + (artworkLeadingInset - Self.expandedTrailingInset) * minimised
+        let balanced = artworkLeadingInset - Self.glyphOpticalRelief
+        return Self.expandedTrailingInset
+            + (balanced - Self.expandedTrailingInset) * minimised
     }
+
+    /// Bù phần glyph không lấp đầy khung nút.
+    ///
+    /// Ô bìa là một **ảnh lấp đầy** khung 36pt của nó, nên mép nhìn thấy trùng
+    /// mép khung. `play.fill` chỉ chiếm khoảng 20 trong khung 32pt và nằm giữa,
+    /// nên mép nhìn thấy của nó lùi vào thêm chừng 6pt. Cân hai **khung** bằng
+    /// nhau thì mắt vẫn đọc ra bên phải lỏng hơn bên trái — vì mắt đọc mực, không
+    /// đọc khung.
+    ///
+    /// 5 chứ không 6: `pause.fill` rộng hơn `play.fill` một chút, nên con số
+    /// đúng dao động theo việc nhạc có đang chạy hay không. Đây là trung bình,
+    /// và đó là toàn bộ nội dung phản đối trong đoạn văn trên — nhưng biên độ
+    /// dao động ấy khoảng 2pt, còn sai số nó chữa là 6pt. Bù trung bình sai ít
+    /// hơn hẳn không bù.
+    private static let glyphOpticalRelief: CGFloat = 5
 
     /// See `NowPlayingContent.acknowledge`: SwiftUI renders a button's action
     /// after it returns, so synchronous playback work sits between the tap and

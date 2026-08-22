@@ -67,7 +67,7 @@ struct PlayerCard: View {
     /// kéo chúng vào. Ở đây viên pill co quanh tâm nó, nên **cả hai** mép lùi
     /// vào và cả hai khe rộng ra. Nới lề cho khung rộng thêm trước khi co thì
     /// hai mép trở lại gần hai viên tròn.
-    private static let pillMinimisedRelief: CGFloat = 0
+    private static let pillMinimisedRelief: CGFloat = 13
     /// How far the collapsed artwork sits in from the pill's leading edge.
     ///
     /// Larger than it looks like it needs to be, because the pill's leading
