@@ -693,7 +693,7 @@ enum BottomBarStyle {
     @MainActor static var collapsedChromeInset: CGFloat {
         reduceMotion ? 0 : collapsedChromeInsetFull
     }
-    private static let collapsedChromeInsetFull: CGFloat = 6
+    private static let collapsedChromeInsetFull: CGFloat = 10
 
     /// Đường cong riêng cho **cú co của chrome**, nảy hơn `morph`.
     ///

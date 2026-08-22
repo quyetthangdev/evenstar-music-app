@@ -67,7 +67,7 @@ struct PlayerCard: View {
     /// kéo chúng vào. Ở đây viên pill co quanh tâm nó, nên **cả hai** mép lùi
     /// vào và cả hai khe rộng ra. Nới lề cho khung rộng thêm trước khi co thì
     /// hai mép trở lại gần hai viên tròn.
-    private static let pillMinimisedRelief: CGFloat = 10
+    private static let pillMinimisedRelief: CGFloat = 20
     /// How far the collapsed artwork sits in from the pill's leading edge.
     ///
     /// Larger than it looks like it needs to be, because the pill's leading
@@ -1382,8 +1382,15 @@ struct PlayerCard: View {
         // chữ, tất cả theo cùng một tỉ lệ. Đó cũng là lý do dùng `scaleEffect`
         // thay vì sửa `collapsedHeight` — xem `pillShrink`.
         //
-        // Neo đáy: mép dưới đứng yên trong hàng viên pill vừa hạ xuống.
-        .scaleEffect(pillShrink, anchor: .bottom)
+        // **Neo tâm, không neo đáy.** Hai viên tròn trong `FloatingTabBar` co
+        // bằng `anchor: .leading` và `.trailing` — cả hai là (x, **0.5**), tức
+        // theo trục dọc chúng co quanh TÂM. Neo `.bottom` ở đây làm tâm dọc của
+        // viên pill tụt xuống so với hai viên kia, và ba khối hết cùng hàng.
+        //
+        // Cả ba cùng cao 54pt và cùng đáy `screenBottomInset` khi thu, nên tâm
+        // dọc của chúng nằm trên một đường. Co quanh tâm thì đường ấy giữ
+        // nguyên, bất kể mỗi khối co bao nhiêu.
+        .scaleEffect(pillShrink, anchor: .center)
         // Lifts the collapsed pill off the list behind it, with the same shadow
         // the tab bar's surfaces use — they share a screen, and while minimised
         // they share a row, so a lift on one and none on the other is visible
