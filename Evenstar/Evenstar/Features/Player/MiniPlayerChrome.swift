@@ -48,11 +48,10 @@ struct MiniPlayerChrome: View {
     /// edges would put the button in a different place depending on whether
     /// music happened to be playing.
     ///
-    /// **Cân theo mép KHUNG, không theo tâm.** Đoạn trên là lập luận cũ và nó
-    /// đúng một nửa: cân theo mép *glyph* thì hỏng, vì `play.fill` và
-    /// `pause.fill` khác bề rộng nên nút sẽ đứng hai chỗ khác nhau tuỳ nhạc có
-    /// đang chạy hay không. Nhưng cân theo mép **khung nút** thì không dính
-    /// chuyện đó — khung luôn 32pt, bất kể glyph nào nằm trong.
+    /// **Cân theo mép MỰC.** Đoạn trên là lập luận cũ, và phép đo ở
+    /// `glyphOpticalRelief` cho thấy tiền đề của nó sai: `play.fill` và
+    /// `pause.fill` lệch nhau 0.33pt, không phải một lượng đáng cấm cả một cách
+    /// cân. Thứ đáng cân là mép mực, vì đó là thứ mắt đọc.
     ///
     /// Cân theo tâm cho `36 - 16 = 20`, trong khi ô bìa cách mép trái 18. Hai
     /// con số ấy lệch 2pt, và mắt đọc mép chứ không đọc tâm: bên phải trông
@@ -71,12 +70,25 @@ struct MiniPlayerChrome: View {
     /// nhau thì mắt vẫn đọc ra bên phải lỏng hơn bên trái — vì mắt đọc mực, không
     /// đọc khung.
     ///
-    /// 5 chứ không 6: `pause.fill` rộng hơn `play.fill` một chút, nên con số
-    /// đúng dao động theo việc nhạc có đang chạy hay không. Đây là trung bình,
-    /// và đó là toàn bộ nội dung phản đối trong đoạn văn trên — nhưng biên độ
-    /// dao động ấy khoảng 2pt, còn sai số nó chữa là 6pt. Bù trung bình sai ít
-    /// hơn hẳn không bù.
-    private static let glyphOpticalRelief: CGFloat = 5
+    /// **7.33 là số đo, không phải ước lượng.** Dựng
+    /// `Image(systemName:).font(.title3)` trong `UIHostingController` và hỏi
+    /// `sizeThatFits`:
+    ///
+    ///     play.fill     17.33pt
+    ///     pause.fill    17.00pt
+    ///     khung nút     32pt
+    ///
+    /// Glyph nằm giữa khung nên mỗi bên thừa `(32 - 17.33) / 2 = 7.33`. Đó đúng
+    /// bằng quãng phải bù để mép **mực** của nút trùng mép mực của ô bìa.
+    ///
+    /// **Và phép đo ấy xoá luôn lý lẽ của doc cũ.** Nó cấm cân theo mép vì
+    /// "`play.fill` không cùng bề rộng với `pause.fill`", nên nút sẽ nhảy chỗ
+    /// tuỳ nhạc có đang chạy. Chênh lệch thật là **0.33pt** — dưới nửa pixel ở
+    /// 2x, tức không nhìn thấy được. Sai số nó bảo vệ ta khỏi nhỏ hơn hai mươi
+    /// lần sai số nó gây ra.
+    ///
+    /// Tôi đã đoán 5 ở bản trước, và thiếu 2.33. Đo mất hai phút.
+    private static let glyphOpticalRelief: CGFloat = 7.33
 
     /// See `NowPlayingContent.acknowledge`: SwiftUI renders a button's action
     /// after it returns, so synchronous playback work sits between the tap and
