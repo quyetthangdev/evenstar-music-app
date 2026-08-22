@@ -230,7 +230,7 @@ final class ReduceMotionTests: XCTestCase {
     func testTheCollapsedChromeShrinksButStaysTappable() {
         BottomBarStyle.reduceMotion = false
         let scale = BottomBarStyle.collapsedChromeScale
-        XCTAssertEqual(scale, 0.90, accuracy: 0.001)
+        XCTAssertEqual(scale, 0.86, accuracy: 0.001)
         XCTAssertLessThan(scale, 1, "phải thật sự nhỏ đi")
         XCTAssertGreaterThanOrEqual(BottomBarMetrics.tabBarHeight * scale, 44,
                                     "không được xuống dưới ngưỡng chạm HIG")

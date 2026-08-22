@@ -434,6 +434,9 @@ struct FloatingTabBar: View {
             )
             .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
                          anchor: .leading)
+            // Kéo vào trong để bù khe hở mà chính cú co vừa đẻ ra — xem
+            // `BottomBarStyle.collapsedChromeInset`.
+            .offset(x: isCollapsed ? BottomBarStyle.collapsedChromeInset : 0)
             .animation(BottomBarStyle.chromeSettle, value: isCollapsed)
 
             // Fixed, so the gap between the leading capsule and whatever
@@ -508,6 +511,8 @@ struct FloatingTabBar: View {
                 // Neo mép phải, đối xứng với viên tròn trái — xem ghi chú ở đó.
                 .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
                              anchor: .trailing)
+                // Đối xứng với viên tròn trái: kéo vào trong, tức sang trái.
+                .offset(x: isCollapsed ? -BottomBarStyle.collapsedChromeInset : 0)
                 .animation(BottomBarStyle.chromeSettle, value: isCollapsed)
                 .frame(width: isMerged ? 0 : barHeight)
                 .clipped()

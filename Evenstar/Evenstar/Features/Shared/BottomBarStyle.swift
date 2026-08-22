@@ -671,7 +671,29 @@ enum BottomBarStyle {
     @MainActor static var collapsedChromeScale: CGFloat {
         reduceMotion ? 1 : collapsedChromeScaleFull
     }
-    private static let collapsedChromeScaleFull: CGFloat = 0.90
+    private static let collapsedChromeScaleFull: CGFloat = 0.86
+
+    /// Mỗi viên tròn kéo **vào trong** bấy nhiêu khi thu, để cụm ba khối gọn
+    /// lại về giữa.
+    ///
+    /// Cú co neo ở mép ngoài — viên tròn giữ mép trái, nút tìm giữ mép phải —
+    /// nên tự nó **đẻ thêm** khe hở: `tabBarHeight × (1 − scale)` = 7.6pt mỗi
+    /// bên ở 0.86. Không bù lại thì càng co sâu, cụm càng bị đẩy ra hai mép và
+    /// giữa càng rỗng.
+    ///
+    /// 6pt bù gần hết 7.6pt ấy, chừa lại ~1.6pt: khe hở vẫn nhỉnh hơn lúc chưa
+    /// co, nên ba khối không dính vào nhau — lỗi đã sửa một lần rồi — nhưng cụm
+    /// đọc ra là gọn lại về giữa chứ không phải dàn ra hai bên.
+    ///
+    /// Đi cùng `chromeSettle` như cú co, không phải một nhịp riêng: đây là cùng
+    /// một chuyển động nhìn từ hai trục.
+    ///
+    /// Giảm chuyển động: **0**. Quãng đường thật, và `collapsedChromeScale`
+    /// lúc ấy đã là 1 nên không có khe hở thừa nào để mà bù.
+    @MainActor static var collapsedChromeInset: CGFloat {
+        reduceMotion ? 0 : collapsedChromeInsetFull
+    }
+    private static let collapsedChromeInsetFull: CGFloat = 6
 
     /// Đường cong riêng cho **cú co của chrome**, nảy hơn `morph`.
     ///
