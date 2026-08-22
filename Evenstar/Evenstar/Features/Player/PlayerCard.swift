@@ -1373,8 +1373,17 @@ struct PlayerCard: View {
         // chiều cao là phải tính lại chỗ ô bìa chạm đường cong. Một phép biến
         // đổi đều thì co tất cả theo cùng tỉ lệ — bán kính bo, ô bìa, chữ — và
         // không có hằng số nào phải tính lại.
-        .scaleEffect(pillShrink, anchor: .bottom)
         .modifier(CardClip(progress: progress, insets: insets))
+        // **Sau `CardClip`, không phải trước.** Đặt trước thì nội dung bị co
+        // rồi mới cắt, và mặt nạ cắt vẫn ở kích thước khung chưa co — viên pill
+        // mất luôn hình pill.
+        //
+        // Ở đây nó co **hình đã cắt xong**, như một vật: bán kính bo, ô bìa,
+        // chữ, tất cả theo cùng một tỉ lệ. Đó cũng là lý do dùng `scaleEffect`
+        // thay vì sửa `collapsedHeight` — xem `pillShrink`.
+        //
+        // Neo đáy: mép dưới đứng yên trong hàng viên pill vừa hạ xuống.
+        .scaleEffect(pillShrink, anchor: .bottom)
         // Lifts the collapsed pill off the list behind it, with the same shadow
         // the tab bar's surfaces use — they share a screen, and while minimised
         // they share a row, so a lift on one and none on the other is visible
