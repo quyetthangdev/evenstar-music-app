@@ -50,6 +50,24 @@ struct PlayerCard: View {
     private static let collapsedCornerRadius: CGFloat = collapsedHeight / 2
 
     private static let collapsedArtwork: CGFloat = 36
+
+    /// Viên pill co bấy nhiêu khi đã thu hẳn, cho khớp với hai viên tròn hai bên.
+    ///
+    /// 0.90 chứ không 0.86 như `BottomBarStyle.collapsedChromeScale`: viên pill
+    /// rộng gấp bốn lần viên tròn, và cùng một tỉ lệ phần trăm trên một vật dài
+    /// hơn thì đọc ra là co nhiều hơn hẳn. Hai con số khác nhau để hai vật
+    /// **trông như** co bằng nhau.
+    private static let pillMinimisedScale: CGFloat = 0.90
+
+    /// Lề của viên pill nới vào bấy nhiêu khi thu, để bù khe hở mà chính cú co
+    /// vừa đẻ ra.
+    ///
+    /// Cùng bài toán với `BottomBarStyle.collapsedChromeInset` ở thanh bar, chỉ
+    /// ngược dấu: ở đó hai viên tròn neo mép ngoài nên co làm khe rộng ra, và ta
+    /// kéo chúng vào. Ở đây viên pill co quanh tâm nó, nên **cả hai** mép lùi
+    /// vào và cả hai khe rộng ra. Nới lề cho khung rộng thêm trước khi co thì
+    /// hai mép trở lại gần hai viên tròn.
+    private static let pillMinimisedRelief: CGFloat = 10
     /// How far the collapsed artwork sits in from the pill's leading edge.
     ///
     /// Larger than it looks like it needs to be, because the pill's leading
@@ -574,7 +592,26 @@ struct PlayerCard: View {
     /// drag-state gate — see the note at the `.contentShape` call site.
     private var collapsedSideMargin: CGFloat {
         Self.pillSideMargin
-            + (BottomBarMetrics.minimisedPlayerInset - Self.pillSideMargin) * CGFloat(minimised)
+            + (BottomBarMetrics.minimisedPlayerInset - Self.pillMinimisedRelief
+               - Self.pillSideMargin) * CGFloat(minimised)
+    }
+
+    /// Hệ số co của viên pill, **buộc vào cùng phép nội suy** mà mọi thứ khác
+    /// trong khối này dùng.
+    ///
+    /// Đây là chỗ tôi đã làm sai một lần và đáng ghi lại. Bản đầu đặt một
+    /// `.scaleEffect` lên `PlayerCard` từ `RootView`, keyed vào cờ nhị phân
+    /// `isMinimisedActive` với `.animation` riêng — nên cú co chạy trên một
+    /// đường cong còn `collapsedSideMargin` và `collapsedBottomOffset` chạy
+    /// trên đường cong khác. Giữa chừng hai bên bất đồng, và viên pill không
+    /// tới được chỗ nó phải tới.
+    ///
+    /// `minimised` là `Double` thẻ vốn nhận, `(1 - progress)` tắt hiệu ứng khi
+    /// thẻ đang mở — đúng hình dạng `collapsedSideMargin` ngay trên dùng. Không
+    /// `.animation` nào ở đây: nó cưỡi lên chính transaction đang lái hai giá
+    /// trị kia, nên ba thứ không thể lệch nhau.
+    private var pillShrink: CGFloat {
+        1 - (1 - Self.pillMinimisedScale) * CGFloat(minimised) * (1 - progress)
     }
 
     /// **Physical screen** bottom edge up to the collapsed pill's bottom edge:
@@ -1328,6 +1365,15 @@ struct PlayerCard: View {
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
+        // Neo **đáy**: mép dưới viên pill phải đứng yên trong hàng nó vừa hạ
+        // xuống, nên nó co lên trên và vào trong chứ không trôi khỏi hàng.
+        //
+        // `scaleEffect` chứ không sửa `collapsedHeight`: doc của
+        // `collapsedArtworkInset` ghi rõ ba con số ấy đi cùng nhau, nên đổi
+        // chiều cao là phải tính lại chỗ ô bìa chạm đường cong. Một phép biến
+        // đổi đều thì co tất cả theo cùng tỉ lệ — bán kính bo, ô bìa, chữ — và
+        // không có hằng số nào phải tính lại.
+        .scaleEffect(pillShrink, anchor: .bottom)
         .modifier(CardClip(progress: progress, insets: insets))
         // Lifts the collapsed pill off the list behind it, with the same shadow
         // the tab bar's surfaces use — they share a screen, and while minimised
