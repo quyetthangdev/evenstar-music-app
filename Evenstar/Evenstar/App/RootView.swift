@@ -358,7 +358,11 @@ struct RootView: View {
                 // to `minimised:` above — `isSearching` toggling can change
                 // that value even on a frame where the raw `isMinimised` does
                 // not, and the animation must key on what the card receives.
-                .animation(BottomBarStyle.morph, value: isMinimisedActive)
+                // Độ trễ khi THU, không trễ khi bung — xem
+                // `BottomBarStyle.playerMinimise(collapsing:)` về phép đo trên
+                // video Apple Music và về cú chồng lấn nó chữa.
+                .animation(BottomBarStyle.playerMinimise(collapsing: isMinimisedActive),
+                           value: isMinimisedActive)
         }
         // The one write of `BottomBarStyle.reduceMotion`, in the whole app.
         //

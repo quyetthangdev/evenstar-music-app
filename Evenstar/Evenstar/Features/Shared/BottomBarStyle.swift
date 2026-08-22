@@ -653,6 +653,50 @@ enum BottomBarStyle {
     /// 0.033 là **hai khung**, đầu nhanh của khoảng đã đo. Đây là sàn: dưới nữa
     /// thì không còn là hoà mờ mà là cú cắt, và một khung biến mất trong một
     /// khung sẽ đọc ra như khung hình bị rớt chứ không như một chuyển động.
+    /// Player thu nhỏ **đợi thanh tab hẹp xong** rồi mới hạ xuống cùng hàng.
+    ///
+    /// **Đo trên video Apple Music, 60fps, 2940×1846.** Cắt từng khung của một
+    /// cú cuộn xuống trên máy trái:
+    ///
+    ///   - khung 040–055: thanh tab hẹp dần từ bốn tab đủ nhãn về viên nhỏ.
+    ///     Player **không nhúc nhích** — vẫn hàng trên, vẫn rộng hết, vẫn còn
+    ///     nút next.
+    ///   - khung 055–064: thanh tab đã xong; giờ player mới hạ xuống, hẹp lại,
+    ///     và nút next tan đi.
+    ///
+    /// 15 khung ở 60fps là 0.25s, và đó là con số dưới đây. Quãng hạ của player
+    /// đo được 9 khung (0.15s), ngắn hơn `morph` — nhưng không rút `morph` cho
+    /// riêng player, vì đường cong ấy dùng chung với thanh tab và lệch hai bên
+    /// đọc ra tệ hơn một quãng hơi dài.
+    ///
+    /// **Vì sao độ trễ này không phải chuyện làm đẹp.** Không có nó, player
+    /// trượt vào vị trí thu nhỏ trong lúc viên nang tab vẫn còn rộng — và
+    /// `minimisedPlayerInset` tính từ `tabBarHeight`, tức bề rộng **cuối cùng**
+    /// của viên nang, không phải bề rộng lúc ấy. Hai thứ đè lên nhau giữa
+    /// chừng, nhãn tab thò ra sau player. Đó là hình dạng người dùng chụp lại
+    /// và báo.
+    ///
+    /// Bất đối xứng, cùng lý do với `stagger` trong `FloatingTabBar`: lúc bung
+    /// thì player đi trước, thanh tab theo sau. Thứ đang rời màn hình không có
+    /// lý do gì để chờ, và thứ đang tới thì tới trước.
+    ///
+    /// Giảm chuyển động: **giữ nguyên**. Độ trễ là dàn cảnh chứ không phải
+    /// chuyển động — bỏ nó đi là trả lại đúng cú chồng lấn ở trên, và chồng lấn
+    /// thì không dễ nhìn hơn cho ai cả.
+    static let playerDescentDelay: TimeInterval = 0.25
+
+    /// Trả thẳng `morph` khi bung, **không** phải `morph.delay(0)`.
+    ///
+    /// `.delay(0)` không phải một no-op: nó bọc thêm một `DelayAnimation` quanh
+    /// đường cong, nên giá trị trả ra không còn bằng `morph` nữa. Test bắt được
+    /// chỗ ấy. Ngoài chuyện thừa một lớp bọc, nó còn làm hai chỗ cùng dùng
+    /// `morph` không so được bằng nhau — mà đó chính là thứ doc của
+    /// `reduceMotion` phía trên gọi là "hai nửa của một cú morph chạy hai đường
+    /// cong khác nhau".
+    @MainActor static func playerMinimise(collapsing: Bool) -> Animation {
+        collapsing ? morph.delay(playerDescentDelay) : morph
+    }
+
     @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
     private static let queueContentOutFull = Animation.easeIn(duration: 0.033)
     private static let queueContentOutFlat = queueContentOutFull

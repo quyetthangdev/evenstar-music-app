@@ -155,6 +155,48 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.queueTitleIn, .easeOut(duration: 0.10).delay(0.13))
     }
 
+    // MARK: - Độ trễ của player khi thu nhỏ
+
+    /// Player đợi thanh tab hẹp xong rồi mới hạ xuống — và độ trễ ấy là số đo.
+    ///
+    /// Cắt khung video Apple Music ở 60fps: thanh tab hẹp từ khung 040 tới 055
+    /// trong khi player đứng yên, rồi player mới đi từ 055 tới 064. 15 khung là
+    /// 0.25s. Bỏ độ trễ này là trả lại cú chồng lấn giữa chừng — player trượt
+    /// vào vị trí thu nhỏ trong lúc viên nang tab vẫn còn rộng.
+    func testThePlayerWaitsForTheBarToNarrow() {
+        XCTAssertEqual(BottomBarStyle.playerDescentDelay, 0.25, accuracy: 0.001)
+        XCTAssertEqual(BottomBarStyle.playerMinimise(collapsing: true),
+                       BottomBarStyle.morph.delay(0.25))
+    }
+
+    /// Bung ra thì không đợi ai.
+    ///
+    /// Bất đối xứng có chủ ý, cùng lý do với `stagger` trong `FloatingTabBar`:
+    /// thứ đang tới thì tới trước, thứ đang rời đi không có lý do gì để chờ.
+    /// Nếu một ngày ai đó "dọn" cho hai chiều bằng nhau, test này đỏ.
+    func testExpandingHasNoDelay() {
+        XCTAssertEqual(BottomBarStyle.playerMinimise(collapsing: false),
+                       BottomBarStyle.morph)
+        XCTAssertNotEqual(BottomBarStyle.playerMinimise(collapsing: false),
+                          BottomBarStyle.playerMinimise(collapsing: true),
+                          "hai chiều phải khác nhau — đó là cả điểm của nó")
+    }
+
+    /// Giảm chuyển động **giữ nguyên** độ trễ.
+    ///
+    /// Độ trễ là dàn cảnh chứ không phải chuyển động. Bỏ nó ở chế độ giảm
+    /// chuyển động là trả lại đúng cú chồng lấn, và hai mảng đè lên nhau thì
+    /// không dễ nhìn hơn cho ai cả — cùng lập luận với `queueTitleOut`.
+    func testTheDelaySurvivesReducedMotion() {
+        BottomBarStyle.reduceMotion = false
+        let full = BottomBarStyle.playerMinimise(collapsing: true)
+        BottomBarStyle.reduceMotion = true
+        let reduced = BottomBarStyle.playerMinimise(collapsing: true)
+        XCTAssertNotEqual(full, reduced, "đường cong nền phải phẳng đi")
+        XCTAssertEqual(reduced, BottomBarStyle.morph.delay(0.25),
+                       "nhưng độ trễ ở lại nguyên")
+    }
+
     // MARK: - The distances that go to zero
 
     /// `recedeScale` is not a curve, it is a *distance*.
