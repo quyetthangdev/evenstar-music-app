@@ -385,6 +385,19 @@ struct FloatingTabBar: View {
                     - BottomBarMetrics.tabBarSearchGap
                     - BottomBarMetrics.tabBarHeight
             )
+            // Co về **mép trái của chính nó**, không về tâm thanh bar.
+            //
+            // Bản đầu đặt một `scaleEffect` lên cả thanh bar. Nó co về tâm, nên
+            // viên tròn trái dịch sang phải và nút tìm dịch sang trái — cả hai
+            // lấn vào chỗ viên pill đang đứng, và ba khối dính vào nhau. Viên
+            // pill không co theo được vì nó nằm trong `PlayerCard`, một hệ toạ
+            // độ khác.
+            //
+            // Neo ở mép ngoài thì mỗi khối co vào trong chính nó: mép trái của
+            // viên tròn và mép phải của nút tìm đứng yên, còn hai khe hở hai
+            // bên viên pill **rộng ra** thay vì hẹp lại.
+            .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
+                         anchor: .leading)
             .animation(
                 BottomBarStyle.morph.delay(isCollapsed ? 0 : Self.stagger),
                 value: isCollapsed
@@ -459,6 +472,9 @@ struct FloatingTabBar: View {
             // have to be found twice. Anyone putting a shadow back on a clipped
             // view here: it goes after the clip, not before.
             trailingButton
+                // Neo mép phải, đối xứng với viên tròn trái — xem ghi chú ở đó.
+                .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
+                             anchor: .trailing)
                 .frame(width: isMerged ? 0 : barHeight)
                 .clipped()
                 .opacity(isMerged ? 0 : 1)
