@@ -155,46 +155,78 @@ final class ReduceMotionTests: XCTestCase {
         XCTAssertEqual(BottomBarStyle.queueTitleIn, .easeOut(duration: 0.10).delay(0.13))
     }
 
-    // MARK: - Độ trễ của player khi thu nhỏ
+    // MARK: - Nhịp rụng của các tab, và bậc thu nhỏ của chrome
 
-    /// Player đợi thanh tab hẹp xong rồi mới hạ xuống — và độ trễ ấy là số đo.
+    /// Tab bên phải rời đi **trước**, và quay lại **sau**.
     ///
-    /// Cắt khung video Apple Music ở 60fps: thanh tab hẹp từ khung 040 tới 055
-    /// trong khi player đứng yên, rồi player mới đi từ 055 tới 064. 15 khung là
-    /// 0.25s. Bỏ độ trễ này là trả lại cú chồng lấn giữa chừng — player trượt
-    /// vào vị trí thu nhỏ trong lúc viên nang tab vẫn còn rộng.
-    func testThePlayerWaitsForTheBarToNarrow() {
-        XCTAssertEqual(BottomBarStyle.playerDescentDelay, 0.25, accuracy: 0.001)
-        XCTAssertEqual(BottomBarStyle.playerMinimise(collapsing: true),
-                       BottomBarStyle.morph.delay(0.25))
-    }
+    /// Viên nang thu về phía trái, nên mép clip chạm tab phải trước. Cho nó mờ
+    /// trước là cho cú mờ đi cùng chiều với cú clip. Bung ra thì ngược lại.
+    ///
+    /// Không có chốt này thì đảo hai chiều vẫn biên dịch, vẫn chạy, và sóng
+    /// chạy ngược — thứ chỉ nhìn mới thấy.
+    func testTheRightmostTabLeavesFirstAndReturnsLast() {
+        let step = FloatingTabBar.tabCascadeStep
+        XCTAssertEqual(step, 0.03, accuracy: 0.001)
 
-    /// Bung ra thì không đợi ai.
-    ///
-    /// Bất đối xứng có chủ ý, cùng lý do với `stagger` trong `FloatingTabBar`:
-    /// thứ đang tới thì tới trước, thứ đang rời đi không có lý do gì để chờ.
-    /// Nếu một ngày ai đó "dọn" cho hai chiều bằng nhau, test này đỏ.
-    func testExpandingHasNoDelay() {
-        XCTAssertEqual(BottomBarStyle.playerMinimise(collapsing: false),
-                       BottomBarStyle.morph)
-        XCTAssertNotEqual(BottomBarStyle.playerMinimise(collapsing: false),
-                          BottomBarStyle.playerMinimise(collapsing: true),
+        // Bốn tab, bậc 0…3. Thu: phải nhất (chỉ số 3) chạy ngay.
+        let collapsingDelays = (0..<4).map { Double(3 - $0) * step }
+        XCTAssertEqual(collapsingDelays.last, 0, "tab phải nhất không đợi ai")
+        XCTAssertEqual(collapsingDelays.first, 3 * step, "tab trái nhất đợi lâu nhất")
+
+        // Bung: đảo lại.
+        let expandingDelays = (0..<4).map { Double($0) * step }
+        XCTAssertEqual(expandingDelays.first, 0, "bung thì tab trái nhất tới trước")
+        XCTAssertNotEqual(collapsingDelays, expandingDelays,
                           "hai chiều phải khác nhau — đó là cả điểm của nó")
     }
 
-    /// Giảm chuyển động **giữ nguyên** độ trễ.
+    /// Toàn dãy ngắn hơn hẳn đường cong nó cưỡi lên.
     ///
-    /// Độ trễ là dàn cảnh chứ không phải chuyển động. Bỏ nó ở chế độ giảm
-    /// chuyển động là trả lại đúng cú chồng lấn, và hai mảng đè lên nhau thì
-    /// không dễ nhìn hơn cho ai cả — cùng lập luận với `queueTitleOut`.
-    func testTheDelaySurvivesReducedMotion() {
+    /// 4 tab × 0.03 = 0.09s so với `content` 0.34s. Dài hơn thì tab cuối còn
+    /// nằm đó khi viên nang đã đóng gần hết, và đợt sóng đọc ra thành bốn cú
+    /// rời rạc.
+    func testTheCascadeIsShorterThanTheCurveItRidesOn() {
         BottomBarStyle.reduceMotion = false
-        let full = BottomBarStyle.playerMinimise(collapsing: true)
+        let cascade = Double(LibraryTab.pillTabs.count - 1) * FloatingTabBar.tabCascadeStep
+        XCTAssertLessThan(cascade, 0.34 / 3,
+                          "dãy \(cascade)s phải ngắn hơn nhiều so với content 0.34s")
+    }
+
+    /// Quãng trượt trái là chuyển động thật, nên giảm chuyển động bỏ nó.
+    func testTheLeftwardDriftGoesToZeroWhenMotionIsReduced() {
+        BottomBarStyle.reduceMotion = false
+        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 14, accuracy: 0.001)
         BottomBarStyle.reduceMotion = true
-        let reduced = BottomBarStyle.playerMinimise(collapsing: true)
-        XCTAssertNotEqual(full, reduced, "đường cong nền phải phẳng đi")
-        XCTAssertEqual(reduced, BottomBarStyle.morph.delay(0.25),
-                       "nhưng độ trễ ở lại nguyên")
+        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 0,
+                       "quãng đường phải biến mất, không chỉ ngắn đi")
+    }
+
+    /// Nhưng **độ trễ** thì ở lại — nó là dàn cảnh, không phải chuyển động.
+    ///
+    /// Cùng lập luận với `queueTitleOut`: bỏ dàn cảnh đi không làm ai dễ nhìn
+    /// hơn, nó chỉ làm bốn tab biến mất cùng lúc thành một mảng.
+    func testTheCascadeTimingSurvivesReducedMotion() {
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(FloatingTabBar.tabCascadeStep, 0.03, accuracy: 0.001)
+    }
+
+    /// Bậc thu nhỏ của chrome: có thật, và không xuống dưới ngưỡng chạm.
+    ///
+    /// Ba khối này là toàn bộ cách điều khiển app khi danh sách đang cuộn. Nút
+    /// tìm cao 54pt; ngưỡng HIG là 44pt, nên hệ số không được kéo nó xuống dưới
+    /// đó. 0.94 cho 50.8pt.
+    func testTheCollapsedChromeShrinksButStaysTappable() {
+        BottomBarStyle.reduceMotion = false
+        let scale = BottomBarStyle.collapsedChromeScale
+        XCTAssertEqual(scale, 0.94, accuracy: 0.001)
+        XCTAssertLessThan(scale, 1, "phải thật sự nhỏ đi")
+        XCTAssertGreaterThanOrEqual(BottomBarMetrics.tabBarHeight * scale, 44,
+                                    "không được xuống dưới ngưỡng chạm HIG")
+    }
+
+    func testTheChromeShrinkGoesToZeroWhenMotionIsReduced() {
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(BottomBarStyle.collapsedChromeScale, 1)
     }
 
     // MARK: - The distances that go to zero

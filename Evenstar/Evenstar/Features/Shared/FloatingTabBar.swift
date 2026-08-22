@@ -281,6 +281,50 @@ struct FloatingTabBar: View {
     private static let tabRevealScaleFull: CGFloat = 0.86
     private static let tabRevealScaleFlat: CGFloat = 1
 
+    /// Mỗi tab rời đi **muộn hơn tab bên phải nó**, và quay lại theo chiều ngược.
+    ///
+    /// Trước đây cả bốn tab dùng chung một độ trễ, nên chúng mờ đi cùng lúc —
+    /// bốn khối biến mất như một mảng. Apple cho chúng rụng lần lượt từ phải
+    /// sang trái, và điều đó không phải trang trí: viên nang thu về phía **trái**,
+    /// nên tab bên phải là tab bị mép clip chạm tới trước. Cho nó mờ trước là
+    /// cho cú mờ đi cùng chiều với cú clip thay vì cắt ngang nó.
+    ///
+    /// Chiều bung đảo lại: tab trái hiện ra trước, vì mép clip mở ra từ đó.
+    ///
+    /// 0.03s mỗi bậc, bốn tab nên toàn dãy trải 0.09s — ngắn hơn `content`
+    /// (0.34s) nhiều lần, nên nó đọc ra là một đợt sóng chứ không phải bốn cú
+    /// riêng lẻ. Dài hơn thì tab cuối còn nằm đó khi viên nang đã đóng gần hết.
+    ///
+    /// Giảm chuyển động: **giữ nguyên**. Đây là dàn cảnh, không phải chuyển
+    /// động — cùng lập luận với `BottomBarStyle.queueTitleOut`.
+    static let tabCascadeStep: TimeInterval = 0.03
+
+    /// Quãng mỗi tab trượt về trái khi rời đi.
+    ///
+    /// Tỉ lệ theo vị trí: tab ngoài cùng phải đi xa nhất, tab trái gần như đứng
+    /// yên. Bốn tab vì thế **hội tụ** về phía viên tròn sắp thành hình thay vì
+    /// cùng trôi ngang một quãng — cú trôi ngang đọc ra như cả hàng bị đẩy,
+    /// còn hội tụ đọc ra như chúng đang được thu vào.
+    ///
+    /// Giảm chuyển động: **0**. Đây là quãng đường thật, đúng thứ cài đặt ấy
+    /// tồn tại để bỏ — cùng quyết định với `tabRevealScaleFlat`.
+    @MainActor static var tabCascadeShift: CGFloat {
+        BottomBarStyle.reduceMotion ? 0 : tabCascadeShiftFull
+    }
+    private static let tabCascadeShiftFull: CGFloat = 14
+
+    /// Độ trễ và quãng trượt của một tab, theo vị trí của nó trong hàng.
+    ///
+    /// Chỉ số 0 là tab trái nhất. Khi thu, đảo lại để tab phải nhất chạy trước.
+    private func cascade(index: Int) -> (delay: TimeInterval, shift: CGFloat) {
+        let count = LibraryTab.pillTabs.count
+        let fromRight = count - 1 - index
+        return (
+            delay: Double(isCollapsed ? fromRight : index) * Self.tabCascadeStep,
+            shift: -Self.tabCascadeShift * CGFloat(index) / CGFloat(max(count - 1, 1))
+        )
+    }
+
     /// Shorter while searching: one text field needs less room than an icon
     /// stacked over a label.
     private var barHeight: CGFloat {
@@ -886,10 +930,19 @@ struct FloatingTabBar: View {
                 // tabs in order as it sweeps — the ordering comes free from the
                 // clip, and delaying each tab on top of that double-counts the
                 // same effect.
+                // Co, mờ và trượt trái — ba thứ trên **một** đường cong.
+                //
+                // Doc của `tabRevealScale` ghi lại vì sao: tách chúng ra hai
+                // curve hai delay từng làm cú co thành vô hình, vì mắt đang bám
+                // theo cú mờ. Quãng trượt mới thêm vào đây đi cùng hai thứ kia,
+                // không mang lịch riêng.
                 .scaleEffect(isCollapsed ? Self.tabRevealScale : 1)
+                .offset(x: isCollapsed ? cascade(index: index).shift : 0)
                 .opacity(isCollapsed ? 0 : 1)
                 .animation(
-                    BottomBarStyle.content.delay(isCollapsed ? 0 : Self.stagger),
+                    BottomBarStyle.content
+                        .delay(cascade(index: index).delay
+                               + (isCollapsed ? 0 : Self.stagger)),
                     value: isCollapsed
                 )
             }

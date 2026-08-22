@@ -653,49 +653,25 @@ enum BottomBarStyle {
     /// 0.033 là **hai khung**, đầu nhanh của khoảng đã đo. Đây là sàn: dưới nữa
     /// thì không còn là hoà mờ mà là cú cắt, và một khung biến mất trong một
     /// khung sẽ đọc ra như khung hình bị rớt chứ không như một chuyển động.
-    /// Player thu nhỏ **đợi thanh tab hẹp xong** rồi mới hạ xuống cùng hàng.
+    /// Cả ba khối đáy nhỏ lại một bậc khi thu — viên tròn trái, viên player
+    /// giữa, nút tìm phải.
     ///
-    /// **Đo trên video Apple Music, 60fps, 2940×1846.** Cắt từng khung của một
-    /// cú cuộn xuống trên máy trái:
+    /// **Đi cùng một đường cong với cú thu, không phải một bước sau nó.** Ba
+    /// khối đang co bề ngang; cho chúng co cả hai chiều trên cùng nhịp thì cú
+    /// thu đọc ra là *lùi lại* — chrome nhường chỗ cho nội dung — thay vì chỉ
+    /// là một hàng hẹp lại. Đặt nó ở bước sau sẽ thành hai chuyển động rời
+    /// nhau, và ở kích thước này bậc thứ hai chỉ đọc ra như một cú giật.
     ///
-    ///   - khung 040–055: thanh tab hẹp dần từ bốn tab đủ nhãn về viên nhỏ.
-    ///     Player **không nhúc nhích** — vẫn hàng trên, vẫn rộng hết, vẫn còn
-    ///     nút next.
-    ///   - khung 055–064: thanh tab đã xong; giờ player mới hạ xuống, hẹp lại,
-    ///     và nút next tan đi.
+    /// 0.94 chứ không nhỏ hơn: đây là vùng chạm, và ba khối này là toàn bộ cách
+    /// điều khiển app khi danh sách đang cuộn. Dưới 0.9 thì nút tìm 54pt xuống
+    /// dưới 48pt, tức dưới ngưỡng HIG.
     ///
-    /// 15 khung ở 60fps là 0.25s, và đó là con số dưới đây. Quãng hạ của player
-    /// đo được 9 khung (0.15s), ngắn hơn `morph` — nhưng không rút `morph` cho
-    /// riêng player, vì đường cong ấy dùng chung với thanh tab và lệch hai bên
-    /// đọc ra tệ hơn một quãng hơi dài.
-    ///
-    /// **Vì sao độ trễ này không phải chuyện làm đẹp.** Không có nó, player
-    /// trượt vào vị trí thu nhỏ trong lúc viên nang tab vẫn còn rộng — và
-    /// `minimisedPlayerInset` tính từ `tabBarHeight`, tức bề rộng **cuối cùng**
-    /// của viên nang, không phải bề rộng lúc ấy. Hai thứ đè lên nhau giữa
-    /// chừng, nhãn tab thò ra sau player. Đó là hình dạng người dùng chụp lại
-    /// và báo.
-    ///
-    /// Bất đối xứng, cùng lý do với `stagger` trong `FloatingTabBar`: lúc bung
-    /// thì player đi trước, thanh tab theo sau. Thứ đang rời màn hình không có
-    /// lý do gì để chờ, và thứ đang tới thì tới trước.
-    ///
-    /// Giảm chuyển động: **giữ nguyên**. Độ trễ là dàn cảnh chứ không phải
-    /// chuyển động — bỏ nó đi là trả lại đúng cú chồng lấn ở trên, và chồng lấn
-    /// thì không dễ nhìn hơn cho ai cả.
-    static let playerDescentDelay: TimeInterval = 0.25
-
-    /// Trả thẳng `morph` khi bung, **không** phải `morph.delay(0)`.
-    ///
-    /// `.delay(0)` không phải một no-op: nó bọc thêm một `DelayAnimation` quanh
-    /// đường cong, nên giá trị trả ra không còn bằng `morph` nữa. Test bắt được
-    /// chỗ ấy. Ngoài chuyện thừa một lớp bọc, nó còn làm hai chỗ cùng dùng
-    /// `morph` không so được bằng nhau — mà đó chính là thứ doc của
-    /// `reduceMotion` phía trên gọi là "hai nửa của một cú morph chạy hai đường
-    /// cong khác nhau".
-    @MainActor static func playerMinimise(collapsing: Bool) -> Animation {
-        collapsing ? morph.delay(playerDescentDelay) : morph
+    /// Giảm chuyển động: **1**. Một quãng đường thật, đúng thứ cài đặt ấy tồn
+    /// tại để bỏ — cùng quyết định với `FloatingTabBar.tabRevealScaleFlat`.
+    @MainActor static var collapsedChromeScale: CGFloat {
+        reduceMotion ? 1 : collapsedChromeScaleFull
     }
+    private static let collapsedChromeScaleFull: CGFloat = 0.94
 
     @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
     private static let queueContentOutFull = Animation.easeIn(duration: 0.033)

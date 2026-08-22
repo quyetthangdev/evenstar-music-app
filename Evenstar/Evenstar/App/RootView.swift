@@ -249,6 +249,15 @@ struct RootView: View {
             // player — còn thứ tự *vẽ* là một câu hỏi khác, và nói nó ra bằng
             // một dòng ở đúng chỗ thì rõ hơn là chuyển sáu mươi dòng đi nơi
             // khác. Lớp làm nóng ngay dưới đã dùng `zIndex(-1)` cùng lý do.
+            // Cả thanh bar nhỏ lại một bậc khi thu — viên tròn trái và nút tìm
+            // phải cùng lùi vào. Xem `BottomBarStyle.collapsedChromeScale` về
+            // vì sao nó đi cùng nhịp chứ không phải một bước sau.
+            //
+            // Ở đây chứ không trong `FloatingTabBar`: cùng con số ấy áp cho
+            // `PlayerCard` bên dưới, và hai khối phải nhỏ đi **bằng nhau** thì
+            // hàng mới đọc ra là một hệ. Một chỗ ghi thì không lệch được.
+            .scaleEffect(isMinimisedActive ? BottomBarStyle.collapsedChromeScale : 1)
+            .animation(BottomBarStyle.morph, value: isMinimisedActive)
             .floatsOverPlayer(expansion)
             .zIndex(1)
             // Anchored to the screen, not to the safe area — Apple's own
@@ -358,11 +367,10 @@ struct RootView: View {
                 // to `minimised:` above — `isSearching` toggling can change
                 // that value even on a frame where the raw `isMinimised` does
                 // not, and the animation must key on what the card receives.
-                // Độ trễ khi THU, không trễ khi bung — xem
-                // `BottomBarStyle.playerMinimise(collapsing:)` về phép đo trên
-                // video Apple Music và về cú chồng lấn nó chữa.
-                .animation(BottomBarStyle.playerMinimise(collapsing: isMinimisedActive),
-                           value: isMinimisedActive)
+                // Cùng bậc thu nhỏ với thanh bar ngay trên, và cùng đường
+                // cong — xem `BottomBarStyle.collapsedChromeScale`.
+                .scaleEffect(isMinimisedActive ? BottomBarStyle.collapsedChromeScale : 1)
+                .animation(BottomBarStyle.morph, value: isMinimisedActive)
         }
         // The one write of `BottomBarStyle.reduceMotion`, in the whole app.
         //
