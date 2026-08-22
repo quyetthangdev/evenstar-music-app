@@ -317,7 +317,18 @@ struct FloatingTabBar: View {
     @MainActor static var tabCascadeShift: CGFloat {
         BottomBarStyle.reduceMotion ? 0 : tabCascadeShiftFull
     }
-    private static let tabCascadeShiftFull: CGFloat = 18
+    /// 14 → 18 → **40**, và hai bước đầu đều quá ngắn vì cùng một lý do.
+    ///
+    /// Mỗi tab chỉ hiện trong một phần của cú thu trước khi mép clip che nó —
+    /// khe thời gian ấy ngắn, nên quãng đường phải **dài** thì cú trượt mới đọc
+    /// ra được. Một quãng vừa phải chia cho một khe hẹp thì thành đứng yên.
+    ///
+    /// 40pt là khoảng nửa bề rộng một ô tab (~75pt trên màn 402pt). Đủ để đọc
+    /// ra là các tab đang bị **thu về** phía viên tròn, chứ không phải rung nhẹ
+    /// tại chỗ. Chúng chồng lên nhau ở cuối hành trình, và điều đó không sao:
+    /// tới lúc ấy chúng đã mờ gần hết, và cú chồng đọc ra như xếp lại chứ không
+    /// như va nhau.
+    private static let tabCascadeShiftFull: CGFloat = 40
 
     /// Phần quãng mà **mọi** tab đi, kể cả tab trái nhất.
     ///

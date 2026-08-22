@@ -207,7 +207,7 @@ final class ReduceMotionTests: XCTestCase {
     /// Quãng trượt trái là chuyển động thật, nên giảm chuyển động bỏ nó.
     func testTheLeftwardDriftGoesToZeroWhenMotionIsReduced() {
         BottomBarStyle.reduceMotion = false
-        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 18, accuracy: 0.001)
+        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 40, accuracy: 0.001)
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(FloatingTabBar.tabCascadeShift, 0,
                        "quãng đường phải biến mất, không chỉ ngắn đi")
