@@ -367,9 +367,6 @@ struct RootView: View {
                 // to `minimised:` above — `isSearching` toggling can change
                 // that value even on a frame where the raw `isMinimised` does
                 // not, and the animation must key on what the card receives.
-                // Cùng bậc thu nhỏ với thanh bar ngay trên, và cùng đường
-                // cong — xem `BottomBarStyle.collapsedChromeScale`.
-                .scaleEffect(isMinimisedActive ? BottomBarStyle.collapsedChromeScale : 1)
                 .animation(BottomBarStyle.morph, value: isMinimisedActive)
         }
         // The one write of `BottomBarStyle.reduceMotion`, in the whole app.
