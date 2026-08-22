@@ -301,17 +301,29 @@ struct FloatingTabBar: View {
 
     /// Quãng mỗi tab trượt về trái khi rời đi.
     ///
-    /// Tỉ lệ theo vị trí: tab ngoài cùng phải đi xa nhất, tab trái gần như đứng
-    /// yên. Bốn tab vì thế **hội tụ** về phía viên tròn sắp thành hình thay vì
-    /// cùng trôi ngang một quãng — cú trôi ngang đọc ra như cả hàng bị đẩy,
-    /// còn hội tụ đọc ra như chúng đang được thu vào.
+    /// **Mọi tab đều trượt, và bản đầu thì không.** Công thức cũ tỉ lệ thẳng
+    /// theo chỉ số — tab trái nhất nhận đúng 0. Sai ở chỗ tab trái nhất là tab
+    /// **sống lâu nhất** trong cú thu: viên nang clip từ phải sang, nên ba tab
+    /// kia bị che gần như ngay, còn tab đầu ở lại tới cuối. Thứ người ta nhìn
+    /// được lâu nhất lại là thứ duy nhất đứng yên, nên cú trượt gần như không
+    /// tồn tại trên màn hình.
+    ///
+    /// Giờ mọi tab trượt ít nhất `baseFraction` của quãng, và tab càng bên phải
+    /// càng đi xa hơn. Giữ được cả hai: hàng vẫn **hội tụ** về phía viên tròn
+    /// sắp thành hình, mà không tab nào bị bỏ lại đứng im.
     ///
     /// Giảm chuyển động: **0**. Đây là quãng đường thật, đúng thứ cài đặt ấy
     /// tồn tại để bỏ — cùng quyết định với `tabRevealScaleFlat`.
     @MainActor static var tabCascadeShift: CGFloat {
         BottomBarStyle.reduceMotion ? 0 : tabCascadeShiftFull
     }
-    private static let tabCascadeShiftFull: CGFloat = 14
+    private static let tabCascadeShiftFull: CGFloat = 18
+
+    /// Phần quãng mà **mọi** tab đi, kể cả tab trái nhất.
+    ///
+    /// 0.55 nên tab đầu đi 55% quãng và tab cuối đi 100% — đủ chênh để hàng đọc
+    /// ra là hội tụ, đủ nền để không tab nào đứng yên.
+    static let tabCascadeBaseFraction: CGFloat = 0.55
 
     /// Độ trễ và quãng trượt của một tab, theo vị trí của nó trong hàng.
     ///
@@ -319,9 +331,12 @@ struct FloatingTabBar: View {
     private func cascade(index: Int) -> (delay: TimeInterval, shift: CGFloat) {
         let count = LibraryTab.pillTabs.count
         let fromRight = count - 1 - index
+        let spread = CGFloat(index) / CGFloat(max(count - 1, 1))
+        let fraction = Self.tabCascadeBaseFraction
+            + (1 - Self.tabCascadeBaseFraction) * spread
         return (
             delay: Double(isCollapsed ? fromRight : index) * Self.tabCascadeStep,
-            shift: -Self.tabCascadeShift * CGFloat(index) / CGFloat(max(count - 1, 1))
+            shift: -Self.tabCascadeShift * fraction
         )
     }
 

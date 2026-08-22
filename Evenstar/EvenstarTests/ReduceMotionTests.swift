@@ -192,10 +192,22 @@ final class ReduceMotionTests: XCTestCase {
                           "dãy \(cascade)s phải ngắn hơn nhiều so với content 0.34s")
     }
 
+    /// **Không tab nào đứng yên**, kể cả tab trái nhất.
+    ///
+    /// Bản đầu tỉ lệ thẳng theo chỉ số nên tab đầu nhận đúng 0 — và tab đầu là
+    /// tab sống lâu nhất trong cú thu, vì viên nang clip từ phải sang. Thứ nhìn
+    /// được lâu nhất lại đứng im, nên cú trượt gần như không tồn tại.
+    func testEveryTabDriftsIncludingTheLeftmost() {
+        BottomBarStyle.reduceMotion = false
+        let base = FloatingTabBar.tabCascadeBaseFraction
+        XCTAssertGreaterThan(base, 0, "tab trái nhất phải đi một quãng thật")
+        XCTAssertLessThan(base, 1, "nhưng vẫn ít hơn tab phải nhất — hàng phải hội tụ")
+    }
+
     /// Quãng trượt trái là chuyển động thật, nên giảm chuyển động bỏ nó.
     func testTheLeftwardDriftGoesToZeroWhenMotionIsReduced() {
         BottomBarStyle.reduceMotion = false
-        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 14, accuracy: 0.001)
+        XCTAssertEqual(FloatingTabBar.tabCascadeShift, 18, accuracy: 0.001)
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(FloatingTabBar.tabCascadeShift, 0,
                        "quãng đường phải biến mất, không chỉ ngắn đi")
