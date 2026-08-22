@@ -67,7 +67,7 @@ struct PlayerCard: View {
     /// kéo chúng vào. Ở đây viên pill co quanh tâm nó, nên **cả hai** mép lùi
     /// vào và cả hai khe rộng ra. Nới lề cho khung rộng thêm trước khi co thì
     /// hai mép trở lại gần hai viên tròn.
-    private static let pillMinimisedRelief: CGFloat = 20
+    private static let pillMinimisedRelief: CGFloat = 0
     /// How far the collapsed artwork sits in from the pill's leading edge.
     ///
     /// Larger than it looks like it needs to be, because the pill's leading
@@ -1765,7 +1765,8 @@ struct PlayerCard: View {
             // derived here because these two constants are private to this
             // type, and restating either of them there would let the two ends
             // of the pill drift apart the moment one of them moved.
-            artworkCentreInset: Self.collapsedArtworkInset + Self.collapsedArtwork / 2
+            artworkCentreInset: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
+            artworkLeadingInset: Self.collapsedArtworkInset
         )
             // Derived rather than a literal so the text cannot drift out of
             // step with the artwork: this is where the artwork ends, plus the

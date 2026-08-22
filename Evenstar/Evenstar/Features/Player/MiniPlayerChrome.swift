@@ -20,6 +20,10 @@ struct MiniPlayerChrome: View {
     /// as its mirror: see `trailingInset`.
     let artworkCentreInset: CGFloat
 
+    /// Lề của ô bìa tính từ mép trái viên pill — thứ nút transport cuối hàng
+    /// soi vào để cân. Xem `trailingInset`.
+    let artworkLeadingInset: CGFloat
+
     /// Counts taps on Next so the tap effect retriggers on every press. A
     /// `Bool` would fire once and then sit at `true`, doing nothing for the
     /// second tap.
@@ -44,13 +48,18 @@ struct MiniPlayerChrome: View {
     /// edges would put the button in a different place depending on whether
     /// music happened to be playing.
     ///
-    /// Mirroring centres gives `36 - 16 = 20`, four points further in than the
-    /// 16 that was left over from the Next button's own inset — which is what
-    /// made the right side read as slightly loose against the left.
+    /// **Cân theo mép KHUNG, không theo tâm.** Đoạn trên là lập luận cũ và nó
+    /// đúng một nửa: cân theo mép *glyph* thì hỏng, vì `play.fill` và
+    /// `pause.fill` khác bề rộng nên nút sẽ đứng hai chỗ khác nhau tuỳ nhạc có
+    /// đang chạy hay không. Nhưng cân theo mép **khung nút** thì không dính
+    /// chuyện đó — khung luôn 32pt, bất kể glyph nào nằm trong.
+    ///
+    /// Cân theo tâm cho `36 - 16 = 20`, trong khi ô bìa cách mép trái 18. Hai
+    /// con số ấy lệch 2pt, và mắt đọc mép chứ không đọc tâm: bên phải trông
+    /// lỏng hơn bên trái. Lấy thẳng lề của ô bìa thì hai mép bằng nhau.
     private var trailingInset: CGFloat {
-        let mirrored = artworkCentreInset - Self.buttonSize / 2
-        return Self.expandedTrailingInset
-            + (mirrored - Self.expandedTrailingInset) * minimised
+        Self.expandedTrailingInset
+            + (artworkLeadingInset - Self.expandedTrailingInset) * minimised
     }
 
     /// See `NowPlayingContent.acknowledge`: SwiftUI renders a button's action
