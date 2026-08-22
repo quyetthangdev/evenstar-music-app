@@ -230,10 +230,28 @@ final class ReduceMotionTests: XCTestCase {
     func testTheCollapsedChromeShrinksButStaysTappable() {
         BottomBarStyle.reduceMotion = false
         let scale = BottomBarStyle.collapsedChromeScale
-        XCTAssertEqual(scale, 0.94, accuracy: 0.001)
+        XCTAssertEqual(scale, 0.90, accuracy: 0.001)
         XCTAssertLessThan(scale, 1, "phải thật sự nhỏ đi")
         XCTAssertGreaterThanOrEqual(BottomBarMetrics.tabBarHeight * scale, 44,
                                     "không được xuống dưới ngưỡng chạm HIG")
+    }
+
+    /// Cú co có đường cong **riêng**, nảy hơn `morph`.
+    ///
+    /// Tách khỏi `morph` có chủ ý, và chốt này giữ cho nó tách: gộp lại thì cú
+    /// nảy lan sang cú hẹp bề ngang, và viên nang vượt quá kích thước cuối rồi
+    /// lùi lại — một hình dạng đi qua đích hai lần.
+    func testTheChromeShrinkHasItsOwnBouncierCurve() {
+        BottomBarStyle.reduceMotion = false
+        XCTAssertEqual(BottomBarStyle.chromeSettle, .spring(duration: 0.44, bounce: 0.40))
+        XCTAssertNotEqual(BottomBarStyle.chromeSettle, BottomBarStyle.morph,
+                          "phải khác `morph` — đó là cả điểm của nó")
+    }
+
+    /// Nảy là chuyển động thừa, nên giảm chuyển động bỏ nó.
+    func testTheBounceFlattensWhenMotionIsReduced() {
+        BottomBarStyle.reduceMotion = true
+        XCTAssertEqual(BottomBarStyle.chromeSettle, .easeInOut(duration: 0.24))
     }
 
     func testTheChromeShrinkGoesToZeroWhenMotionIsReduced() {

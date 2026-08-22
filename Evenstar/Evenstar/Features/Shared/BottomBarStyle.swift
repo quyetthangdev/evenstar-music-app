@@ -671,7 +671,33 @@ enum BottomBarStyle {
     @MainActor static var collapsedChromeScale: CGFloat {
         reduceMotion ? 1 : collapsedChromeScaleFull
     }
-    private static let collapsedChromeScaleFull: CGFloat = 0.94
+    private static let collapsedChromeScaleFull: CGFloat = 0.90
+
+    /// Đường cong riêng cho **cú co của chrome**, nảy hơn `morph`.
+    ///
+    /// Đây là chỗ duy nhất trong nhóm đáy cố tình tách khỏi `morph`, nên nó cần
+    /// lý do. Cú hẹp bề ngang là một hình dạng **biến thành** hình dạng khác —
+    /// bốn tab thành một vòng tròn — và một cú nảy ở đó làm viên nang vượt quá
+    /// rồi lùi lại, tức là kích thước cuối bị đi qua hai lần. Cú co thì khác:
+    /// nó là cả khối **lùi lại một bậc**, một quãng ngắn không đổi hình dạng,
+    /// và một chút nảy ở đó đọc ra như vật có khối lượng đang đặt xuống chỗ.
+    ///
+    /// bounce 0.40 so với 0.24 của `morph`, và dài hơn một chút (0.44 so với
+    /// 0.36) để cú nảy có chỗ mà nảy thay vì bị cắt cụt.
+    ///
+    /// **Lồng hai lớp `.animation` là cách hai đường cong sống cạnh nhau.**
+    /// Lớp trong nhận cú hẹp bề ngang, lớp ngoài nhận `scaleEffect`. Đặt một
+    /// lớp thôi thì cả hai chạy chung, và cú nảy sẽ lan sang bề ngang — đúng
+    /// thứ đoạn trên vừa nói là không nên.
+    ///
+    /// Giảm chuyển động: `easeInOut` phẳng. Cú nảy là chuyển động thừa theo
+    /// đúng nghĩa cài đặt ấy dùng, và `collapsedChromeScale` lúc ấy đã là 1 nên
+    /// đường cong này gần như không còn gì để chạy.
+    @MainActor static var chromeSettle: Animation {
+        reduceMotion ? chromeSettleFlat : chromeSettleFull
+    }
+    private static let chromeSettleFull = Animation.spring(duration: 0.44, bounce: 0.40)
+    private static let chromeSettleFlat = Animation.easeInOut(duration: 0.24)
 
     @MainActor static var queueContentOut: Animation { reduceMotion ? queueContentOutFlat : queueContentOutFull }
     private static let queueContentOutFull = Animation.easeIn(duration: 0.033)

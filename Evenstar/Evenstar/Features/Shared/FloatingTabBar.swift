@@ -422,12 +422,19 @@ struct FloatingTabBar: View {
             // Neo ở mép ngoài thì mỗi khối co vào trong chính nó: mép trái của
             // viên tròn và mép phải của nút tìm đứng yên, còn hai khe hở hai
             // bên viên pill **rộng ra** thay vì hẹp lại.
-            .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
-                         anchor: .leading)
+            //
+            // Hai lớp `.animation`, và thứ tự là load-bearing: lớp **trong**
+            // nhận cú hẹp bề ngang trên `morph`, lớp **ngoài** nhận cú co trên
+            // `chromeSettle` nảy hơn. Gộp một lớp thì cú nảy lan sang bề ngang,
+            // và viên nang sẽ vượt quá kích thước cuối rồi lùi lại — xem
+            // `BottomBarStyle.chromeSettle` về vì sao đó là hai chuyện khác nhau.
             .animation(
                 BottomBarStyle.morph.delay(isCollapsed ? 0 : Self.stagger),
                 value: isCollapsed
             )
+            .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
+                         anchor: .leading)
+            .animation(BottomBarStyle.chromeSettle, value: isCollapsed)
 
             // Fixed, so the gap between the leading capsule and whatever
             // follows never collapses. The search capsule's own trailing gap
@@ -501,6 +508,7 @@ struct FloatingTabBar: View {
                 // Neo mép phải, đối xứng với viên tròn trái — xem ghi chú ở đó.
                 .scaleEffect(isCollapsed ? BottomBarStyle.collapsedChromeScale : 1,
                              anchor: .trailing)
+                .animation(BottomBarStyle.chromeSettle, value: isCollapsed)
                 .frame(width: isMerged ? 0 : barHeight)
                 .clipped()
                 .opacity(isMerged ? 0 : 1)
