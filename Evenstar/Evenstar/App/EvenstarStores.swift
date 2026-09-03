@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import OSLog
 
 /// Hai kho dữ liệu của app, và ranh giới giữa chúng: **cái nào đi theo Apple
 /// Account, cái nào ở lại từng máy.**
@@ -143,24 +144,94 @@ enum EvenstarStores {
         )
     }
 
-    /// Container thật của app. Một container, hai kho.
-    /// Container thật của app.
+    // MARK: - Mở kho
+
+    /// Ba mức mà app chấp nhận mở kho ở đó, từ đủ nhất xuống mức chống sập.
     ///
-    /// **Không đồng bộ khi đang chạy test, và đó không phải chuyện dọn tiếng ồn
-    /// trong log.** App host chạy `EvenstarApp.init()` trong mỗi lượt test, nên
-    /// mỗi lượt test dựng một `NSPersistentCloudKitContainer` thật. Trên máy
-    /// chưa đăng nhập iCloud nó chỉ in `CKAccountStatusNoAccount` rồi thôi —
-    /// nhưng trên máy CÓ đăng nhập, chạy test là **đẩy lược đồ lên server**, và
-    /// lược đồ CloudKit chỉ thêm được chứ không sửa ngược.
+    /// Trước bản này chỉ có một mức: hoặc mở được kho có CloudKit, hoặc
+    /// `EvenstarApp.init()` gọi `fatalError`. Nghĩa là lược đồ CloudKit chưa
+    /// đẩy sang Production, container iCloud chưa gán cho App ID, hay một lượt
+    /// migrate SwiftData hỏng trên máy đã có dữ liệu cũ — cả ba đều thành một
+    /// cú sập ở màn hình đầu tiên. Máy của người duyệt App Store rơi vào hai
+    /// nhóm đầu là chuyện thường.
+    enum Tier: String {
+        /// CloudKit bật, hai kho trên đĩa. Bình thường.
+        case synced
+        /// Hai kho trên đĩa, CloudKit tắt. Đồng bộ mất, dữ liệu còn nguyên.
+        case localOnly
+        /// Không kho nào trên đĩa mở được. Thư viện hiện ra trống và mọi thay
+        /// đổi mất khi đóng app — nhưng app **chạy**, và `RootView` nói cho
+        /// người dùng biết điều đó thay vì để họ nhập lại cả thư viện.
+        case inMemory
+    }
+
+    /// Kết quả một lượt mở kho.
+    struct Load {
+        let container: ModelContainer
+        let tier: Tier
+        /// Lý do tầng đầu tiên bị bỏ. `nil` khi mở được ngay ở tầng cao nhất
+        /// **được phép thử** — nên dưới XCTest, mở ở `localOnly` vẫn là `nil`.
+        let downgradeReason: String?
+    }
+
+    enum StoreLoadError: Error {
+        case allTiersFailed(String)
+    }
+
+    /// Dựng container cho đúng một tầng. Tách khỏi `load` để `load` kiểm được
+    /// mà không chạm CloudKit.
+    static func container(for tier: Tier) throws -> ModelContainer {
+        let schema = Schema(syncedModels + localOnlyModels)
+        switch tier {
+        case .synced:
+            return try ModelContainer(
+                for: schema,
+                configurations: syncedConfiguration(cloudKit: true),
+                                localOnlyConfiguration()
+            )
+        case .localOnly:
+            return try ModelContainer(
+                for: schema,
+                configurations: syncedConfiguration(cloudKit: false),
+                                localOnlyConfiguration()
+            )
+        case .inMemory:
+            return try ModelContainer(
+                for: schema,
+                configurations: ModelConfiguration(schema: schema,
+                                                   isStoredInMemoryOnly: true,
+                                                   cloudKitDatabase: .none)
+            )
+        }
+    }
+
+    /// Mở kho ở tầng cao nhất mở được.
     ///
-    /// Nghĩa là trước bản sửa này, một lượt `xcodebuild test` trên máy lập trình
-    /// viên bất kỳ có thể khoá vĩnh viễn hình dạng dữ liệu production — bằng một
-    /// lược đồ chưa ai duyệt, từ một nhánh chưa ai merge.
-    static func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: Schema(syncedModels + localOnlyModels),
-            configurations: syncedConfiguration(cloudKit: !isRunningTests),
-                            localOnlyConfiguration()
-        )
+    /// - Parameters:
+    ///   - cloudKit: `false` bỏ hẳn tầng `synced`. Mặc định tắt khi đang chạy
+    ///     test, vì mỗi lượt test dựng một container thật sẽ **đẩy lược đồ lên
+    ///     server** trên máy đã đăng nhập iCloud — xem ghi chú ở đầu kiểu.
+    ///   - build: hàm dựng container cho một tầng. Tồn tại để test tiêm vào.
+    static func load(
+        cloudKit: Bool = !EvenstarStores.isRunningTests,
+        build: (Tier) throws -> ModelContainer = EvenstarStores.container(for:)
+    ) throws -> Load {
+        let tiers: [Tier] = cloudKit ? [.synced, .localOnly, .inMemory] : [.localOnly, .inMemory]
+        var firstFailure: String?
+
+        for tier in tiers {
+            do {
+                let container = try build(tier)
+                return Load(container: container, tier: tier, downgradeReason: firstFailure)
+            } catch {
+                let reason = error.localizedDescription
+                if firstFailure == nil { firstFailure = reason }
+                AppLog.library.error(
+                    "Mở kho ở tầng \(tier.rawValue, privacy: .public) thất bại: \(reason, privacy: .public)"
+                )
+            }
+        }
+
+        throw StoreLoadError.allTiersFailed(firstFailure ?? "không rõ")
     }
 }

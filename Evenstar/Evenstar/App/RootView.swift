@@ -11,6 +11,21 @@ import SwiftUI
 /// tab's root view, not here. If the system bar ever reappears beneath the
 /// custom one, that placement is the first thing to check.
 struct RootView: View {
+    /// Kho đã tụt xuống bộ nhớ tạm. Xem `EvenstarStores.Tier`.
+    private let storeUnavailable: Bool
+
+    /// Dựng từ `storeUnavailable` ngay trong `init` chứ không đặt trong một
+    /// `.task`: `body` đã có một `.task` rồi, và hai `.task` anh em không được
+    /// SwiftUI xếp thứ tự — xem ghi chú ở cuối `body` về đúng cái bẫy ấy.
+    @State private var showingStoreWarning: Bool
+
+    /// Mặc định `false` để `RootView()` không tham số vẫn dựng được:
+    /// `ReduceMotionTests` dùng dạng ấy.
+    init(storeUnavailable: Bool = false) {
+        self.storeUnavailable = storeUnavailable
+        _showingStoreWarning = State(initialValue: storeUnavailable)
+    }
+
     @Environment(PlaybackService.self) private var playback
     @State private var tab: LibraryTab = .songs
     @State private var isSearching = false
@@ -414,6 +429,13 @@ struct RootView: View {
         // Reading `language` is what makes the line above re-evaluate; without
         // it the environment would keep the locale resolved at first launch.
         .id(language)
+        // Sau `.id(language)`: đổi ngôn ngữ dựng lại cả cây bên dưới, và một
+        // hộp thoại đang mở không được biến mất vì chuyện đó.
+        .alert("Không mở được thư viện", isPresented: $showingStoreWarning) {
+            Button("Đã hiểu", role: .cancel) { }
+        } message: {
+            Text("Lần chạy này dùng bộ nhớ tạm, nên thư viện hiện ra trống dù nhạc trên máy vẫn còn nguyên. Đừng nhập lại — hãy đóng hẳn app rồi mở lại.")
+        }
         // Khôi phục hàng đợi đã lưu **không** còn ở đây. Nó đã dời lên `.task`
         // của `EvenstarApp`, ngay sau lượt quét trùng, và phải chạy sau lượt
         // ấy — xem ghi chú dài ở chỗ đó. Đừng thêm lại một `.task` khôi phục ở
