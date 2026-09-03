@@ -123,7 +123,7 @@ enum EvenstarStores {
     /// Tham số `cloudKit` mặc định `true` vì đây là **sự thật của bản chạy
     /// thật**, và test đọc hàm này để kiểm đúng điều đó — `testChiKhoThuVienKhai
     /// CloudKit` sẽ vô nghĩa nếu hàm tự tắt CloudKit khi thấy mình đang bị test.
-    /// Chỗ quyết định tắt nằm ở `makeContainer()`, nơi container thật được dựng.
+    /// Chỗ quyết định tắt nằm ở `load(cloudKit:)`, nơi container thật được dựng.
     static func syncedConfiguration(cloudKit: Bool = true) -> ModelConfiguration {
         ModelConfiguration(
             schema: Schema(syncedModels),
@@ -178,40 +178,56 @@ enum EvenstarStores {
         case allTiersFailed(String)
     }
 
+    /// Hình dạng kho của một tầng, **chưa dựng gì cả**.
+    ///
+    /// Tách khỏi `container(for:)` vì một lý do: chỗ dễ sai nhất trong cả bản
+    /// sửa này là đảo nhầm `cloudKit: true`/`false` giữa hai nhánh `synced` và
+    /// `localOnly` — làm thế thì tầng lùi vẫn đòi CloudKit, tức bản sửa mất
+    /// sạch tác dụng, mà mọi test tiêm `build` vào `load` vẫn xanh vì chúng
+    /// không bao giờ chạy qua đây. Trả về cấu hình thay vì container cho phép
+    /// ghim đúng chỗ ấy: dựng một `ModelConfiguration` không mở kho nào trên
+    /// đĩa và không chạm CloudKit, nên test đọc được nó mà không gánh cái giá
+    /// mà `load(cloudKit:)` tồn tại để tránh.
+    static func configurations(for tier: Tier) -> [ModelConfiguration] {
+        switch tier {
+        case .synced:
+            return [syncedConfiguration(cloudKit: true), localOnlyConfiguration()]
+        case .localOnly:
+            return [syncedConfiguration(cloudKit: false), localOnlyConfiguration()]
+        case .inMemory:
+            return [ModelConfiguration(schema: Schema(syncedModels + localOnlyModels),
+                                       isStoredInMemoryOnly: true,
+                                       cloudKitDatabase: .none)]
+        }
+    }
+
     /// Dựng container cho đúng một tầng. Tách khỏi `load` để `load` kiểm được
     /// mà không chạm CloudKit.
     static func container(for tier: Tier) throws -> ModelContainer {
-        let schema = Schema(syncedModels + localOnlyModels)
-        switch tier {
-        case .synced:
-            return try ModelContainer(
-                for: schema,
-                configurations: syncedConfiguration(cloudKit: true),
-                                localOnlyConfiguration()
-            )
-        case .localOnly:
-            return try ModelContainer(
-                for: schema,
-                configurations: syncedConfiguration(cloudKit: false),
-                                localOnlyConfiguration()
-            )
-        case .inMemory:
-            return try ModelContainer(
-                for: schema,
-                configurations: ModelConfiguration(schema: schema,
-                                                   isStoredInMemoryOnly: true,
-                                                   cloudKitDatabase: .none)
-            )
-        }
+        try ModelContainer(
+            for: Schema(syncedModels + localOnlyModels),
+            configurations: configurations(for: tier)
+        )
     }
 
     /// Mở kho ở tầng cao nhất mở được.
     ///
     /// - Parameters:
-    ///   - cloudKit: `false` bỏ hẳn tầng `synced`. Mặc định tắt khi đang chạy
-    ///     test, vì mỗi lượt test dựng một container thật sẽ **đẩy lược đồ lên
-    ///     server** trên máy đã đăng nhập iCloud — xem ghi chú ở đầu kiểu.
-    ///   - build: hàm dựng container cho một tầng. Tồn tại để test tiêm vào.
+    ///   - cloudKit: `false` bỏ hẳn tầng `synced`, và **đây không phải chuyện
+    ///     dọn tiếng ồn trong log.** App host chạy `EvenstarApp.init()` trong
+    ///     mỗi lượt test, nên mỗi lượt test dựng một `NSPersistentCloudKit
+    ///     Container` thật. Trên máy chưa đăng nhập iCloud nó chỉ in
+    ///     `CKAccountStatusNoAccount` rồi thôi — nhưng trên máy CÓ đăng nhập,
+    ///     chạy test là **đẩy lược đồ lên server**, và lược đồ CloudKit chỉ
+    ///     thêm được chứ không sửa ngược. Nghĩa là một lượt `xcodebuild test`
+    ///     trên máy lập trình viên bất kỳ có thể khoá vĩnh viễn hình dạng dữ
+    ///     liệu production — bằng một lược đồ chưa ai duyệt, từ một nhánh chưa
+    ///     ai merge. Mặc định vì thế tắt khi `isRunningTests`, và
+    ///     `testTatCloudKitThiKhongThuTangDongBo` ghim việc tầng `synced`
+    ///     không được chạm tới.
+    ///   - build: hàm dựng container cho một tầng. Tồn tại để test tiêm vào —
+    ///     tầng `synced` là thứ duy nhất không kiểm được bằng cách nào khác,
+    ///     đúng vì lý do vừa nói.
     static func load(
         cloudKit: Bool = !EvenstarStores.isRunningTests,
         build: (Tier) throws -> ModelContainer = EvenstarStores.container(for:)

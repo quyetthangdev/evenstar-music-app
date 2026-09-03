@@ -293,15 +293,66 @@ final class EvenstarStoresTests: XCTestCase {
 
     /// Cả ba tầng hỏng nghĩa là chính lược đồ không dựng nổi. Ném ra, đừng
     /// giả vờ đã mở được kho.
-    func testCaBaTangHongThiNem() {
-        XCTAssertThrowsError(
-            try EvenstarStores.load(cloudKit: true, build: build(thanhCongO: []))
+    /// Tầng lùi phải **thật sự** bỏ CloudKit.
+    ///
+    /// Đây là mắt xích duy nhất trong chuỗi mà mọi test khác không đi qua: năm
+    /// test tiêm `build` vào `load` chỉ kiểm thứ tự tầng, nên đảo nhầm
+    /// `cloudKit: true`/`false` giữa hai nhánh `synced` và `localOnly` sẽ khiến
+    /// tầng lùi vẫn đòi CloudKit — bản sửa mất sạch tác dụng — mà cả năm test
+    /// ấy vẫn xanh. Đọc cấu hình chứ không dựng container: xem `configurations
+    /// (for:)`.
+    func testTangLuiKhongCoCloudKit() {
+        let configs = EvenstarStores.configurations(for: .localOnly)
+        XCTAssertEqual(configs.count, 2, "Tầng lùi vẫn là hai kho, chỉ tắt CloudKit")
+        XCTAssertTrue(
+            configs.allSatisfy { $0.cloudKitContainerIdentifier == nil },
+            "Không kho nào ở tầng localOnly được khai CloudKit"
         )
+    }
+
+    /// Cặp với test trên: tầng đỉnh **phải** khai CloudKit, và chỉ ở kho thư
+    /// viện. Thiếu nó thì "tắt CloudKit ở mọi tầng" cũng làm cả hai test kia
+    /// xanh, và app sẽ không bao giờ đồng bộ.
+    func testTangDinhKhaiCloudKitDungMotKho() {
+        let ids = EvenstarStores.configurations(for: .synced)
+            .map(\.cloudKitContainerIdentifier)
+        XCTAssertEqual(
+            ids, [EvenstarStores.cloudKitContainerIdentifier, nil],
+            "Kho thư viện khai CloudKit, kho trạng thái phát thì không"
+        )
+    }
+
+    /// Tầng chống sập: một kho, trong bộ nhớ, không CloudKit.
+    func testTangBoNhoLaMotKhoTrongBoNho() {
+        let configs = EvenstarStores.configurations(for: .inMemory)
+        XCTAssertEqual(configs.count, 1)
+        XCTAssertTrue(configs[0].isStoredInMemoryOnly)
+        XCTAssertNil(configs[0].cloudKitContainerIdentifier)
+    }
+
+    /// Kiểm cả **loại** lỗi chứ không chỉ "có ném hay không": một
+    /// `XCTAssertThrowsError` trần sẽ xanh kể cả khi `LoiGia` rò thẳng ra
+    /// ngoài, tức vòng lặp tầng đã vỡ và không hề bắt lỗi nào. Hai chuyện ấy
+    /// khác hẳn nhau, và chỉ có cái sau là hỏng.
+    func testCaBaTangHongThiNem() {
+        var thuTu: [EvenstarStores.Tier] = []
+        XCTAssertThrowsError(
+            try EvenstarStores.load(
+                cloudKit: true,
+                build: build(thanhCongO: [], daThu: { thuTu.append($0) })
+            )
+        ) { error in
+            guard case EvenstarStores.StoreLoadError.allTiersFailed = error else {
+                return XCTFail("Chờ StoreLoadError.allTiersFailed, nhận \(error)")
+            }
+        }
+        XCTAssertEqual(thuTu, [.synced, .localOnly, .inMemory],
+                       "Phải thử đủ ba tầng trước khi chịu thua")
     }
 
     /// Dưới XCTest, `cloudKit` là `false` và tầng đồng bộ **không được thử**.
     /// Chạm CloudKit trong test là đẩy lược đồ chưa duyệt lên server thật —
-    /// xem ghi chú ở đầu `EvenstarStores`.
+    /// xem ghi chú ở tham số `cloudKit` của `EvenstarStores.load`.
     func testTatCloudKitThiKhongThuTangDongBo() throws {
         var thuTu: [EvenstarStores.Tier] = []
         let load = try EvenstarStores.load(
