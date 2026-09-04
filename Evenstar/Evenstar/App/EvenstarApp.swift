@@ -23,17 +23,31 @@ struct EvenstarApp: App {
     @State private var searchResults: SearchResultsStore
     private let remoteCommands: RemoteCommandsBridge
 
+    /// Kho đã tụt xuống bộ nhớ tạm: thư viện sẽ hiện ra trống dù dữ liệu trên
+    /// máy vẫn còn. `RootView` nói cho người dùng biết — xem `Task 5`.
+    private let storeUnavailable: Bool
+
     init() {
-        let container: ModelContainer
+        // Một container, **hai** kho: bốn bảng thư viện đồng bộ qua CloudKit,
+        // `PlaybackState` ở lại máy này. Toàn bộ lý lẽ — kể cả vì sao kho thư
+        // viện phải giữ tên mặc định — nằm ở `EvenstarStores`.
+        //
+        // `load()` hạ tầng thay vì ném: một container iCloud chưa gán cho
+        // App ID, hay một lượt migrate hỏng, không được phép thành cú sập ở
+        // màn hình đầu tiên. (Lược đồ chưa đẩy sang Production thì bộ tầng
+        // KHÔNG thấy — xem ghi chú ở `EvenstarStores.Tier`.)
+        let load: EvenstarStores.Load
         do {
-            // Một container, **hai** kho: bốn bảng thư viện đồng bộ qua
-            // CloudKit, `PlaybackState` ở lại máy này. Toàn bộ lý lẽ — kể cả
-            // vì sao kho thư viện phải giữ tên mặc định — nằm ở
-            // `EvenstarStores`.
-            container = try EvenstarStores.makeContainer()
+            load = try EvenstarStores.load()
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            // Tới đây nghĩa là cả kho bộ nhớ cũng không dựng nổi, tức chính
+            // `Schema` sai — lỗi lập trình, không phải tình huống của người
+            // dùng, và `ModelCloudKitConformanceTests` là chỗ bắt nó. Không có
+            // container thì không có app.
+            fatalError("Không dựng được ModelContainer ở bất kỳ tầng nào: \(error)")
         }
+        let container = load.container
+        storeUnavailable = load.tier == .inMemory
         modelContainer = container
         let libService = LibraryService(context: container.mainContext)
         let imp = ImportService(library: libService, metadataReader: AudioMetadataReader())
@@ -121,7 +135,7 @@ struct EvenstarApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(storeUnavailable: storeUnavailable)
                 .environment(library)
                 .environment(importService)
                 .environment(playback)

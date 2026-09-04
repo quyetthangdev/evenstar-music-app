@@ -11,6 +11,43 @@ import SwiftUI
 /// tab's root view, not here. If the system bar ever reappears beneath the
 /// custom one, that placement is the first thing to check.
 struct RootView: View {
+    /// Kho đã tụt xuống bộ nhớ tạm. Xem `EvenstarStores.Tier`.
+    private let storeUnavailable: Bool
+
+    /// Dựng từ `storeUnavailable` ngay trong `init` chứ không đặt trong một
+    /// `.task`: `body` đã có một `.task` rồi, và hai `.task` anh em không được
+    /// SwiftUI xếp thứ tự — xem ghi chú ở cuối `body` về đúng cái bẫy ấy.
+    @State private var showingStoreWarning: Bool
+
+    /// Mặc định `false` để `RootView()` không tham số vẫn dựng được:
+    /// `ReduceMotionTests` dùng dạng ấy.
+    init(storeUnavailable: Bool = false) {
+        self.storeUnavailable = storeUnavailable
+        _showingStoreWarning = State(initialValue: storeUnavailable)
+    }
+
+    /// Ba chuỗi của hộp thoại kho, tra ngoài environment.
+    ///
+    /// Xem ghi chú ở chỗ `.alert` cuối `body`: hộp thoại nằm trên
+    /// `.environment(\.locale,)` nên `LocalizedStringKey` ở đó tra nhầm ngôn
+    /// ngữ. Tách ra thành thuộc tính để chỗ gọi đọc được, và để test ghim được
+    /// mà không phải dựng SwiftUI — cùng lý do `PlayerSubtitle` được tách khỏi
+    /// `NowPlayingContent`.
+    static var storeWarningTitle: String {
+        String(localized: "Không mở được thư viện",
+               bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+    }
+
+    static var storeWarningDismiss: String {
+        String(localized: "Đã hiểu",
+               bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+    }
+
+    static var storeWarningBody: String {
+        String(localized: "Lần chạy này dùng bộ nhớ tạm, nên thư viện hiện ra trống dù nhạc trên máy vẫn còn nguyên. Đừng nhập lại — hãy đóng hẳn app rồi mở lại.",
+               bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
+    }
+
     @Environment(PlaybackService.self) private var playback
     @State private var tab: LibraryTab = .songs
     @State private var isSearching = false
@@ -414,6 +451,25 @@ struct RootView: View {
         // Reading `language` is what makes the line above re-evaluate; without
         // it the environment would keep the locale resolved at first launch.
         .id(language)
+        // Sau `.id(language)`: đổi ngôn ngữ dựng lại cả cây bên dưới, và một
+        // hộp thoại đang mở không được biến mất vì chuyện đó.
+        //
+        // Nhưng chỗ đứng ấy có cái giá của nó, và đây là cách trả: hộp thoại
+        // nằm **trên** `.environment(\.locale,)` trong chuỗi modifier, nên một
+        // `LocalizedStringKey` ở đây sẽ tra theo ngôn ngữ của máy chứ không
+        // theo lựa chọn trong Cài đặt của app — đúng thứ dòng environment kia
+        // tồn tại để sửa. Ba chuỗi dưới vì thế đi qua `String(localized:)` với
+        // bundle và locale lấy thẳng từ `AppLanguage`, cùng lối mà `AppLanguage.
+        // label` và các chỗ ngoài tầm environment khác đã dùng.
+        //
+        // Đổi lại thì chúng không còn là `LocalizedStringKey` để Xcode tự trích
+        // nữa; ba khoá này đã nằm sẵn trong catalogue và phải ở lại đó.
+        .alert(Text(verbatim: Self.storeWarningTitle),
+               isPresented: $showingStoreWarning) {
+            Button(Self.storeWarningDismiss, role: .cancel) { }
+        } message: {
+            Text(verbatim: Self.storeWarningBody)
+        }
         // Khôi phục hàng đợi đã lưu **không** còn ở đây. Nó đã dời lên `.task`
         // của `EvenstarApp`, ngay sau lượt quét trùng, và phải chạy sau lượt
         // ấy — xem ghi chú dài ở chỗ đó. Đừng thêm lại một `.task` khôi phục ở

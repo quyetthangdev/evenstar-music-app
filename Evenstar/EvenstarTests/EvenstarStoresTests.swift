@@ -226,4 +226,166 @@ final class EvenstarStoresTests: XCTestCase {
             "mặc định phải mô tả bản chạy thật, bất kể ai đang gọi"
         )
     }
+
+    // MARK: - Mở kho theo tầng
+
+    /// Một container thật, rẻ, không đĩa và không CloudKit — đủ để `load` có
+    /// thứ trả về khi tầng đang thử được coi là mở thành công.
+    private func containerGia() throws -> ModelContainer {
+        // Hai cấu hình, không một — xem `configurations(for:)` và ghi chú
+        // `HỆ QUẢ LÊN BÓ TEST` ở đầu `EvenstarStores`. Container này không ai
+        // `insert` vào, nên một cấu hình đơn sẽ "chạy được"; nhưng để nguyên nó
+        // là để lại đúng quả mìn mà cả đợt sửa này đi gỡ, chờ test đầu tiên
+        // nào đó ghi vào.
+        return try ModelContainer(
+            for: Schema(EvenstarStores.syncedModels + EvenstarStores.localOnlyModels),
+            configurations: EvenstarStores.configurations(for: .inMemory)
+        )
+    }
+
+    private struct LoiGia: Error {}
+
+    /// Dựng một hàm `build` chỉ thành công ở những tầng được liệt kê, và ghi
+    /// lại thứ tự các tầng đã được thử.
+    private func build(
+        thanhCongO tangTot: Set<EvenstarStores.Tier>,
+        daThu: @escaping (EvenstarStores.Tier) -> Void = { _ in }
+    ) -> (EvenstarStores.Tier) throws -> ModelContainer {
+        { tier in
+            daThu(tier)
+            guard tangTot.contains(tier) else { throw LoiGia() }
+            return try self.containerGia()
+        }
+    }
+
+    func testMoDuocTangDongBoThiKhongHaTang() throws {
+        var thuTu: [EvenstarStores.Tier] = []
+        let load = try EvenstarStores.load(
+            cloudKit: true,
+            build: build(thanhCongO: [.synced, .localOnly, .inMemory],
+                         daThu: { thuTu.append($0) })
+        )
+        XCTAssertEqual(load.tier, .synced)
+        XCTAssertNil(load.downgradeReason)
+        XCTAssertEqual(thuTu, [.synced])
+    }
+
+    func testCloudKitHongThiHaVeKhoDia() throws {
+        var thuTu: [EvenstarStores.Tier] = []
+        let load = try EvenstarStores.load(
+            cloudKit: true,
+            build: build(thanhCongO: [.localOnly, .inMemory],
+                         daThu: { thuTu.append($0) })
+        )
+        XCTAssertEqual(load.tier, .localOnly)
+        XCTAssertNotNil(load.downgradeReason, "Phải giữ lại lý do đã bỏ tầng đồng bộ")
+        XCTAssertEqual(thuTu, [.synced, .localOnly])
+    }
+
+    func testKhoDiaHongThiHaVeBoNho() throws {
+        var thuTu: [EvenstarStores.Tier] = []
+        let load = try EvenstarStores.load(
+            cloudKit: true,
+            build: build(thanhCongO: [.inMemory], daThu: { thuTu.append($0) })
+        )
+        XCTAssertEqual(load.tier, .inMemory)
+        XCTAssertNotNil(load.downgradeReason)
+        XCTAssertEqual(thuTu, [.synced, .localOnly, .inMemory])
+    }
+
+    /// Cả ba tầng hỏng nghĩa là chính lược đồ không dựng nổi. Ném ra, đừng
+    /// giả vờ đã mở được kho.
+    /// Tầng lùi phải **thật sự** bỏ CloudKit.
+    ///
+    /// Đây là mắt xích duy nhất trong chuỗi mà mọi test khác không đi qua: năm
+    /// test tiêm `build` vào `load` chỉ kiểm thứ tự tầng, nên đảo nhầm
+    /// `cloudKit: true`/`false` giữa hai nhánh `synced` và `localOnly` sẽ khiến
+    /// tầng lùi vẫn đòi CloudKit — bản sửa mất sạch tác dụng — mà cả năm test
+    /// ấy vẫn xanh. Đọc cấu hình chứ không dựng container: xem `configurations
+    /// (for:)`.
+    func testTangLuiKhongCoCloudKit() {
+        let configs = EvenstarStores.configurations(for: .localOnly)
+        XCTAssertEqual(configs.count, 2, "Tầng lùi vẫn là hai kho, chỉ tắt CloudKit")
+        XCTAssertTrue(
+            configs.allSatisfy { $0.cloudKitContainerIdentifier == nil },
+            "Không kho nào ở tầng localOnly được khai CloudKit"
+        )
+    }
+
+    /// Cặp với test trên: tầng đỉnh **phải** khai CloudKit, và chỉ ở kho thư
+    /// viện. Thiếu nó thì "tắt CloudKit ở mọi tầng" cũng làm cả hai test kia
+    /// xanh, và app sẽ không bao giờ đồng bộ.
+    func testTangDinhKhaiCloudKitDungMotKho() {
+        let ids = EvenstarStores.configurations(for: .synced)
+            .map(\.cloudKitContainerIdentifier)
+        XCTAssertEqual(
+            ids, [EvenstarStores.cloudKitContainerIdentifier, nil],
+            "Kho thư viện khai CloudKit, kho trạng thái phát thì không"
+        )
+    }
+
+    /// Tầng chống sập: **hai** kho, cả hai trong bộ nhớ, không CloudKit.
+    ///
+    /// Đếm bằng hai chứ không bằng một là điểm mấu chốt. Xem ghi chú dài ở
+    /// `configurations(for:)`: một cấu hình đơn trên cả năm model là đúng cái
+    /// bẫy khiến `insert` đầu tiên ném `NSInvalidArgumentException`.
+    func testTangBoNhoLaHaiKhoTrongBoNho() {
+        let configs = EvenstarStores.configurations(for: .inMemory)
+        XCTAssertEqual(configs.count, 2, "Một cấu hình đơn là cái bẫy, không phải bản gọn")
+        XCTAssertTrue(configs.allSatisfy(\.isStoredInMemoryOnly))
+        XCTAssertTrue(configs.allSatisfy { $0.cloudKitContainerIdentifier == nil })
+    }
+
+    /// Và bằng chứng thật: dựng container ở tầng bộ nhớ **trong tiến trình đã
+    /// có mô hình hai configuration** — app host chạy `EvenstarApp.init()`
+    /// trước mọi test, nên đệm mô hình đã sẵn ở đúng trạng thái nguy hiểm —
+    /// rồi `insert` một `PlaybackState`.
+    ///
+    /// Đây là test duy nhất đi qua `container(for:)` thật. Nó tồn tại vì bản
+    /// đầu của tầng này qua sạch mọi test đọc cấu hình mà vẫn sập ngay lượt
+    /// `insert` đầu tiên: ngoại lệ là ObjC, nên nó không hiện ra như một lỗi
+    /// Swift ở đâu cả, chỉ là app chết.
+    @MainActor
+    func testTangBoNhoGhiDuocPlaybackState() throws {
+        let container = try EvenstarStores.container(for: .inMemory)
+        let context = ModelContext(container)
+        context.insert(PlaybackState())
+        try context.save()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<PlaybackState>()), 1)
+    }
+
+    /// Kiểm cả **loại** lỗi chứ không chỉ "có ném hay không": một
+    /// `XCTAssertThrowsError` trần sẽ xanh kể cả khi `LoiGia` rò thẳng ra
+    /// ngoài, tức vòng lặp tầng đã vỡ và không hề bắt lỗi nào. Hai chuyện ấy
+    /// khác hẳn nhau, và chỉ có cái sau là hỏng.
+    func testCaBaTangHongThiNem() {
+        var thuTu: [EvenstarStores.Tier] = []
+        XCTAssertThrowsError(
+            try EvenstarStores.load(
+                cloudKit: true,
+                build: build(thanhCongO: [], daThu: { thuTu.append($0) })
+            )
+        ) { error in
+            guard case EvenstarStores.StoreLoadError.allTiersFailed = error else {
+                return XCTFail("Chờ StoreLoadError.allTiersFailed, nhận \(error)")
+            }
+        }
+        XCTAssertEqual(thuTu, [.synced, .localOnly, .inMemory],
+                       "Phải thử đủ ba tầng trước khi chịu thua")
+    }
+
+    /// Dưới XCTest, `cloudKit` là `false` và tầng đồng bộ **không được thử**.
+    /// Chạm CloudKit trong test là đẩy lược đồ chưa duyệt lên server thật —
+    /// xem ghi chú ở tham số `cloudKit` của `EvenstarStores.load`.
+    func testTatCloudKitThiKhongThuTangDongBo() throws {
+        var thuTu: [EvenstarStores.Tier] = []
+        let load = try EvenstarStores.load(
+            cloudKit: false,
+            build: build(thanhCongO: [.localOnly, .inMemory],
+                         daThu: { thuTu.append($0) })
+        )
+        XCTAssertEqual(load.tier, .localOnly)
+        XCTAssertNil(load.downgradeReason, "Bỏ qua tầng đồng bộ là chủ ý, không phải một cú hạ tầng")
+        XCTAssertEqual(thuTu, [.localOnly], "Tầng đồng bộ không được chạm tới")
+    }
 }
