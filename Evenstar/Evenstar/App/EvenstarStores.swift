@@ -195,7 +195,27 @@ enum EvenstarStores {
         case .localOnly:
             return [syncedConfiguration(cloudKit: false), localOnlyConfiguration()]
         case .inMemory:
-            return [ModelConfiguration(schema: Schema(syncedModels + localOnlyModels),
+            // **Hai cấu hình, không phải một** — và đây là chỗ bản đầu tiên của
+            // tầng này đã sai, theo đúng cái bẫy mà ghi chú `HỆ QUẢ LÊN BÓ TEST`
+            // ở đầu kiểu mô tả.
+            //
+            // `NSManagedObjectModel` được lưu đệm theo tiến trình. Tầng này chỉ
+            // được với tới sau khi `synced` và `localOnly` đã dựng xong mô hình
+            // năm entity mang sẵn **hai** configuration của Core Data — mô hình
+            // dựng trước lượt nạp kho, nên nó vẫn nằm trong đệm kể cả khi hai
+            // tầng kia hỏng. Một `ModelConfiguration` đơn trên cùng năm model
+            // sau đó sẽ thêm một kho cho configuration mặc định, thứ không còn
+            // chứa `PlaybackState`, và lượt `insert` đầu tiên ném
+            // `NSInvalidArgumentException` — một ngoại lệ ObjC, `try?` không
+            // bắt được. Tầng sinh ra để app khỏi sập hoá ra là tầng làm app sập.
+            //
+            // Hình dạng dưới đây y hệt `InMemoryLibrary.makeContainer()`, thứ
+            // cả bó test đứng trên và vì thế đã được chứng minh là chạy được.
+            return [ModelConfiguration(schema: Schema(syncedModels),
+                                       isStoredInMemoryOnly: true,
+                                       cloudKitDatabase: .none),
+                    ModelConfiguration(localStoreName,
+                                       schema: Schema(localOnlyModels),
                                        isStoredInMemoryOnly: true,
                                        cloudKitDatabase: .none)]
         }

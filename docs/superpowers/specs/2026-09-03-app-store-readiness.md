@@ -43,12 +43,20 @@ App không dùng mã hoá riêng nào ngoài HTTPS của hệ thống, nên giá
 lỗi. Container ấy khai `cloudKitDatabase: .private(...)`. Nghĩa là mọi lý do
 khiến kho không mở được đều thành một cú sập ở màn hình đầu tiên:
 
-- lược đồ CloudKit chưa được đẩy sang môi trường Production;
 - container iCloud chưa được gán cho App ID;
-- một lượt migrate SwiftData thất bại trên máy người dùng đã có dữ liệu cũ.
+- một lượt migrate SwiftData thất bại trên máy người dùng đã có dữ liệu cũ;
+- kho trên đĩa hỏng hoặc không mở được vì bất cứ lý do nào khác.
 
-Máy của reviewer rơi vào nhóm một và nhóm hai là chuyện thường. Đây là đường
-dẫn tới từ chối 2.1 chắc chắn nhất trong toàn bộ codebase.
+Máy của reviewer rơi vào nhóm đầu là chuyện thường. Đây là đường dẫn tới từ
+chối 2.1 chắc chắn nhất trong toàn bộ codebase.
+
+**Một điều bản thảo đầu của spec này nói sai, sửa lại cho đúng:** lược đồ
+CloudKit chưa đẩy sang Production **không** làm kho hỏng, nên bộ tầng dưới đây
+không hề cứu được nó. `NSPersistentCloudKitContainer` nạp kho bình thường khi
+lược đồ vắng mặt ở Production; chỗ hỏng nằm ở lượt mirror sau đó, bất đồng bộ.
+Người dùng ở lại tầng `synced` với đồng bộ chết lặng, và không tầng nào được
+kích hoạt. Đó là lý do M1 dưới đây là một việc bắt buộc làm bằng tay chứ không
+phải một chuyện mã có thể lo — hai thứ ấy không thay thế cho nhau.
 
 **Yêu cầu:** mở kho theo tầng, hạ dần thay vì sập.
 

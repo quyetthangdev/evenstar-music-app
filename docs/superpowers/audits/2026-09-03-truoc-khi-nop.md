@@ -5,10 +5,15 @@ thay. Tick từng dòng trước khi tải build lên.
 
 ## 1. Đẩy lược đồ CloudKit sang Production
 
-Đây là **nửa còn lại** của bản sửa "không sập khi CloudKit hỏng". Bản sửa ấy
-khiến app mở được; nó không làm đồng bộ chạy. Nếu lược đồ chỉ tồn tại ở
-Development thì mọi người dùng App Store đều rơi xuống tầng `localOnly` và
-không ai có đồng bộ.
+Đây là **nửa còn lại** của bản sửa "không sập khi CloudKit hỏng", và là nửa mà
+mã không làm thay được.
+
+Đừng hiểu nhầm bộ tầng trong `EvenstarStores.load` là lưới an toàn cho việc
+này. Lược đồ chưa đẩy sang Production **không** làm kho hỏng:
+`NSPersistentCloudKitContainer` nạp kho bình thường rồi mới thất bại ở lượt
+mirror, bất đồng bộ. Nghĩa là người dùng ở lại tầng `synced`, không tầng nào
+được kích hoạt, không hộp thoại nào hiện lên, và đồng bộ chết lặng cho tới khi
+có người để ý. Quên bước này thì không có gì báo cho bạn biết.
 
 - Mở CloudKit Console, container `iCloud.com.evenstar.app`.
 - Development → Deploy Schema to Production.
@@ -17,6 +22,17 @@ không ai có đồng bộ.
 
 Lược đồ CloudKit **chỉ thêm được, không sửa ngược**. Đẩy nhầm là khoá vĩnh
 viễn hình dạng dữ liệu, nên đọc lại lược đồ trước khi bấm.
+
+### Rủi ro đã biết, chưa đo: kho mở ở tầng `localOnly`
+
+Tầng `localOnly` mở **đúng tệp `default.store`** mà tầng `synced` dùng, chỉ tắt
+mirror. Mở một kho đã từng mirror mà không mirror thì Core Data chịu được, các
+bảng phụ của CloudKit nằm im. Câu chưa có ai trả lời là **xuất ngược**: những
+hàng ghi trong phiên tắt mirror chỉ được đẩy lên ở lần chạy sau nhờ persistent
+history. SwiftData bật history tracking mặc định trên iOS 18, nên nhiều khả
+năng chuyện này tự lo được — nhưng không có gì trong đợt này chứng minh điều
+ấy, và kiểu hỏng của nó thì im lặng: hai máy lệch nhau vĩnh viễn, không lỗi ở
+đâu cả. Nếu có báo cáo đồng bộ thiếu bài, hãy nhìn vào đây trước.
 
 ## 2. Kiểm `aps-environment` trong bản đã export
 

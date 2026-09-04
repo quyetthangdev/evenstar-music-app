@@ -322,12 +322,34 @@ final class EvenstarStoresTests: XCTestCase {
         )
     }
 
-    /// Tầng chống sập: một kho, trong bộ nhớ, không CloudKit.
-    func testTangBoNhoLaMotKhoTrongBoNho() {
+    /// Tầng chống sập: **hai** kho, cả hai trong bộ nhớ, không CloudKit.
+    ///
+    /// Đếm bằng hai chứ không bằng một là điểm mấu chốt. Xem ghi chú dài ở
+    /// `configurations(for:)`: một cấu hình đơn trên cả năm model là đúng cái
+    /// bẫy khiến `insert` đầu tiên ném `NSInvalidArgumentException`.
+    func testTangBoNhoLaHaiKhoTrongBoNho() {
         let configs = EvenstarStores.configurations(for: .inMemory)
-        XCTAssertEqual(configs.count, 1)
-        XCTAssertTrue(configs[0].isStoredInMemoryOnly)
-        XCTAssertNil(configs[0].cloudKitContainerIdentifier)
+        XCTAssertEqual(configs.count, 2, "Một cấu hình đơn là cái bẫy, không phải bản gọn")
+        XCTAssertTrue(configs.allSatisfy(\.isStoredInMemoryOnly))
+        XCTAssertTrue(configs.allSatisfy { $0.cloudKitContainerIdentifier == nil })
+    }
+
+    /// Và bằng chứng thật: dựng container ở tầng bộ nhớ **trong tiến trình đã
+    /// có mô hình hai configuration** — app host chạy `EvenstarApp.init()`
+    /// trước mọi test, nên đệm mô hình đã sẵn ở đúng trạng thái nguy hiểm —
+    /// rồi `insert` một `PlaybackState`.
+    ///
+    /// Đây là test duy nhất đi qua `container(for:)` thật. Nó tồn tại vì bản
+    /// đầu của tầng này qua sạch mọi test đọc cấu hình mà vẫn sập ngay lượt
+    /// `insert` đầu tiên: ngoại lệ là ObjC, nên nó không hiện ra như một lỗi
+    /// Swift ở đâu cả, chỉ là app chết.
+    @MainActor
+    func testTangBoNhoGhiDuocPlaybackState() throws {
+        let container = try EvenstarStores.container(for: .inMemory)
+        let context = ModelContext(container)
+        context.insert(PlaybackState())
+        try context.save()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<PlaybackState>()), 1)
     }
 
     /// Kiểm cả **loại** lỗi chứ không chỉ "có ném hay không": một
