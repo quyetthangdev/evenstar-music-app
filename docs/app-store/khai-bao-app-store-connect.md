@@ -172,25 +172,102 @@ chúng rồi, lặp lại chỉ phí ký tự.
 
 ---
 
-## 4. App Privacy — trả lời "Data Not Collected"
+## 4. App Privacy — từng mục một
 
-Ở phần App Privacy, chọn **No, we do not collect data from this app**.
+Vào App Store Connect → app của bạn → **App Privacy** ở cột trái, dưới nhóm
+General.
 
-Câu trả lời này đúng, và đây là lý lẽ nếu Apple hỏi lại:
+### Bước 1 — Privacy Policy URL
 
-- App không có máy chủ, không có tài khoản, không có SDK phân tích nào.
-- Thư viện đồng bộ qua **CloudKit private database**, tức iCloud của chính
-  người dùng. Nhà phát triển không đọc được, nên theo định nghĩa của Apple đó
-  không phải "thu thập".
-- App gọi hai API công khai: Jamendo (gửi từ khoá tìm kiếm) và Google Drive
-  (gửi ID thư mục người dùng tự dán). Không kèm định danh người dùng nào, không
-  lưu lại gì.
+Ô này nằm ngay đầu mục App Privacy, **không** nằm ở phần nội dung bán hàng.
+Bắt buộc. Xem mẫu ở mục 7.
 
-**Bắt buộc:** câu trả lời ở đây phải khớp với `PrivacyInfo.xcprivacy` trong
-bundle. Tệp ấy khai không theo dõi, không thu thập, và một API bắt buộc khai
-lý do là `UserDefaults` với mã `CA92.1`. Apple đối chiếu hai thứ.
+### Bước 2 — Data Collection
 
----
+Bấm **Get Started**. Apple hỏi đúng một câu:
+
+> Do you or your third-party partners collect data from this app?
+
+Chọn **No, we do not collect data from this app**.
+
+Chọn xong là hết. App Store Connect không hỏi thêm mục nào nữa, và trang App
+Privacy công khai của app sẽ hiện dòng **Data Not Collected**.
+
+### Vì sao "No" là câu trả lời đúng, không phải câu trả lời tiện
+
+Apple định nghĩa "collect" hẹp hơn người ta tưởng: **truyền dữ liệu ra khỏi
+máy VÀ giữ nó lâu hơn mức cần để phục vụ yêu cầu ngay lúc đó**. Ba trường hợp
+sau, theo đúng định nghĩa ấy, không phải thu thập:
+
+1. Dữ liệu không rời khỏi máy.
+2. Dữ liệu nằm trong iCloud riêng của người dùng qua CloudKit private
+   database — bạn không có cách nào đọc được.
+3. Dữ liệu gửi cho một dịch vụ chỉ để phục vụ đúng yêu cầu đó, không lưu lại,
+   và bạn không truy cập được.
+
+Evenstar rơi trọn vào cả ba.
+
+### Đối chiếu từng nhóm dữ liệu Apple liệt kê
+
+Nếu bạn muốn tự kiểm, hoặc nếu Apple hỏi lại, đây là mười bốn nhóm trong bảng
+của họ và lý do từng nhóm là "không":
+
+| Nhóm | Có? | Vì sao |
+|---|---|---|
+| Contact Info | Không | Không tài khoản, không form, không xin email |
+| Health & Fitness | Không | Không đụng tới |
+| Financial Info | Không | Miễn phí, không mua trong ứng dụng |
+| Location | Không | Không xin quyền vị trí, không dùng CoreLocation |
+| Sensitive Info | Không | Không đụng tới |
+| Contacts | Không | Không đọc danh bạ |
+| User Content | Không | Nhạc, ảnh bìa và thông tin bài bạn sửa đều ở lại máy; phần đồng bộ đi vào iCloud riêng của người dùng |
+| Browsing History | Không | Không có trình duyệt |
+| Search History | **Đọc kỹ** | Xem ghi chú dưới bảng |
+| Identifiers | Không | Không có User ID, không đọc IDFA hay device ID |
+| Purchases | Không | Không có gì để mua |
+| Usage Data | Không | Không có SDK phân tích nào; dự án không có một gói phụ thuộc nào |
+| Diagnostics | Không | App chỉ ghi log cục bộ bằng OSLog. Báo cáo sự cố của chính Apple là do người dùng bật chia sẻ với Apple, không phải app thu thập |
+| Other Data | Không | — |
+
+**Ghi chú về Search History.** Từ khoá bạn gõ để tìm nhạc được gửi tới
+`api.jamendo.com`, và ID thư mục bạn dán được gửi tới `googleapis.com`. Đây là
+chỗ duy nhất trong app có dữ liệu người dùng rời khỏi máy ngoài iCloud.
+
+Vẫn là "không thu thập", vì ba lẽ:
+
+- Hai lượt gọi ấy không kèm bất kỳ định danh nào của người dùng — không tài
+  khoản, không device ID, không cookie. Chỉ có từ khoá và khoá API tĩnh của
+  nhà phát triển.
+- App không lưu lại từ khoá ở đâu cả, và bạn không có máy chủ để lưu.
+- Jamendo và Google ở đây là **nhà cung cấp API công khai**, không phải
+  "third-party partner" theo nghĩa Apple dùng — tức không phải một SDK nhúng
+  trong app nhận dữ liệu thay bạn.
+
+Nếu sau này bạn gắn một định danh ổn định vào lượt gọi Jamendo, câu trả lời
+này hết đúng và phải khai lại.
+
+### Bước 3 — Publish
+
+Bấm **Publish** ở góc trên bên phải. Câu trả lời chỉ có hiệu lực sau khi bấm
+nút này. Đây là chỗ hay bị quên, và hậu quả là bị chặn ở lượt nộp.
+
+### Phải khớp với tệp trong bundle
+
+`PrivacyInfo.xcprivacy` đã nằm trong bản build bạn đẩy lên TestFlight, và nó
+khai ba điều:
+
+- `NSPrivacyTracking` = false
+- `NSPrivacyCollectedDataTypes` = rỗng
+- một API bắt buộc khai lý do: `UserDefaults`, mã `CA92.1`
+
+Apple đối chiếu tệp này với câu trả lời trên web. Trả lời "No" là khớp. Nếu
+bạn đổi ý và khai có thu thập, phải sửa cả tệp trong mã rồi build lại.
+
+### Không có câu hỏi về Tracking
+
+Câu hỏi "do you use this data to track?" chỉ hiện ra cho từng nhóm dữ liệu bạn
+đã khai là có thu thập. Trả lời "No" ở bước 2 thì Apple không hỏi tới, và
+`NSPrivacyTracking` = false trong bundle đã nói giúp bạn.
 
 ## 5. Age Rating — 4+
 
