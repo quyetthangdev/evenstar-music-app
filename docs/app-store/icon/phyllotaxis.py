@@ -24,7 +24,10 @@ def render(size, n_dots=150, hole=0.20, d_min=0.004, d_max=0.028,
         a = i * GOLDEN
         x = cx + r * math.cos(a)
         y = cy + r * math.sin(a)
-        d = (d_min + (d_max - d_min) * frac) * S
+        # Cỡ chấm tỉ lệ với **bán kính hoa văn**, không với khung. Nhờ vậy
+        # đổi `margin` thu nhỏ cả hình một cách đồng đều, thay vì chỉ kéo
+        # các chấm lại gần nhau và làm hoa văn dày lên.
+        d = (d_min + (d_max - d_min) * frac) * (r_max * 2)
         dr.ellipse([x - d/2, y - d/2, x + d/2, y + d/2], fill=fg)
     return img.resize((size, size), Image.LANCZOS)
 

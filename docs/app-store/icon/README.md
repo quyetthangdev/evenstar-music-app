@@ -15,7 +15,17 @@ python3 -c "from phyllotaxis import render; render(1024).save('AppIcon.png')"
 ## Bản đang dùng
 
 `Assets.xcassets/AppIcon.appiconset/AppIcon.png` — 150 chấm, nền trắng,
-1024×1024, không kênh alpha. Trung thành với bản gốc.
+1024×1024, không kênh alpha. Trung thành với bản gốc, `margin = 0.20`.
+
+## Chỉnh to nhỏ
+
+`margin` là phần lề mỗi bên, nên đường kính hoa văn bằng `(1 - 2*margin)` lần
+cạnh khung. Xem `so-sanh-le.png` cho bốn mức đã dựng.
+
+Cỡ chấm tỉ lệ với **bán kính hoa văn**, không với cạnh khung. Đó là chủ ý:
+nếu tính theo khung thì thu nhỏ `margin` chỉ kéo các chấm lại gần nhau mà
+không nhỏ đi, và hoa văn dày lên trông như một vết mực. Tính theo bán kính
+thì cả hình thu đều, giữ nguyên tỉ lệ.
 
 **Điểm yếu đã đo, không phải phỏng đoán:** xem `so-sanh-co-that.png`. Ở cỡ
 58 pixel, tức mục Cài đặt, 150 chấm nhỏ hơn 1 pixel mỗi chấm và cả hình tan
