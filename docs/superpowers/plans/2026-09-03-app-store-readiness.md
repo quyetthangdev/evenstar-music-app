@@ -548,6 +548,18 @@ thứ phía trên nó. Thêm `import OSLog` vào đầu tệp, cạnh `import Sw
     }
 ```
 
+> **Khối trên có một lỗi, và bản đã ship khác nó.** Nhánh `inMemory` ở đây dùng
+> **một** `ModelConfiguration` trên cả năm model — đúng cái bẫy mà ghi chú
+> `HỆ QUẢ LÊN BÓ TEST` ở đầu `EvenstarStores` mô tả: mô hình trong đệm tiến
+> trình đã mang sẵn hai configuration, nên một cấu hình đơn thêm một kho cho
+> configuration mặc định, thứ không còn chứa `PlaybackState`, và lượt `insert`
+> đầu tiên ném `NSInvalidArgumentException` — ngoại lệ ObjC, `try?` không bắt
+> được. Tầng sinh ra để app khỏi sập hoá ra là tầng làm app sập, và không test
+> nào chỉ đọc cấu hình bắt được chuyện đó; lượt review toàn nhánh mới tìm ra.
+> Bản đã ship trả về **hai** cấu hình trong bộ nhớ, y hệt hình dạng
+> `InMemoryLibrary.makeContainer()`, và `testTangBoNhoGhiDuocPlaybackState`
+> ghim nó bằng một lượt `insert` thật.
+
 - [ ] **Step 4: Chạy test, xác nhận nó xanh**
 
 Cùng lệnh ở Step 2. Expected: `** TEST SUCCEEDED **`. Lưu ý build sẽ **vẫn
