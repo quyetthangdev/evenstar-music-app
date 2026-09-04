@@ -148,12 +148,19 @@ enum EvenstarStores {
 
     /// Ba mức mà app chấp nhận mở kho ở đó, từ đủ nhất xuống mức chống sập.
     ///
-    /// Trước bản này chỉ có một mức: hoặc mở được kho có CloudKit, hoặc
-    /// `EvenstarApp.init()` gọi `fatalError`. Nghĩa là lược đồ CloudKit chưa
-    /// đẩy sang Production, container iCloud chưa gán cho App ID, hay một lượt
-    /// migrate SwiftData hỏng trên máy đã có dữ liệu cũ — cả ba đều thành một
-    /// cú sập ở màn hình đầu tiên. Máy của người duyệt App Store rơi vào hai
-    /// nhóm đầu là chuyện thường.
+    /// Trước bản này chỉ có một mức: hoặc mở được kho, hoặc
+    /// `EvenstarApp.init()` gọi `fatalError`. Nghĩa là container iCloud chưa
+    /// gán cho App ID, một lượt migrate SwiftData hỏng trên máy đã có dữ liệu
+    /// cũ, hay kho trên đĩa hỏng vì bất cứ lý do nào — đều thành một cú sập ở
+    /// màn hình đầu tiên. Máy của người duyệt App Store rơi vào nhóm đầu là
+    /// chuyện thường.
+    ///
+    /// **Cái mà bộ tầng này KHÔNG cứu được:** lược đồ CloudKit chưa đẩy sang
+    /// Production. Trường hợp ấy kho nạp bình thường và chỉ lượt mirror thất
+    /// bại, bất đồng bộ — người dùng ở lại tầng `synced` với đồng bộ chết lặng,
+    /// không tầng nào được kích hoạt. Đó là việc làm bằng tay trước khi nộp,
+    /// không phải việc mã lo được; xem `docs/superpowers/audits/
+    /// 2026-09-03-truoc-khi-nop.md`.
     enum Tier: String {
         /// CloudKit bật, hai kho trên đĩa. Bình thường.
         case synced

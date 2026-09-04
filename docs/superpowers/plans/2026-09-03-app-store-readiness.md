@@ -331,6 +331,12 @@ Spec: S3, nửa thuộc về `EvenstarStores`.
   - `EvenstarStores.Tier` — `enum Tier: String { case synced, localOnly, inMemory }`
   - `EvenstarStores.Load` — `struct Load { let container: ModelContainer; let tier: Tier; let downgradeReason: String? }`
   - `EvenstarStores.container(for tier: Tier) throws -> ModelContainer`
+  - `EvenstarStores.configurations(for tier: Tier) -> [ModelConfiguration]`
+    — **thêm ở vòng sửa sau review, không có trong bản plan đầu.**
+    `container(for:)` gọi nó. Tách ra để ghim được cờ CloudKit của từng tầng mà
+    không phải mở kho nào trên đĩa. Bốn test đi kèm:
+    `testTangLuiKhongCoCloudKit`, `testTangDinhKhaiCloudKitDungMotKho`,
+    `testTangBoNhoLaHaiKhoTrongBoNho`, `testTangBoNhoGhiDuocPlaybackState`.
   - `EvenstarStores.load(cloudKit: Bool, build: (Tier) throws -> ModelContainer) throws -> Load`
   - `EvenstarStores.StoreLoadError.allTiersFailed(String)`
   - `makeContainer()` **bị xoá**; Task 4 gỡ chỗ gọi duy nhất của nó.

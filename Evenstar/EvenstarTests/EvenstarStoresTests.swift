@@ -232,12 +232,14 @@ final class EvenstarStoresTests: XCTestCase {
     /// Một container thật, rẻ, không đĩa và không CloudKit — đủ để `load` có
     /// thứ trả về khi tầng đang thử được coi là mở thành công.
     private func containerGia() throws -> ModelContainer {
-        let schema = Schema(EvenstarStores.syncedModels + EvenstarStores.localOnlyModels)
+        // Hai cấu hình, không một — xem `configurations(for:)` và ghi chú
+        // `HỆ QUẢ LÊN BÓ TEST` ở đầu `EvenstarStores`. Container này không ai
+        // `insert` vào, nên một cấu hình đơn sẽ "chạy được"; nhưng để nguyên nó
+        // là để lại đúng quả mìn mà cả đợt sửa này đi gỡ, chờ test đầu tiên
+        // nào đó ghi vào.
         return try ModelContainer(
-            for: schema,
-            configurations: ModelConfiguration(schema: schema,
-                                               isStoredInMemoryOnly: true,
-                                               cloudKitDatabase: .none)
+            for: Schema(EvenstarStores.syncedModels + EvenstarStores.localOnlyModels),
+            configurations: EvenstarStores.configurations(for: .inMemory)
         )
     }
 

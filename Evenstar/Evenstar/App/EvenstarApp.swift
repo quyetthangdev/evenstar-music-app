@@ -32,8 +32,10 @@ struct EvenstarApp: App {
         // `PlaybackState` ở lại máy này. Toàn bộ lý lẽ — kể cả vì sao kho thư
         // viện phải giữ tên mặc định — nằm ở `EvenstarStores`.
         //
-        // `load()` hạ tầng thay vì ném: một lược đồ CloudKit chưa đẩy sang
-        // Production không được phép thành cú sập ở màn hình đầu tiên.
+        // `load()` hạ tầng thay vì ném: một container iCloud chưa gán cho
+        // App ID, hay một lượt migrate hỏng, không được phép thành cú sập ở
+        // màn hình đầu tiên. (Lược đồ chưa đẩy sang Production thì bộ tầng
+        // KHÔNG thấy — xem ghi chú ở `EvenstarStores.Tier`.)
         let load: EvenstarStores.Load
         do {
             load = try EvenstarStores.load()

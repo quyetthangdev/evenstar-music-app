@@ -98,9 +98,13 @@ Ba thứ dưới đây tác nhân **không được** đụng vào, vì chúng n
 
 ### M1 — Đẩy lược đồ CloudKit sang Production
 
-Bắt buộc, và là nửa còn lại của S3. Bản sửa S3 khiến app không sập nữa; nó
-không làm đồng bộ chạy được. Nếu lược đồ chỉ tồn tại ở Development thì mọi
-người dùng App Store mở app đều rơi xuống tầng `localOnly`.
+Bắt buộc, và là nửa còn lại của S3 — nửa mà mã **không** làm thay được.
+
+Đừng trông vào bộ tầng của S3 để cứu chuyện này. Lược đồ chưa đẩy sang
+Production không làm kho hỏng: `NSPersistentCloudKitContainer` nạp kho bình
+thường rồi mới thất bại ở lượt mirror, bất đồng bộ. Người dùng vì thế ở lại
+tầng `synced`, không tầng nào được kích hoạt, không hộp thoại nào hiện ra, và
+đồng bộ chết lặng. Quên bước này thì không có gì báo cho ai biết.
 
 ### M2 — `aps-environment` sau khi export
 
