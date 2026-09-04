@@ -159,8 +159,8 @@ enum EvenstarStores {
     /// Production. Trường hợp ấy kho nạp bình thường và chỉ lượt mirror thất
     /// bại, bất đồng bộ — người dùng ở lại tầng `synced` với đồng bộ chết lặng,
     /// không tầng nào được kích hoạt. Đó là việc làm bằng tay trước khi nộp,
-    /// không phải việc mã lo được; xem `docs/superpowers/audits/
-    /// 2026-09-03-truoc-khi-nop.md`.
+    /// không phải việc mã lo được; xem tài liệu `truoc-khi-nop` trong
+    /// `docs/superpowers/audits/`.
     enum Tier: String {
         /// CloudKit bật, hai kho trên đĩa. Bình thường.
         case synced

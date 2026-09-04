@@ -16,6 +16,15 @@ rồi cho `EvenstarApp` dùng nó và báo cho người dùng ở tầng thấp 
 
 **Spec:** `docs/superpowers/specs/2026-09-03-app-store-readiness.md`
 
+> **Cảnh báo cho người đọc plan này về sau.** Ba khối mã nhúng bên dưới —
+> chú thích của `Tier` ở Task 3, comment trong `EvenstarApp.init` ở Task 4, và
+> nội dung tài liệu ở Task 7 — đều nhắc lại một tiền đề **sai**: rằng lược đồ
+> CloudKit chưa đẩy sang Production sẽ làm người dùng rơi xuống tầng
+> `localOnly`. Không đúng. Kho nạp bình thường và chỉ lượt mirror hỏng, bất
+> đồng bộ, nên người dùng ở lại tầng `synced` với đồng bộ chết lặng và không
+> tầng nào được kích hoạt. Bản đã ship và spec đều đã sửa; các khối dưới đây
+> giữ nguyên làm chứng tích của bản plan gốc. Đừng chép chúng ra.
+
 ## Global Constraints
 
 - **Không sửa `project.pbxproj` hay bất kỳ `.xcscheme` nào.** Dự án dùng Xcode
