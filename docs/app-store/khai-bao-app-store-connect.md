@@ -415,3 +415,89 @@ Chụp ở 6.9 inch. Thứ tự này kể một câu chuyện thay vì liệt k�
 
 Trước bước 7, đọc lại `docs/superpowers/audits/2026-09-03-truoc-khi-nop.md` —
 đặc biệt việc đẩy lược đồ CloudKit sang Production, vì mã không cứu được ca ấy.
+
+---
+
+## 10. Trang hỗ trợ — phần FAQ nên bổ sung
+
+Bản đầu của trang hỗ trợ có đủ email và thời gian phản hồi, đạt yêu cầu Support
+URL của Apple. Nhưng phần FAQ đang trả lời những câu chung chung, không phải
+những câu **app này** thực sự sinh ra. Bốn câu dưới đây bám vào hành vi có
+thật trong mã.
+
+### Thư viện trống khi mở lần đầu
+
+> **Tôi vừa cài xong, sao không có bài nào?**
+> Evenstar không đi kèm nhạc. Có ba cách đưa nhạc vào: nhập file từ ứng dụng
+> Tệp bằng nút cộng ở tab Bài hát; dán liên kết một thư mục Google Drive công
+> khai ở Tài khoản → Thư mục Drive; hoặc vào Tìm kiếm → Khám phá Jamendo để
+> nghe nhạc Creative Commons miễn phí, không cần chuẩn bị gì.
+>
+> **I just installed it, why is my library empty?**
+> Evenstar ships with no music. Three ways to add some: import files from the
+> Files app with the + button on the Songs tab; paste a public Google Drive
+> folder link under Account → Drive folders; or open Search → Explore Jamendo
+> for free Creative Commons tracks, which needs no setup.
+
+### Bài hiện ra nhưng không phát được
+
+Đây là câu sẽ được hỏi nhiều nhất, và nó bắt nguồn từ một quyết định thiết kế
+có chủ ý: **thông tin thư viện đồng bộ qua iCloud, file nhạc thì không.**
+
+> **Máy thứ hai của tôi hiện đủ bài nhưng bấm vào không phát, có chữ "Không có
+> trên máy này".**
+> Đúng như thiết kế. Tên bài, nghệ sĩ, album và ảnh bìa đi theo Apple Account
+> của bạn nên máy nào cũng thấy cùng một danh sách. File nhạc thì nằm ở máy
+> bạn đã nhập, không được tải qua iCloud, vì chúng thường rất nặng. Muốn nghe
+> trên máy kia thì nhập lại file vào máy ấy.
+>
+> Lưu ý: **xoá một bài đang ở trạng thái này sẽ gỡ nó khỏi mọi máy**, kể cả máy
+> đang giữ file. App có nhắc điều đó trước khi xoá.
+>
+> **My second device lists every song but nothing plays, it says "not on this
+> device".**
+> That is by design. Titles, artists, albums and cover art follow your Apple
+> Account, so every device shows the same list. The audio files stay on the
+> device you imported them to — they are not copied through iCloud, because
+> they are large. To play them elsewhere, import the files on that device too.
+>
+> Note: deleting a track in this state removes it from **every** device,
+> including the one that still holds the file. The app warns you first.
+
+### Liên kết Drive không nhận
+
+> **Tôi dán liên kết Drive mà app báo không hợp lệ.**
+> Evenstar chỉ nhận liên kết **thư mục**, không nhận liên kết tới một file
+> đơn lẻ. Liên kết đúng có dạng `drive.google.com/drive/folders/...`. Nếu bạn
+> đang cầm một liên kết dạng `/file/d/...` thì đó là link của một file, hãy mở
+> thư mục chứa nó rồi chia sẻ thư mục.
+>
+> Thư mục cũng phải để chế độ ai có liên kết đều xem được. Thư mục riêng tư sẽ
+> không đọc được vì app không đăng nhập vào tài khoản Google của bạn.
+>
+> **My Drive link is rejected.**
+> Evenstar accepts **folder** links only, not links to a single file. A valid
+> link looks like `drive.google.com/drive/folders/...`. If yours looks like
+> `/file/d/...` that is a file link — open the folder that contains it and
+> share the folder instead.
+>
+> The folder must also be shared as "anyone with the link can view". Private
+> folders cannot be read, because the app never signs in to your Google
+> account.
+
+### Nhạc Jamendo bị thiếu bài
+
+> **Tôi tìm trên Jamendo mà ít kết quả hơn trên web của họ.**
+> Mặc định Evenstar ẩn những bài mang giấy phép cấm dùng cho mục đích thương
+> mại. Vào Tài khoản → Cài đặt và tắt "Ẩn nhạc hạn chế thương mại" để thấy đủ.
+> Khi tắt, bạn tự chịu trách nhiệm về cách dùng những bài đó.
+>
+> **Jamendo search shows fewer results than their website.**
+> By default Evenstar hides tracks with a non-commercial licence. Turn off
+> "Hide non-commercial tracks" under Account → Settings to see them all. With
+> it off, how you use those tracks is your responsibility.
+
+### Sửa nhỏ
+
+Dòng thời gian phản hồi đang viết "24–48 business hours", trộn hai đơn vị. Nên
+là "within 1–2 business days" hoặc "within 24–48 hours".
