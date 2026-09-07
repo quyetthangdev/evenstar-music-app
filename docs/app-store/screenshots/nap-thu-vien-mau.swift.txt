@@ -1,0 +1,47 @@
+// Đặt tệp này vào Evenstar/EvenstarTests/ với đuôi .swift khi cần nạp lại
+// thư viện mẫu, rồi XOÁ ĐI sau khi chụp xong.
+//
+// Vì sao không để nó nằm luôn trong repo: nó ghi vào **kho thật trên đĩa**
+// của app, không phải kho trong bộ nhớ. Một lượt `xcodebuild test` chạy nhầm
+// khi thư mục nhạc mẫu có mặt sẽ nhét tám bài lạ vào thư viện. Guard bằng
+// XCTSkipIf chỉ chặn được trường hợp thiếu thư mục, không chặn được trường
+// hợp có.
+//
+// Chạy:
+//   xcodebuild test -project Evenstar/Evenstar.xcodeproj -scheme Evenstar \
+//     -configuration Debug \
+//     -destination "platform=iOS Simulator,name=iPhone 17 test" \
+//     -only-testing:EvenstarTests/_SeedScreenshotLibrary \
+//     -parallel-testing-enabled NO
+//
+// `-parallel-testing-enabled NO` là **bắt buộc**. Không có nó, test chạy trên
+// một máy ảo nhân bản rồi máy ấy bị xoá, và dữ liệu bay theo.
+
+import XCTest
+import SwiftData
+@testable import Evenstar
+
+final class _SeedScreenshotLibrary: XCTestCase {
+
+    private static let source = "/Volumes/Storage/evenstar-screenshot-content"
+
+    @MainActor
+    func testNapThuVienMau() async throws {
+        let dir = URL(fileURLWithPath: Self.source)
+        let urls = try FileManager.default
+            .contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension.lowercased() == "mp3" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        try XCTSkipIf(urls.isEmpty, "Không thấy mp3 nào ở \(Self.source)")
+
+        let container = try EvenstarStores.container(for: .localOnly)
+        let library = LibraryService(context: ModelContext(container))
+        let importer = ImportService(library: library,
+                                     metadataReader: AudioMetadataReader())
+
+        let summary = await importer.importFiles(at: urls)
+        print("SEED nhập=\(summary.imported.count) trùng=\(summary.duplicates.count) lỗi=\(summary.failures.count)")
+        XCTAssertGreaterThan(try library.fetchAllTracks().count, 0)
+    }
+}
