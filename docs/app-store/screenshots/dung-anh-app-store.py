@@ -7,7 +7,7 @@ hình vẽ nguệch ngoạc chung chung — cùng ngôn ngữ hình ảnh thì t
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import math, sys
 
-W, H = 1290, 2796                      # 6.9 inch, cỡ Apple đang yêu cầu
+W, H = 1284, 2778                      # 6.5/6.7 inch — cùng cỡ bộ ảnh cũ
 BLUE      = (10, 122, 255)
 PALE      = (232, 241, 255)
 DOT       = (168, 205, 255)
