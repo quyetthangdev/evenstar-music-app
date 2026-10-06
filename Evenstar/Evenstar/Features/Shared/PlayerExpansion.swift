@@ -94,6 +94,31 @@ final class PlayerExpansion {
     /// Thẻ đang nằm yên ở 0 và vô hình, còn accessory đang hiện nội dung của nó.
     private(set) var isCardResting = true
 
+    /// Một cú thu đã được quyết (`PlayerCard.morph(to: 0…)`) và thẻ chưa về
+    /// nghỉ — tức đang ở giữa lò xo, hoặc trong đuôi dài của nó.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO KHÔNG CHỈ DỰA VÀO `isCardResting`
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `isCardResting` chỉ lật trong `completion` của `withAnimation`, mà lò xo
+    /// `settle` có một đuôi dài: đo trên iPhone 12 (Release,
+    /// `device2-end_collapse.png`), thẻ đã đáp khít viên kính mà vẫn là tấm thẻ
+    /// đặc màu xám tím, ô bìa tối, thêm **~300ms** nữa — rồi trong một khung
+    /// nhảy sang viên kính hệ thống với ô bìa sáng. Hai độ mờ nhị phân trên
+    /// cùng một cờ lật muộn là một cú cắt, không phải một cú trao tay.
+    ///
+    /// Cờ này để accessory hiện nội dung **ngay lúc quyết thu** (nằm sẵn dưới
+    /// thẻ — thẻ luôn chứa khung neo suốt cú thu, nên không có gì vẽ chồng lộ
+    /// ra), và để thẻ tự mờ đi ở vài phần trăm cuối của `progress` — xem
+    /// `PlayerCard.collapseHandoffOpacity`. `isCardResting` giữ nguyên nghĩa
+    /// cũ cho hit test, VoiceOver và việc nhận khung accessory.
+    private(set) var isCollapsing = false
+
+    /// Accessory có nên vẽ nội dung của nó không: lúc nghỉ, và suốt một cú thu
+    /// đã quyết. Ẩn khi thẻ đang mở hoặc đang kéo — lúc ấy chính thẻ đang vẽ
+    /// hàng này, ở đúng chỗ này, và ở trên nó.
+    var showsAccessoryContent: Bool { isCardResting || isCollapsing }
+
     /// Phần `progress` do cú kéo trên accessory đóng góp; 0 khi không kéo.
     /// `PlayerCard` cộng nó vào `progress` của mình mỗi khung. Không đi qua
     /// `onChange`, vì mỗi `onChange` là thêm một lượt cập nhật.
@@ -116,15 +141,27 @@ final class PlayerExpansion {
     }
 
     func leaveRest() {
+        // Trước `guard`: chạm hoặc kéo giữa đuôi cú thu thì thẻ chưa về nghỉ,
+        // nhưng cú thu đã bị huỷ và thẻ lại đè lên accessory. Có điều kiện vì
+        // cú kéo trên accessory gọi hàm này mỗi khung, và mỗi lần ghi một
+        // thuộc tính `@Observable` là một lần mời các view đọc nó dựng lại.
+        if isCollapsing { isCollapsing = false }
         guard isCardResting else { return }
         anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
         anchorIsInline = accessoryIsInline
         isCardResting = false
     }
 
+    /// Thẻ gọi lúc bắt đầu một cú thu về 0 — xem `isCollapsing`.
+    func commitCollapse() {
+        guard !isCollapsing else { return }
+        isCollapsing = true
+    }
+
     func arriveAtRest() {
         guard !accessoryDragging else { return }
         isCardResting = true
+        isCollapsing = false
     }
 
     func requestExpand() {

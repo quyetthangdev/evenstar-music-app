@@ -864,6 +864,13 @@ struct PlayerCard: View {
         // Vẫn là `View.opacity` bên trong, nên đoạn văn ngay trên còn nguyên
         // hiệu lực.
         .modifier(PresentedOpacity(opacity: cardOpacity))
+        // Cú trao tay sang accessory ở cuối cú thu: thẻ mờ đi ở vài phần trăm
+        // cuối của `progress`, khi còn gần bằng viên kính, thay vì đứng đặc
+        // suốt đuôi lò xo rồi tắt phụt ở `completion`. Xem
+        // `collapseHandoffOpacity`. Ở ngoài cùng, cùng chỗ với
+        // `PresentedOpacity` và cùng lý do: cả thẻ tan như **một** vật.
+        .modifier(CollapseHandoffOpacity(progress: progress,
+                                         isCollapsing: expansion.isCollapsing))
         .opacity(playback.currentTrack == nil ? 0 : 1)
         // Lúc nghỉ, chỗ của thẻ là viên kính accessory của hệ thống, và chính
         // accessory vẽ hàng mini player. Thẻ chỉ hiện khi rời trạng thái nghỉ.
@@ -2573,7 +2580,9 @@ struct PlayerCard: View {
     /// Rời trạng thái nghỉ ở đầu hàm khi đích > 0; về nghỉ trong `completion`
     /// (hoặc ngay lập tức khi giảm chuyển động) — xem `arriveAtRestIfCollapsed()`.
     private func morph(to target: Double, curve: Animation) {
-        if target > 0 { expansion.leaveRest() }
+        // Ngoài `withAnimation`: accessory hiện nội dung ngay, dưới tấm thẻ
+        // còn đặc — không có gì để nội suy. Xem `PlayerExpansion.isCollapsing`.
+        if target > 0 { expansion.leaveRest() } else { expansion.commitCollapse() }
         guard BottomBarStyle.reduceMotion else {
             withAnimation(curve) {
                 settled = target
@@ -2746,6 +2755,43 @@ struct PlayerCard: View {
 
     /// Xem `morphNeedsFade(from:to:)`.
     static let morphFadeMinimumTravel: Double = 0.02
+
+    /// Độ mờ của cả tấm thẻ ở một `progress` **đang được vẽ**, trong cú trao
+    /// tay sang accessory.
+    ///
+    /// Chỉ khi đang thu (`PlayerExpansion.isCollapsing`). Chiều mở và lúc kéo
+    /// thì thẻ đặc từ khung đầu — quyết định của spec, chép từ Apple Music (thẻ
+    /// của họ đặc từ khung thứ hai). Áp đối xứng thì cú kéo chậm từ accessory
+    /// lên sẽ cho thấy một tấm thẻ trong suốt nửa chừng trên viên kính rỗng
+    /// suốt nhiều khung, và ở 120Hz khung đầu của cú chạm mở (`progress`
+    /// ~0.01) cũng thành nửa trong.
+    ///
+    /// Kẹp về [0, 1]: lò xo vọt qua 0 khoảng 0,5% rồi quay về, và phần âm ấy
+    /// phải là trong suốt.
+    static func collapseHandoffOpacity(progress: Double, isCollapsing: Bool) -> Double {
+        guard isCollapsing else { return 1 }
+        return min(max(progress / collapseHandoffWindow, 0), 1)
+    }
+
+    /// Quãng `progress` cuối của cú thu mà thẻ mờ đi trên đó.
+    ///
+    /// **Chọn, có tính** — cùng loại với `morphFadeMinimumTravel`, và cũng là
+    /// quãng đường chứ không phải thời gian. Hai thứ kéo ngược nhau:
+    ///
+    ///   - **Không được rộng.** Hàng mini của thẻ nằm ở mép **trên** thẻ, và mép
+    ///     ấy cách mép trên viên kính đúng `progress × dragTravel`. Trong lúc mờ,
+    ///     cả hai hàng cùng hiện, lệch nhau ngần ấy. Trên iPhone 12
+    ///     (`dragTravel` ~710pt): 0.02 → thẻ cao 48 + 796·0.02 ≈ 64pt, hàng lệch
+    ///     14pt khi thẻ còn đặc hẳn, ~7pt ở nửa đường mờ, ~3pt khi chỉ còn ~25%.
+    ///     0.03 đã là 21pt lệch lúc bắt đầu mờ — thấy được thành hai dòng chữ.
+    ///   - **Không được hẹp.** Mô phỏng lò xo `settle` (0.42/0.14, thả không vận
+    ///     tốc) ở 60Hz: `progress` đi 0.022 → 0.013 → 0.006 → 0.002 → 0 qua bốn
+    ///     khung cuối trước khi chạm 0, tức cú mờ trải ~3 khung (~50ms), ~6 khung
+    ///     ở 120Hz. 0.01 chỉ còn một hai khung — lại thành một cú cắt.
+    ///
+    /// Sau đó lò xo còn lơ lửng ở −0.005 thêm hàng trăm mili giây trước
+    /// `completion`; giờ quãng ấy thẻ đã trong suốt và accessory đã ở đó.
+    static let collapseHandoffWindow: Double = 0.02
 
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
@@ -2960,5 +3006,41 @@ private struct PresentedOpacity: ViewModifier, Animatable {
         content
             .opacity(opacity)
             .allowsHitTesting(opacity >= Self.hitTestThreshold)
+    }
+}
+
+/// Mờ cả tấm thẻ ở vài phần trăm cuối của một cú thu — xem
+/// `PlayerCard.collapseHandoffOpacity`.
+///
+/// Phải là `Animatable`, cùng lẽ với `CardSurface` và `PresentedOpacity`: dưới
+/// `withAnimation`, `.opacity(f(progress))` trần được tính **một lần** ở đích
+/// (`progress` 0 → độ mờ 0) rồi SwiftUI nội suy tuyến tính từ 1 xuống 0 suốt cả
+/// cú lò xo — thẻ nửa trong suốt ở giữa đường, bất kể nó đang to bằng nào.
+/// Chỉ `animatableData` mới thấy giá trị đang vẽ, nên `f` phải chạy trong
+/// `body`, mỗi khung.
+///
+/// `isCollapsing` không nội suy: nó lật cùng lượt với đích của lò xo, lúc thẻ
+/// còn ở xa ngoài cửa sổ mờ, nên không có bậc nào.
+///
+/// Không động tới hit testing: suốt cú thu `progress` (giá trị đích) đã là 0,
+/// nên `.allowsHitTesting` trong `PlayerCard.body` đã nhả chạm xuống thư viện
+/// và accessory từ lúc nhấc tay.
+///
+/// Ở độ mờ 1 — mọi lúc trừ ~3 khung cuối cú thu — đây là một modifier không
+/// làm gì. Trong ~3 khung ấy `.opacity` < 1 trên cả cây thẻ là một lượt hợp
+/// thành ngoài màn hình, nhưng ở cỡ ~64pt × bề ngang viên kính, không phải
+/// toàn màn hình.
+private struct CollapseHandoffOpacity: ViewModifier, Animatable {
+    var progress: Double
+    let isCollapsing: Bool
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.opacity(PlayerCard.collapseHandoffOpacity(progress: progress,
+                                                          isCollapsing: isCollapsing))
     }
 }

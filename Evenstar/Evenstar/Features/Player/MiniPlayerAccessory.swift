@@ -9,7 +9,9 @@ import SwiftUI
 ///   Nút play/next nằm ngoài vùng ấy, nên bấm nút không bao giờ thành kéo.
 ///
 /// Ẩn đi (opacity 0) khi thẻ rời trạng thái nghỉ: lúc ấy chính thẻ đang vẽ
-/// hàng này, ở đúng chỗ này.
+/// hàng này, ở đúng chỗ này. Hiện lại ngay khi một cú thu được quyết, chứ
+/// không đợi thẻ về nghỉ, để nằm sẵn dưới tấm thẻ đang mờ đi — xem
+/// `PlayerExpansion.isCollapsing`.
 struct MiniPlayerAccessory: View {
     let playback: PlaybackService
     let expansion: PlayerExpansion
@@ -45,7 +47,7 @@ struct MiniPlayerAccessory: View {
         }
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(expansion.isCardResting ? 1 : 0)
+        .opacity(expansion.showsAccessoryContent ? 1 : 0)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
