@@ -17,16 +17,6 @@ struct JamendoDiscoveryView: View {
     /// `JamendoPreviewPlayer` for why it is not `PlaybackService`.
     @State private var preview = JamendoPreviewPlayer()
 
-    /// Owned by `RootView`, threaded here through both screens that push this
-    /// one — `SongsView`'s toolbar link and `JamendoSongsList`'s empty state.
-    ///
-    /// A pushed screen scrolls under the same floating bars as a tab root, so
-    /// it folds them the same way. `AlbumDetailView` carries this binding for
-    /// exactly the same reason, and its doc comment records why: Đợt A's
-    /// Critical defect was a pushed screen left out of a bottom-bar treatment
-    /// the tab roots got. This screen was the next one left out.
-    @Binding var isMinimised: Bool
-
     @State private var query = ""
     @State private var results: [JamendoCatalogueTrack] = []
     @State private var savedIDs: Set<String> = []
@@ -140,7 +130,6 @@ struct JamendoDiscoveryView: View {
         // catalogue rendered as rounded cards on grey, like Cài đặt, next to
         // five edge-to-edge lists of exactly the same thing.
         .listStyle(.plain)
-        .minimisesBottomBar($isMinimised)
         .navigationTitle("Khám phá")
         .navigationBarTitleDisplayMode(.inline)
         // `.always`, not the default. Left automatic, the field collapses into
@@ -212,7 +201,6 @@ struct JamendoDiscoveryView: View {
         // the stack — silences the preview and hands playback back to whatever
         // was interrupted, which is what `stop()` does in one call.
         .onDisappear { preview.stop() }
-        .clearsBottomBar()
         // Keyed on `commercialOnly` as well as `query`: this screen can stay
         // pushed on the nav stack while the user backs out to Cài đặt, flips
         // "Ẩn nhạc hạn chế thương mại", and returns. Keyed on

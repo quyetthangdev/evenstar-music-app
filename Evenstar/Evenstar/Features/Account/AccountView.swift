@@ -8,19 +8,12 @@ import SwiftData
 /// storage, version. No signed-out account row promising something that does
 /// not exist.
 struct AccountView: View {
-    // No `PlaybackService` here any more: the only thing this screen read it
-    // for was choosing between the two bottom clearances, and `clearsBottomBar`
-    // now owns that decision along with the arithmetic behind it.
     /// The local library, fetched once for the whole app — see `LibraryStore`.
     /// This screen renders no track of its own; it reads the array for a count
     /// and for the file paths behind the storage figure.
     @Environment(LibraryStore.self) private var store
 
     private var tracks: [Track] { store.tracks }
-
-    /// Owned by `RootView`, which drives both the tab bar and the player from
-    /// it. Written here only by `minimisesBottomBar` on this screen's list.
-    @Binding var isMinimised: Bool
 
     /// `nil` until the first sum finishes. Distinguishing "not measured yet"
     /// from "measured, and it is zero" is the difference between showing a
@@ -90,12 +83,7 @@ struct AccountView: View {
                     row("Phiên bản", value: Self.versionText)
                 }
             }
-            .minimisesBottomBar($isMinimised)
             .navigationTitle("Tài khoản")
-            // See the note in `SongsView`: this hides the system tab bar
-            // and must sit on the tab's content, not on the `TabView`.
-            .toolbar(.hidden, for: .tabBar)
-            .clearsBottomBar()
             // Keyed on the count so importing or deleting re-measures. It is a
             // cheap proxy: editing a track's tags does not change what is on
             // disk, and nothing else alters the file set.
@@ -229,7 +217,7 @@ struct AccountView: View {
     // Nguồn nhạc row crashes the preview rather than showing the screen.
     let driveLibrary = DriveLibraryService(library: library)
     // Seeded by hand — see the same note in `AlbumsView`'s preview.
-    return AccountView(isMinimised: .constant(false))
+    return AccountView()
         .environment(library)
         .environment(playback)
         .environment(driveLibrary)

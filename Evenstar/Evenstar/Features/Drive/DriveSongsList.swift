@@ -12,7 +12,6 @@ struct DriveSongsList: View {
     @Query(sort: [SortDescriptor(\DriveTrack.title, comparator: .localizedStandard)])
     private var tracks: [DriveTrack]
 
-    @Binding var isMinimised: Bool
     @State private var showManager = false
     @State private var errorMessage: String?
 
@@ -121,7 +120,6 @@ struct DriveSongsList: View {
         }
         .listStyle(.plain)
         .refreshable { await rescanAll() }
-        .minimisesBottomBar($isMinimised)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showManager = true } label: { Image(systemName: "ellipsis.circle") }

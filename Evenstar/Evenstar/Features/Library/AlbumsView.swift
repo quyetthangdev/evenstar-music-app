@@ -2,22 +2,12 @@ import SwiftUI
 import SwiftData
 
 struct AlbumsView: View {
-    // No `PlaybackService` here any more: the only thing this screen read it
-    // for was choosing between the two bottom clearances, and `clearsBottomBar`
-    // now owns that decision along with the arithmetic behind it.
     @Environment(LibraryService.self) private var library
     /// The local library, fetched once for the whole app — see `LibraryStore`.
     /// This screen never held the query for the rows themselves, only to know
     /// when to regroup, and that trigger is unchanged: the store publishes the
     /// same array, from the same fetch, in the same order.
     @Environment(LibraryStore.self) private var store
-
-    /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
-    /// grid, and **passed on to `AlbumDetailView`** — that screen is a pushed
-    /// destination declared here, so this is the only route the flag has to
-    /// reach it. Đợt A shipped a Critical defect by treating the four tab roots
-    /// and missing the two pushed detail screens.
-    @Binding var isMinimised: Bool
 
     /// The grouped library, recomputed only when `tracks` actually changes.
     ///
@@ -34,11 +24,8 @@ struct AlbumsView: View {
     /// `LibraryGrouping.albums` is a `Dictionary(grouping:)` plus a sort of
     /// every group plus a sort of the groups. Computed inline in `content` — a
     /// computed property — it ran on **every** body pass, and this view's body
-    /// runs far more often than the library changes: `isMinimised` lives in
-    /// `RootView`, whose body reads it, so every scroll past the 12pt threshold
-    /// rebuilds all five tabs and regroups the whole library mid-scroll. That
-    /// cost scales with library size, which is exactly the direction Drive
-    /// streaming pushes it.
+    /// runs far more often than the library changes. That cost scales with
+    /// library size, which is exactly the direction Drive streaming pushes it.
     ///
     /// **`onChange(of: store.tracks)` alone is not enough, and that is why
     /// there are two triggers below.** It compares `Track` by identity (models
@@ -80,12 +67,8 @@ struct AlbumsView: View {
                 // destination declared only inside one branch leaves the
                 // hierarchy with the branch, stranding a value on the path.
                 .navigationDestination(for: AlbumGroup.self) { album in
-                    AlbumDetailView(album: album, isMinimised: $isMinimised)
+                    AlbumDetailView(album: album)
                 }
-                // See the note in `SongsView`: this hides the system tab bar
-                // and must sit on the tab's content, not on the `TabView`.
-                .toolbar(.hidden, for: .tabBar)
-                .clearsBottomBar()
         }
     }
 
@@ -112,7 +95,6 @@ struct AlbumsView: View {
             }
             // On the `ScrollView` itself rather than on the branch above it,
             // so what the modifier observes is unambiguous.
-            .minimisesBottomBar($isMinimised)
         }
     }
 
@@ -217,7 +199,7 @@ private struct AlbumCell: View {
     }
     // Seeded by hand: `LibraryQueryBridge` lives in `RootView`, so a preview of
     // one screen has no query keeping the store in step with the container.
-    return AlbumsView(isMinimised: .constant(false))
+    return AlbumsView()
         .environment(library)
         .environment(playback)
         // `presence` phải kể tên đường dẫn của mấy bài mẫu — xem ghi chú trong

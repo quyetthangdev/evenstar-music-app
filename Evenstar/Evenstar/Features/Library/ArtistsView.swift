@@ -2,21 +2,11 @@ import SwiftUI
 import SwiftData
 
 struct ArtistsView: View {
-    // No `PlaybackService` here any more: the only thing this screen read it
-    // for was choosing between the two bottom clearances, and `clearsBottomBar`
-    // now owns that decision along with the arithmetic behind it.
     @Environment(LibraryService.self) private var library
     /// The local library, fetched once for the whole app. See `LibraryStore`,
     /// and `AlbumsView`'s copy of this property for why the regrouping trigger
     /// is unaffected by where the array comes from.
     @Environment(LibraryStore.self) private var store
-
-    /// Owned by `RootView`. Written by `minimisesBottomBar` on this screen's
-    /// grid, and **passed on to `ArtistDetailView`** — that screen is a pushed
-    /// destination declared here, so this is the only route the flag has to
-    /// reach it. Đợt A shipped a Critical defect by treating the four tab roots
-    /// and missing the two pushed detail screens.
-    @Binding var isMinimised: Bool
 
     /// The grouped library, recomputed only when `tracks` actually changes.
     /// See `AlbumsView.albums` for why this is state rather than a computed
@@ -49,12 +39,8 @@ struct ArtistsView: View {
                 // destination declared only inside one branch leaves the
                 // hierarchy with the branch, stranding a value on the path.
                 .navigationDestination(for: ArtistGroup.self) { artist in
-                    ArtistDetailView(artist: artist, isMinimised: $isMinimised)
+                    ArtistDetailView(artist: artist)
                 }
-                // See the note in `SongsView`: this hides the system tab bar
-                // and must sit on the tab's content, not on the `TabView`.
-                .toolbar(.hidden, for: .tabBar)
-                .clearsBottomBar()
         }
     }
 
@@ -81,7 +67,6 @@ struct ArtistsView: View {
             }
             // On the `ScrollView` itself rather than on the branch above it,
             // so what the modifier observes is unambiguous.
-            .minimisesBottomBar($isMinimised)
         }
     }
 }
@@ -141,7 +126,7 @@ private struct ArtistCell: View {
         container.mainContext.insert(track)
     }
     // Seeded by hand — see the same note in `AlbumsView`'s preview.
-    return ArtistsView(isMinimised: .constant(false))
+    return ArtistsView()
         .environment(library)
         .environment(playback)
         // `presence` phải kể tên đường dẫn của mấy bài mẫu — xem ghi chú trong

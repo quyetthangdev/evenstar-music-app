@@ -4,13 +4,6 @@ import SwiftData
 struct ArtistDetailView: View {
     let artist: ArtistGroup
 
-    /// Owned by `RootView` and threaded here through `ArtistsView`'s
-    /// `navigationDestination`. A pushed screen still scrolls under the same
-    /// floating bars as a tab root, so it minimises them the same way — Đợt A's
-    /// Critical defect was exactly this screen being left out of a bottom-bar
-    /// treatment the four tab roots got.
-    @Binding var isMinimised: Bool
-
     @Environment(PlaybackService.self) private var playback
     /// Where this screen's rows come from. See the same property on
     /// `AlbumDetailView` for why they are resolved here rather than carried
@@ -36,13 +29,8 @@ struct ArtistDetailView: View {
             }
         }
         .listStyle(.plain)
-        .minimisesBottomBar($isMinimised)
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        // See the note in `SongsView`: this hides the system tab bar
-        // and must sit on the tab's content, not on the `TabView`.
-        .toolbar(.hidden, for: .tabBar)
-        .clearsBottomBar()
     }
 }
 
@@ -82,7 +70,7 @@ struct ArtistDetailView: View {
     }
     let artist = ArtistGroup(id: "Alpha", name: "Alpha", artworkRelativePath: nil)
     return NavigationStack {
-        ArtistDetailView(artist: artist, isMinimised: .constant(false))
+        ArtistDetailView(artist: artist)
     }
     .environment(playback)
     // Seeded by hand — see the same note in `AlbumDetailView`'s preview,

@@ -20,8 +20,6 @@ struct JamendoSongsList: View {
     @Query(sort: [SortDescriptor(\JamendoTrack.dateAdded, order: .reverse)])
     private var jamendoTracks: [JamendoTrack]
 
-    @Binding var isMinimised: Bool
-
     var body: some View {
         if jamendoTracks.isEmpty {
             ContentUnavailableView {
@@ -33,7 +31,7 @@ struct JamendoSongsList: View {
                 // `DriveSongsList.empty`'s own call-to-action button — this
                 // was the one empty state of the three still missing it.
                 NavigationLink("Khám phá Jamendo") {
-                    JamendoDiscoveryView(isMinimised: $isMinimised)
+                    JamendoDiscoveryView()
                 }
                 .buttonStyle(.prominentAction)
             }
@@ -61,7 +59,6 @@ struct JamendoSongsList: View {
                     }
             }
             .listStyle(.plain)
-            .minimisesBottomBar($isMinimised)
         }
     }
 

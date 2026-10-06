@@ -29,10 +29,6 @@ struct SongsView: View {
     /// Nhớ qua lần mở app, cùng cách `theme` và `language` đang làm.
     @AppStorage("library.trackSort") private var sort: TrackSort = .default
 
-    /// Owned by `RootView`, which drives both the tab bar and the player from
-    /// it. Written here only by `minimisesBottomBar` on this screen's list.
-    @Binding var isMinimised: Bool
-
     @State private var showFileImporter = false
     @State private var accessibleURLs: [URL] = []
     @State private var inaccessibleFailures: [(url: URL, error: ImportError)] = []
@@ -127,7 +123,7 @@ struct SongsView: View {
                         // same to VoiceOver.
                         if source == .jamendo {
                             NavigationLink {
-                                JamendoDiscoveryView(isMinimised: $isMinimised)
+                                JamendoDiscoveryView()
                             } label: {
                                 Image(systemName: "plus.circle")
                             }
@@ -156,9 +152,6 @@ struct SongsView: View {
                 }
                 // The system tab bar is hidden in favour of `FloatingTabBar`.
                 // This modifier applies to the content *inside* a tab, never
-                // to the `TabView` itself, which is why it lives here on each
-                // tab's root view rather than in `RootView`.
-                .toolbar(.hidden, for: .tabBar)
         }
         .fileImporter(
             isPresented: $showFileImporter,
@@ -318,25 +311,13 @@ struct SongsView: View {
                 sortRow
             }
 
-            // `.clearsBottomBar()` sits on each branch rather than on this
-            // `VStack`, and that placement is load-bearing.
-            // `.safeAreaInset(edge: .bottom)` inserts its spacer into the safe
-            // area of the view it is applied to: on the stack it would shrink
-            // the stack and leave the list ending in a band of empty
-            // background, instead of extending the list's own scroll inset so
-            // the last row can scroll clear of the floating bar. Applied here,
-            // `localContent` receives exactly the modifier chain it had before
-            // the picker existed.
             switch source {
             case .local:
                 localContent
-                    .clearsBottomBar()
             case .drive:
-                DriveSongsList(isMinimised: $isMinimised)
-                    .clearsBottomBar()
+                DriveSongsList()
             case .jamendo:
-                JamendoSongsList(isMinimised: $isMinimised)
-                    .clearsBottomBar()
+                JamendoSongsList()
             }
         }
     }
@@ -392,7 +373,6 @@ struct SongsView: View {
             .listStyle(.plain)
             // On the scrollable container itself rather than on the branch
             // above it, so what the modifier observes is unambiguous.
-            .minimisesBottomBar($isMinimised)
         }
     }
 

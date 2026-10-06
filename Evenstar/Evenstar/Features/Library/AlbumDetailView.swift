@@ -4,13 +4,6 @@ import SwiftData
 struct AlbumDetailView: View {
     let album: AlbumGroup
 
-    /// Owned by `RootView` and threaded here through `AlbumsView`'s
-    /// `navigationDestination`. A pushed screen still scrolls under the same
-    /// floating bars as a tab root, so it minimises them the same way — Đợt A's
-    /// Critical defect was exactly this screen being left out of a bottom-bar
-    /// treatment the four tab roots got.
-    @Binding var isMinimised: Bool
-
     @Environment(PlaybackService.self) private var playback
     /// Where this screen's rows come from. `AlbumGroup` carries no `Track` any
     /// more — see its doc — so the album's tracks are resolved here, per pass,
@@ -28,9 +21,7 @@ struct AlbumDetailView: View {
     var body: some View {
         // Resolved once per pass and passed down, rather than recomputed by
         // three separate reads. The cost is one filter plus one sort of this
-        // album's rows, on a body that runs when the library changes or when
-        // `isMinimised` flips — which `ScrollMinimise` writes only on an
-        // actual change, twice per scroll gesture at most, not per frame.
+        // album's rows, on a body that runs when the library changes.
         let tracks = LibraryGrouping.tracks(inAlbum: album, from: store.tracks)
         return List {
             Section {
@@ -77,13 +68,8 @@ struct AlbumDetailView: View {
             }
         }
         .listStyle(.plain)
-        .minimisesBottomBar($isMinimised)
         .navigationTitle(album.title)
         .navigationBarTitleDisplayMode(.inline)
-        // See the note in `SongsView`: this hides the system tab bar
-        // and must sit on the tab's content, not on the `TabView`.
-        .toolbar(.hidden, for: .tabBar)
-        .clearsBottomBar()
     }
 }
 
@@ -123,7 +109,7 @@ struct AlbumDetailView: View {
                            artist: "Alpha",
                            artworkRelativePath: nil)
     return NavigationStack {
-        AlbumDetailView(album: album, isMinimised: .constant(false))
+        AlbumDetailView(album: album)
     }
     .environment(playback)
     // Seeded by hand: `LibraryQueryBridge` lives in `RootView`, so a preview of
