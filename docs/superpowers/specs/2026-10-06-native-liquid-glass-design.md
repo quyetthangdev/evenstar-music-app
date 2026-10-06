@@ -41,7 +41,13 @@ không tệ hơn mức nền E2 (22,9 ms/giây).
     nội dung ở cỡ cuối ngay khung đầu. `.id(placement)` + `.transition(.blurReplace)`
     **không có tác dụng**. Bố cục nội dung đổi theo vị trí sẽ nhảy.
   - Giá trị `placement` trên iOS 26.0 **không ổn định**: có lần báo `.inline`
-    mà nội dung vẫn vẽ theo bố cục `.expanded`.
+    mà nội dung vẫn vẽ theo bố cục `.expanded`. (Mới thấy trên simulator.)
+- Video Apple Music trên máy thật (2026-10-06, tách từng khung 33 ms):
+  - Viên mini player trượt dần xuống giữa thanh tab trong ~300 ms rồi lắc nhẹ
+    ~300 ms; nội dung đi theo viên kính, không nhảy. Tên bài **một dòng**.
+  - Nút ⏭ **mờ dần rồi ẩn** khi thu nhỏ, hiện lại khi bung ra.
+  - Bấm mini player: **ngay khung thứ hai viên kính thành một thẻ đặc**, không
+    phải kính; hàng mini player dính mép trên thẻ và mờ dần; tràn màn ~360 ms.
 
 ## Ngoài phạm vi
 
@@ -113,9 +119,10 @@ pill" không còn đúng.
 **`MiniPlayerAccessory`** — nội dung của accessory; kính là của hệ thống.
 
 - Bìa nhỏ, **một dòng** tên bài, nút play và next.
-- **Bố cục giống hệt nhau ở `.expanded` và `.inline`.** Không đọc `placement` để
-  đổi bố cục (spike: không ổn định, và đổi bố cục thì nhảy). Ở `.inline` tên bài
-  tự cắt ngắn.
+- **Bố cục giống nhau ở `.expanded` và `.inline`, trừ nút ⏭**: ở `.inline` nó mờ
+  dần và co về 0 như Apple Music. `placement` chỉ được dùng cho việc ấy. Vì spike
+  thấy `placement` không ổn định trên simulator, việc này được kiểm trên iPhone
+  thật; nếu vẫn không ổn định thì ⏭ hiện ở cả hai vị trí.
 - Báo khung của mình lên `RootView` bằng `.onGeometryChange` trong toạ độ global.
 - Ẩn nội dung (opacity 0) trong lúc thẻ player đang hiện.
 
@@ -130,8 +137,9 @@ pill" không còn đúng.
 - Lúc nghỉ (`progress` 0) thẻ **vẫn nằm trong cây view**, ẩn và không nhận chạm.
   Không dựng/huỷ thẻ theo từng cú bung: E2 cho thấy cú bung đầu sau một quãng
   nghỉ đã gánh 57% hitch còn lại, và dựng thẻ từ đầu sẽ làm nặng thêm đúng cú đó.
-- Ở `progress` 0, viên pill `.thinMaterial` riêng của thẻ không còn; khung ấy giờ
-  là viên kính của hệ thống.
+- **Thẻ đặc ngay từ khung đầu, không có lớp kính**, như Apple Music. Lớp
+  `.thinMaterial` cũ của viên pill bị xoá, không thay bằng `.glassEffect`. Lúc
+  nghỉ, khung ấy là viên kính của hệ thống; lúc bung, thẻ đặc phủ lên.
 
 ### Thay đổi hành vi
 
@@ -251,7 +259,7 @@ lưu, `xctrace` đứng ở 0% CPU khoảng 2 phút — không kill.
 
 | Rủi ro | Cách xử lý |
 |---|---|
-| Vài khung đầu kính của thẻ chồng lên kính accessory, nhìn ra chớp | Thẻ chuyển đục sớm (spike: ở ~18% cú bung); người dùng kiểm trên máy thật ở giai đoạn 1. Đường lui: zoom transition native |
+| Chỗ nối viên kính → thẻ đặc nhìn ra chớp | Thẻ đặc ngay khung đầu như Apple Music, không có kính chồng kính; người dùng kiểm trên máy thật ở giai đoạn 1. Đường lui: zoom transition native |
 | Vuốt ngang bị khung UIKit của accessory nuốt | Thử đầu tiên ở giai đoạn 4 |
-| `placement` không ổn định trên 26.0 | Thiết kế không phụ thuộc nó |
+| `placement` không ổn định trên 26.0 | Chỉ dùng nó cho nút ⏭; kiểm trên máy thật, không ổn thì bỏ |
 | Cú bung đầu nặng hơn sau khi đổi cấu trúc | Thẻ luôn nằm trong cây view; đo E2 sau giai đoạn 1 |

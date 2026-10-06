@@ -4,7 +4,7 @@
 
 **Goal:** Thay thanh tab, cú thu nhỏ khi cuộn, viên mini player và các nút tự vẽ của Evenstar bằng thành phần Liquid Glass native của iOS 26, giữ cú bung player theo ngón tay và thêm vuốt ngang để đổi bài.
 
-**Architecture:** `RootView` dùng `TabView` native với `Tab(role: .search)`, `.tabBarMinimizeBehavior(.onScrollDown)` và `.tabViewBottomAccessory`. Viên kính accessory là của hệ thống; nội dung của nó (`MiniPlayerAccessory`) báo khung đo được lên `PlayerExpansion`. `PlayerCard` không tự tính chỗ viên pill nữa mà bung ra từ khung ấy, qua một hàm hình học thuần (`PlayerAnchor`). Cử chỉ trên accessory đi vào thẻ qua `PlayerExpansion`: kéo dọc ghi thẳng một phần `progress` mỗi khung, còn chạm và thả là một `PlayerIntent` mà thẻ thực hiện bằng hàm `morph` của nó.
+**Architecture:** `RootView` dùng `TabView` native với `Tab(role: .search)`, `.tabBarMinimizeBehavior(.onScrollDown)` và `.tabViewBottomAccessory`. Viên kính accessory là của hệ thống; nội dung của nó (`MiniPlayerAccessory`) báo khung đo được lên `PlayerExpansion`. `PlayerCard` không tự tính chỗ viên pill nữa mà bung ra từ khung ấy, qua một hàm hình học thuần (`PlayerAnchor`), và đặc ngay từ khung đầu như Apple Music. Cử chỉ trên accessory đi vào thẻ qua `PlayerExpansion`: kéo dọc ghi thẳng một phần `progress` mỗi khung, còn chạm và thả là một `PlayerIntent` mà thẻ thực hiện bằng hàm `morph` của nó.
 
 **Tech Stack:** Swift 6, SwiftUI iOS 26 SDK (Xcode 26.0.1), Observation, XCTest. Không thêm thư viện.
 
@@ -15,7 +15,8 @@
 - Deployment target **iOS 26.0** cho cả `Evenstar` và `EvenstarTests`. Người dùng tự đổi trong Xcode; agent **không bao giờ** sửa `project.pbxproj` hay `*.xcscheme`.
 - Không thêm thư viện bên thứ ba.
 - Không dùng `#available(iOS 26, *)`: target đã là 26.
-- Không đọc `\.tabViewBottomAccessoryPlacement` để đổi bố cục: spike cho thấy nó không ổn định trên iOS 26.0. Bố cục mini player giống hệt nhau ở `.expanded` và `.inline`.
+- `\.tabViewBottomAccessoryPlacement` chỉ được đọc để ẩn/hiện nút ⏭ (mờ dần, như Apple Music), không cho kích thước hay bố cục nào khác. Spike thấy nó không ổn định trên simulator iOS 26.0; Task 6 kiểm trên máy thật.
+- Thẻ player **đặc ngay từ khung đầu**, không có lớp kính (`.glassEffect`, `.thinMaterial`), như Apple Music.
 - Chỉ **một** chỗ đọc `accessibilityReduceMotion`: `RootView`. Mọi chỗ khác đọc `BottomBarStyle.reduceMotion`.
 - `RootView.body` không được đọc `playback.currentTrack` hay bất cứ thứ gì đổi theo bài, vì body ấy dựng lại `TabView` và năm tab.
 - Mọi chuỗi hiển thị mới dùng chuỗi tiếng Việt làm khoá và đi qua String Catalog như phần còn lại của app.
@@ -376,8 +377,8 @@ git commit -m "feat: AccessoryDragAxis — khoá trục cử chỉ trên mini pl
 - Consumes: `PlayerAnchor.resolve`, `PlayerAnchor.dragTravel(for:)` (Task 1); `AccessoryDragAxis.lockDistance` (Task 2); `PlayerCard.dragOffset(translationHeight:threshold:)` (đã có, `static`, nội bộ).
 - Produces, trên `PlayerExpansion` (giờ là `@MainActor`):
   - `private(set) var accessoryFrame: CGRect` (không quan sát), `var screenSize: CGSize` (không quan sát);
-  - `private(set) var anchorFrame: CGRect`, `isCardResting: Bool`, `accessoryDragDelta: Double`, `accessoryDragging: Bool`, `intent: PlayerIntent?`;
-  - `func reportAccessoryFrame(_:)`, `leaveRest()`, `arriveAtRest()`, `requestExpand()`, `accessoryDragChanged(translationHeight:)`, `setAccessoryDragDelta(_:)`, `accessoryDragEnded(predictedTranslationHeight:verticalVelocity:)`, `takeAccessoryDrag() -> Double`.
+  - `private(set) var anchorFrame: CGRect`, `anchorIsInline: Bool`, `isCardResting: Bool`, `accessoryDragDelta: Double`, `accessoryDragging: Bool`, `intent: PlayerIntent?`;
+  - `func reportAccessoryFrame(_ frame: CGRect, isInline: Bool)`, `leaveRest()`, `arriveAtRest()`, `requestExpand()`, `accessoryDragChanged(translationHeight:)`, `setAccessoryDragDelta(_:)`, `accessoryDragEnded(predictedTranslationHeight:verticalVelocity:)`, `takeAccessoryDrag() -> Double`.
 - Produces: `struct PlayerIntent: Equatable { enum Kind: Equatable { case expand; case release(predictedProgress: Double, verticalVelocity: CGFloat) }; let id: UUID; let kind: Kind }`.
 
 - [ ] **Step 1: Viết test đỏ**
@@ -406,7 +407,7 @@ final class PlayerExpansionTests: XCTestCase {
 
     func testLeavingRestCapturesTheMeasuredFrame() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.leaveRest()
         XCTAssertFalse(e.isCardResting)
         XCTAssertEqual(e.anchorFrame, expanded)
@@ -422,17 +423,26 @@ final class PlayerExpansionTests: XCTestCase {
     /// Review Focus 2: trong lúc nội dung lùi lại, khung đo được đang co.
     func testFramesReportedAwayFromRestAreIgnored() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.leaveRest()
-        e.reportAccessoryFrame(CGRect(x: 31, y: 743, width: 338, height: 45))
+        e.reportAccessoryFrame(CGRect(x: 31, y: 743, width: 338, height: 45), isInline: false)
         e.arriveAtRest()
         e.leaveRest()
         XCTAssertEqual(e.anchorFrame, expanded)
     }
 
+    /// Thẻ phải biết accessory đang ở vị trí nào lúc bung, để hàng mini player
+    /// của nó ẩn ⏭ giống hệt accessory ở khung đầu.
+    func testLeavingRestCapturesWhetherTheAccessoryWasInline() {
+        let e = make()
+        e.reportAccessoryFrame(CGRect(x: 84, y: 798, width: 234, height: 48), isInline: true)
+        e.leaveRest()
+        XCTAssertTrue(e.anchorIsInline)
+    }
+
     func testLeavingRestTwiceKeepsTheFirstAnchor() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.leaveRest()
         e.leaveRest()
         XCTAssertEqual(e.anchorFrame, expanded)
@@ -440,7 +450,7 @@ final class PlayerExpansionTests: XCTestCase {
 
     func testAnUpwardDragDrivesProgressOverTheAnchorsTravel() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.accessoryDragChanged(translationHeight: -100)
         let expected = Double((100 - AccessoryDragAxis.lockDistance) / 735)
         XCTAssertTrue(e.accessoryDragging)
@@ -452,7 +462,7 @@ final class PlayerExpansionTests: XCTestCase {
     /// Review Focus 3.
     func testADownwardDragClampsProgressAtZero() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.accessoryDragChanged(translationHeight: 60)
         XCTAssertEqual(e.progress, 0)
         XCTAssertLessThan(e.accessoryDragDelta, 0)
@@ -460,7 +470,7 @@ final class PlayerExpansionTests: XCTestCase {
 
     func testReleasingSendsThePredictedProgress() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.accessoryDragChanged(translationHeight: -100)
         e.accessoryDragEnded(predictedTranslationHeight: -500, verticalVelocity: -900)
         guard case let .release(predicted, velocity)? = e.intent?.kind else {
@@ -472,7 +482,7 @@ final class PlayerExpansionTests: XCTestCase {
 
     func testTakingTheDragHandsOverTheDeltaAndClearsIt() {
         let e = make()
-        e.reportAccessoryFrame(expanded)
+        e.reportAccessoryFrame(expanded, isInline: false)
         e.accessoryDragChanged(translationHeight: -100)
         let carried = e.takeAccessoryDrag()
         XCTAssertGreaterThan(carried, 0)
@@ -528,6 +538,7 @@ Rồi chèn khối sau vào thân lớp, ngay sau hàm `set(progress:animation:)
     /// Không quan sát: hệ thống dời accessory mỗi lần thanh tab thu nhỏ, và
     /// không view nào cần dựng lại vì chuyện đó. Chỉ `leaveRest()` đọc nó.
     @ObservationIgnored private(set) var accessoryFrame: CGRect = .zero
+    @ObservationIgnored private(set) var accessoryIsInline = false
 
     /// Cỡ màn hình vật lý, do `PlayerCard` ghi từ `GeometryReader` của nó.
     @ObservationIgnored var screenSize: CGSize = .zero
@@ -536,6 +547,9 @@ Rồi chèn khối sau vào thân lớp, ngay sau hàm `set(progress:animation:)
     /// nguyên tới khi thẻ về nghỉ. Không đọc thẳng `accessoryFrame` trong lúc
     /// bung, vì nội dung phía sau lùi lại làm khung đo được co theo.
     private(set) var anchorFrame: CGRect = .zero
+    /// Accessory có đang ở `.inline` lúc thẻ rời nghỉ không. Hàng mini player
+    /// trong thẻ đọc nó để ẩn ⏭ giống hệt accessory ở khung đầu.
+    private(set) var anchorIsInline = false
 
     /// Thẻ đang nằm yên ở 0 và vô hình, còn accessory đang hiện nội dung của nó.
     private(set) var isCardResting = true
@@ -550,14 +564,16 @@ Rồi chèn khối sau vào thân lớp, ngay sau hàm `set(progress:animation:)
     /// animation, vì `morph` và trạng thái `settled` là của riêng nó.
     private(set) var intent: PlayerIntent?
 
-    func reportAccessoryFrame(_ frame: CGRect) {
+    func reportAccessoryFrame(_ frame: CGRect, isInline: Bool) {
         guard isCardResting else { return }
         accessoryFrame = frame
+        accessoryIsInline = isInline
     }
 
     func leaveRest() {
         guard isCardResting else { return }
         anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
+        anchorIsInline = accessoryIsInline
         isCardResting = false
     }
 
@@ -622,7 +638,7 @@ struct PlayerIntent: Equatable {
 - [ ] **Step 4: Chạy, xác nhận xanh**
 
 Run: lệnh test chuẩn với `-only-testing:EvenstarTests/PlayerExpansionTests`
-Expected: 11 test PASS. Rồi chạy **toàn bộ** suite, vì `@MainActor` có thể làm vỡ chỗ dùng `PlayerExpansion` từ ngữ cảnh không cô lập. Nếu một test hay một `#Preview` báo lỗi cô lập, đánh dấu chỗ gọi đó `@MainActor`; **không** gỡ `@MainActor` khỏi lớp.
+Expected: 12 test PASS. Rồi chạy **toàn bộ** suite, vì `@MainActor` có thể làm vỡ chỗ dùng `PlayerExpansion` từ ngữ cảnh không cô lập. Nếu một test hay một `#Preview` báo lỗi cô lập, đánh dấu chỗ gọi đó `@MainActor`; **không** gỡ `@MainActor` khỏi lớp.
 
 - [ ] **Step 5: Commit**
 
@@ -790,7 +806,7 @@ Sửa, không xoá:
 Giữ nguyên ba test dựng `RootView()` trong `ReduceMotionTests`: `init(storeUnavailable:)` không đổi.
 
 Run: lệnh test chuẩn.
-Expected: `** TEST SUCCEEDED **`. Số test = mức nền + 28 (Task 1–3) − 10 (vừa xoá).
+Expected: `** TEST SUCCEEDED **`. Số test = mức nền + 29 (Task 1–3) − 10 (vừa xoá).
 
 - [ ] **Step 8: Dọn `BottomBarStyle` và test của thành viên chết**
 
@@ -836,7 +852,7 @@ git commit -m "feat: thanh tab native — TabView, tab tìm kiếm, thu nhỏ kh
 
 **Interfaces:**
 - Consumes: Task 1–3.
-- Produces: `PlayerCard(playback: PlaybackService, expansion: PlayerExpansion)` (tham số `minimised` biến mất); `MiniPlayerAccessory(playback:expansion:)`; `MiniPlayerTitle(playback:)`, `MiniPlayerControls(playback:)`, `MiniPlayerRow(playback:)`; `enum MiniPlayerMetrics`.
+- Produces: `PlayerCard(playback: PlaybackService, expansion: PlayerExpansion)` (tham số `minimised` biến mất); `MiniPlayerAccessory(playback:expansion:)`; `MiniPlayerTitle(playback:)`, `MiniPlayerControls(playback:showsNext:)`, `MiniPlayerRow(playback:showsNext:)`; `enum MiniPlayerMetrics`.
 - Produces, đổi chữ ký: `PlayerCard.artworkGeometry(…, collapsedHeight: CGFloat)` (tham số mới, đặt cuối); `PlayerCard.cardTopCornerRadius(progress:collapsedRadius:)`, `PlayerCard.cardBottomCornerRadius(progress:collapsedRadius:)`.
 
 - [ ] **Step 1: `MiniPlayerMetrics`**
@@ -892,8 +908,12 @@ struct MiniPlayerTitle: View {
 
 /// Play và next. Glyph trần, không `.glass`: accessory đã là kính, và kính lồng
 /// trong kính là điều Apple khuyên tránh. Mini player của Apple Music cũng vậy.
+///
+/// `showsNext` false khi accessory thu nhỏ vào thanh tab: ⏭ mờ dần và co về 0,
+/// như Apple Music (video 2026-10-06).
 struct MiniPlayerControls: View {
     let playback: PlaybackService
+    let showsNext: Bool
 
     @State private var playPauseTaps = 0
     @State private var nextTaps = 0
@@ -923,8 +943,14 @@ struct MiniPlayerControls: View {
             }
             .disabled(!playback.canGoNext)
             .sensoryFeedback(.impact(weight: .light), trigger: nextTaps)
+            .frame(width: showsNext ? MiniPlayerMetrics.buttonSize : 0)
+            .opacity(showsNext ? 1 : 0)
+            .clipped()
+            .allowsHitTesting(showsNext)
+            .padding(.leading, showsNext ? 0 : -MiniPlayerMetrics.buttonGap)
         }
         .buttonStyle(.plain)
+        .animation(.smooth(duration: 0.25), value: showsNext)
     }
 }
 
@@ -932,12 +958,13 @@ struct MiniPlayerControls: View {
 /// bìa để nó lớn liên tục suốt cú bung.
 struct MiniPlayerRow: View {
     let playback: PlaybackService
+    let showsNext: Bool
 
     var body: some View {
         HStack(spacing: 0) {
             MiniPlayerTitle(playback: playback)
             Spacer(minLength: MiniPlayerMetrics.artworkTitleGap)
-            MiniPlayerControls(playback: playback)
+            MiniPlayerControls(playback: playback, showsNext: showsNext)
         }
         .padding(.leading, MiniPlayerMetrics.titleLeadingInset)
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
@@ -964,14 +991,19 @@ struct MiniPlayerAccessory: View {
     let playback: PlaybackService
     let expansion: PlayerExpansion
 
+    /// Chỉ đọc để ẩn ⏭ khi thu nhỏ — xem Global Constraints của plan.
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
     @State private var axis: AccessoryDragAxis?
     @State private var drivesCard = false
+
+    private var isInline: Bool { placement == .inline }
 
     var body: some View {
         HStack(spacing: 0) {
             info
             Spacer(minLength: MiniPlayerMetrics.artworkTitleGap)
-            MiniPlayerControls(playback: playback)
+            MiniPlayerControls(playback: playback, showsNext: !isInline)
         }
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -979,7 +1011,7 @@ struct MiniPlayerAccessory: View {
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
-            expansion.reportAccessoryFrame(frame)
+            expansion.reportAccessoryFrame(frame, isInline: isInline)
         }
     }
 
@@ -1145,7 +1177,7 @@ Thay `miniChrome(width:)` bằng:
 
 ```swift
     private func miniChrome(width: CGFloat, height: CGFloat) -> some View {
-        MiniPlayerRow(playback: playback)
+        MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline)
             .frame(width: width, height: height)
             .opacity(max(0, 1 - progress * 3))
             .allowsHitTesting(progress < 0.1)
@@ -1175,20 +1207,20 @@ Trong `static func artworkGeometry(`, thêm tham số cuối `collapsedHeight: C
 
 Trong `CardClip`, thêm `let collapsedRadius: CGFloat` và truyền nó vào cả ba chỗ gọi hai hàm trên.
 
-Trong `CardSurface`, thay khối `if progress < PlayerCard.materialCutoff { Rectangle().fill(.thinMaterial)… }` bằng:
+Trong `CardSurface`, thay **toàn bộ** `ZStack { … }` trong `body` bằng:
 
 ```swift
-            // Liquid Glass thật, cùng chất với viên kính accessory mà thẻ vừa phủ
-            // lên. Tan dần khi nền đục đi lên; tắt hẳn sau `materialCutoff` để
-            // không trả giá cho một lớp kính không ai thấy.
-            if progress < PlayerCard.materialCutoff {
-                Color.clear
-                    .glassEffect(.regular, in: Rectangle())
-                    .opacity(max(0, 1 - progress / PlayerCard.materialCutoff))
-            }
+        // Đặc ngay từ khung đầu, như Apple Music (video 2026-10-06): viên kính
+        // thành thẻ đặc ở khung thứ hai, không có kính chồng kính. Lớp dưới đặc
+        // sẵn; lớp trên là nền của player mở rộng, lên dần theo `progress`.
+        ZStack {
+            Color(.secondarySystemBackground)
+            Color(.systemGroupedBackground)
+                .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
+        }
 ```
 
-(`CardClip` cắt bên ngoài nên dùng `Rectangle()` là đủ.)
+Rồi xoá `static let materialCutoff` cùng ghi chú của nó (dòng ~350–371), cùng các đoạn ghi chú khác trong `PlayerCard.swift` nói về `.thinMaterial` của viên pill (`grep -n "thinMaterial\|materialCutoff" Evenstar/Evenstar/Features/Player/PlayerCard.swift`); sửa chúng thành một dòng "thẻ đặc từ khung đầu — xem `CardSurface`" nếu đoạn văn xung quanh cần câu nối.
 
 - [ ] **Step 8: `PlayerCard`, cử chỉ, `morph` và trạng thái nghỉ**
 
@@ -1329,6 +1361,8 @@ Expected: `** BUILD SUCCEEDED **`, không cảnh báo. Lỗi còn sót thường
 
 `ReduceMotionSurfacesTests` dòng ~2014 (`PlayerCard.artworkGeometry(`): thêm `collapsedHeight: 48`.
 
+`PlayerCardCommitCostTests`: xoá **cả lớp** `PlayerCardTranslucencyTests` (dòng ~1183 tới hết lớp). Nó ghim "thẻ nhìn xuyên được trong lúc bung", và người dùng đã quyết ngược lại: thẻ đặc ngay khung đầu như Apple Music. Thay bằng một dòng ghi chú ở chỗ cũ: `// PlayerCardTranslucencyTests đã xoá 2026-10-06: thẻ giờ đặc từ khung đầu — xem CardSurface.`
+
 `PlayerCardClipShapeTests`: mọi lời gọi `cardTopCornerRadius(progress: x)` / `cardBottomCornerRadius(progress: x)` thêm `collapsedRadius: 24`. Ý nghĩa các khẳng định không đổi.
 
 `PlayerCardCommitCostTests`:
@@ -1367,7 +1401,8 @@ Kiểm, theo thứ tự:
 4. Chạm viên kính: bung. Kéo viên kính lên: thẻ bám theo ngón tay.
 5. Cuộn danh sách cho thanh tab thu nhỏ, rồi lặp 3–4 từ viên kính hẹp.
 6. Kéo viên kính xuống, và kéo ngang: không có gì xảy ra.
-7. Bấm play/next trên viên kính: chạy, không bung player.
+7. Bấm play/next trên viên kính: chạy, không bung player. Cuộn cho thanh tab thu nhỏ: ⏭ mờ dần và biến mất; cuộn lên: hiện lại.
+7b. Khung đầu cú bung: viên kính thành thẻ **đặc**, không thấy danh sách xuyên qua.
 8. Giữ lâu trên viên kính: menu "Dừng phát".
 
 Chụp ảnh ở hai vị trí bằng `xcrun simctl io booted screenshot` và đính vào báo cáo task.
@@ -1391,11 +1426,14 @@ Cài bằng `./device.sh` hoặc Xcode ⌘R lên iPhone (iOS 26), rồi kiểm:
 - sáng và tối; màn ngang; Cài đặt → Trợ năng → Chuyển động → **Giảm chuyển động**; chữ cỡ lớn nhất (Dynamic Type);
 - chưa có bài → có bài; tab Search;
 - bung và thu player từ viên kính rộng và viên kính hẹp; **khung đầu tiên có chớp hay có hai lớp kính không**;
-- đang phát mà bấm "Dừng phát": player thu về, viên kính biến mất.
+- đang phát mà bấm "Dừng phát": player thu về, viên kính biến mất;
+- cuộn lên xuống chục lần: **⏭ có lúc nào kẹt sai không** (đang thu nhỏ mà còn ⏭, hoặc đang bung mà mất ⏭).
 
 - [ ] **Step 2: Ghi kết quả**
 
-Lỗi nào người dùng báo thì sửa theo `superpowers:systematic-debugging`, mỗi lỗi một commit. Nếu kết luận là chỗ nối giữa kính accessory và thẻ không chấp nhận được, **dừng plan** và quay lại brainstorming với đường lui trong spec (zoom transition native).
+Lỗi nào người dùng báo thì sửa theo `superpowers:systematic-debugging`, mỗi lỗi một commit.
+
+Nếu ⏭ kẹt sai: `placement` không đáng tin trên máy thật. Khi ấy đổi `MiniPlayerControls(playback: playback, showsNext: !isInline)` trong `MiniPlayerAccessory` thành `showsNext: true`, và `MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline)` trong `PlayerCard` thành `showsNext: true`. Commit riêng, ghi lý do. Nếu kết luận là chỗ nối giữa kính accessory và thẻ không chấp nhận được, **dừng plan** và quay lại brainstorming với đường lui trong spec (zoom transition native).
 
 ---
 
@@ -1410,7 +1448,7 @@ Kiểm còn ≥ 10 GB trống: `df -h ~`. Theo `docs/superpowers/audits/2026-08-
 
 - [ ] **Step 2: So với mức nền**
 
-Mức nền E2: **22,9 ms/giây**. Ghi số mới, cùng phân bổ commit / commit-to-render / GPU, vào file audit. Qua khi **không tệ hơn**. Nếu tệ hơn, nghi phạm đầu tiên là `.glassEffect` trong `CardSurface` (đổi hình mỗi khung) và lượt `onChange(of: expansion.intent)`. Ghi lại rồi hỏi người dùng trước khi sửa.
+Mức nền E2: **22,9 ms/giây**. Ghi số mới, cùng phân bổ commit / commit-to-render / GPU, vào file audit. Qua khi **không tệ hơn**. Nếu tệ hơn, nghi phạm đầu tiên là lượt `onChange(of: expansion.intent)` và việc thẻ luôn nằm trong cây view lúc nghỉ. Ghi lại rồi hỏi người dùng trước khi sửa.
 
 - [ ] **Step 3: Commit**
 
