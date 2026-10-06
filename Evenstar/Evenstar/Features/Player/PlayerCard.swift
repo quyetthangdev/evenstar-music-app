@@ -1108,7 +1108,7 @@ struct PlayerCard: View {
             // Tối chỉ trong phạm vi này. `\.colorScheme` là environment nên nó
             // đi **xuống**, khác `preferredColorScheme` vốn đi ngược lên cửa sổ
             // và kéo theo cả app — xem ghi chú ở `RootView`.
-            expandedContent(size: cardSize, topInset: insets.top,
+            expandedContent(size: cardSize, openWidth: fullWidth, topInset: insets.top,
                             collapsedHeight: anchor.collapsedHeight)
                 .environment(\.colorScheme, .dark)
             grabber(topInset: insets.top)
@@ -1420,7 +1420,23 @@ struct PlayerCard: View {
     /// Xem `queueTitleTravel`.
     private static let queueTitleTravelShare: CGFloat = 0.7
 
-    private func expandedContent(size: CGSize, topInset: CGFloat, collapsedHeight: CGFloat) -> some View {
+    /// - Parameter openWidth: bề rộng thẻ **lúc mở hết** — `fullWidth`, không đổi
+    ///   theo `progress`. Khối nội dung luôn dựng ở bề rộng này rồi mới được
+    ///   căn giữa trong bề rộng thẻ hiện tại (`size.width`).
+    ///
+    ///   Vì sao: thẻ rộng dần ra khi bung, và nếu `NowPlayingContent` đi theo
+    ///   thì tên bài hai dòng xuống dòng ở hai chỗ khác nhau ở hai đầu cú morph.
+    ///   Trong `withAnimation` SwiftUI nội suy *giữa hai bố cục chữ* ấy, và chữ
+    ///   vẽ chồng lên nhau — video QA iPhone 12 (2026-10-06), khung #45–#47 của
+    ///   cú bung. Cùng cơ chế với tên bài trong `MiniPlayerRow`. Khối này chỉ
+    ///   hiện ra từ `progress` 0,5, nên bề rộng lúc mở hết là bề rộng đúng; ở
+    ///   giữa chừng nó tràn đều hai bên vài điểm và `CardClip` cắt đi. Ghim ở
+    ///   `ExpandedContentWidthTests`.
+    ///
+    ///   Chỉ bề rộng ngang đổi. `size` vẫn đi vào `queueTitleTravel` và
+    ///   `contentOffset` như cũ — hình học tấm bìa cố ý bám `cardSize`.
+    private func expandedContent(size: CGSize, openWidth: CGFloat, topInset: CGFloat,
+                                 collapsedHeight: CGFloat) -> some View {
         NowPlayingContent(
             playback: playback,
             showingQueue: $showingQueue,
@@ -1428,6 +1444,7 @@ struct PlayerCard: View {
             titleOpacity: 1 - queueTitleHidden
         )
             .padding(.horizontal, 24)
+            .frame(width: openWidth)
             .frame(width: size.width)
             // Measured from the card's bottom, not from the artwork — see
             // `contentOffset(fullSize:)`. The artwork reaches down behind this,
