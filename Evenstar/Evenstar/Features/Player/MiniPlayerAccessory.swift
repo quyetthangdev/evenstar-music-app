@@ -9,9 +9,10 @@ import SwiftUI
 ///   Nút play/next nằm ngoài vùng ấy, nên bấm nút không bao giờ thành kéo.
 ///
 /// Ẩn đi (opacity 0) khi thẻ rời trạng thái nghỉ: lúc ấy chính thẻ đang vẽ
-/// hàng này, ở đúng chỗ này. Hiện lại ngay khi một cú thu được quyết, chứ
-/// không đợi thẻ về nghỉ, để nằm sẵn dưới tấm thẻ đang mờ đi — xem
-/// `PlayerExpansion.isCollapsing`.
+/// hàng này, ở đúng chỗ này. Hiện lại khi thẻ về nghỉ — sau cú lún và nảy ở
+/// cuối cú thu, khi hai hàng đã trùng khít — và nằm dưới tấm thẻ đang mờ đi.
+/// Không sớm hơn: suốt đoạn cuối cú thu thẻ là kính trong suốt, nên một hàng
+/// nằm dưới sẽ hiện xuyên qua. Xem `PlayerExpansion.showsAccessoryContent`.
 struct MiniPlayerAccessory: View {
     let playback: PlaybackService
     let expansion: PlayerExpansion
@@ -48,6 +49,11 @@ struct MiniPlayerAccessory: View {
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(expansion.showsAccessoryContent ? 1 : 0)
+        // Bật tắt, không bao giờ mờ dần, dù lượt cập nhật có mang animation
+        // nào. Thẻ về nghỉ bên trong `BottomBarStyle.collapseHandoff`, và cú
+        // mờ ấy là của **thẻ**: hàng này phải đặc sẵn dưới nó. Mờ cả hai cùng
+        // lúc thì giữa chừng chữ của hai hàng cùng nhạt — một nhịp chớp.
+        .animation(nil, value: expansion.showsAccessoryContent)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in

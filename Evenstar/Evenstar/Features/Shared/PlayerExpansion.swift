@@ -95,29 +95,48 @@ final class PlayerExpansion {
     private(set) var isCardResting = true
 
     /// Một cú thu đã được quyết (`PlayerCard.morph(to: 0…)`) và thẻ chưa về
-    /// nghỉ — tức đang ở giữa lò xo, hoặc trong đuôi dài của nó.
+    /// nghỉ — tức đang ở giữa lò xo, trong cú lún và nảy ở cuối, hoặc trong cú
+    /// mờ trao tay.
     ///
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO KHÔNG CHỈ DỰA VÀO `isCardResting`
     /// ─────────────────────────────────────────────────────────────────────
-    /// `isCardResting` chỉ lật trong `completion` của `withAnimation`, mà lò xo
-    /// `settle` có một đuôi dài: đo trên iPhone 12 (Release,
-    /// `device2-end_collapse.png`), thẻ đã đáp khít viên kính mà vẫn là tấm thẻ
-    /// đặc màu xám tím, ô bìa tối, thêm **~300ms** nữa — rồi trong một khung
-    /// nhảy sang viên kính hệ thống với ô bìa sáng. Hai độ mờ nhị phân trên
-    /// cùng một cờ lật muộn là một cú cắt, không phải một cú trao tay.
+    /// `isCardResting` chỉ lật khi cú thu đã **xong hẳn** — sau cú nảy (xem
+    /// `PlayerCard.morph(to:curves:)`). Trong khi ấy thẻ phải biết mình đang
+    /// thu hay đang mở: chỉ khi thu, mặt thẻ mới chuyển sang kính ở đoạn cuối
+    /// (`cardSurfaceIsGlass`). Chiều mở và lúc kéo thì thẻ đặc từ khung đầu.
     ///
-    /// Cờ này để accessory hiện nội dung **ngay lúc quyết thu** (nằm sẵn dưới
-    /// thẻ — thẻ luôn chứa khung neo suốt cú thu, nên không có gì vẽ chồng lộ
-    /// ra), và để thẻ tự mờ đi ở vài phần trăm cuối của `progress` — xem
-    /// `PlayerCard.collapseHandoffOpacity`. `isCardResting` giữ nguyên nghĩa
-    /// cũ cho hit test, VoiceOver và việc nhận khung accessory.
+    /// **Không** còn quyết accessory hiện nội dung lúc nào. Bản trước
+    /// (`fbc0837`) cho accessory hiện ngay lúc quyết thu, nằm sẵn dưới một tấm
+    /// thẻ đặc rồi thẻ mờ đi ở 2% cuối. Thẻ giờ là kính trong suốt suốt đoạn
+    /// cuối và lún lệch khỏi viên kính tới ~10pt, nên một hàng nằm dưới sẽ
+    /// **hiện xuyên qua** thành hai dòng chữ lệch nhau. Xem
+    /// `showsAccessoryContent`.
+    ///
+    /// Lật bên trong `withAnimation` của cú thu, nên lớp kính của `CardSurface`
+    /// đi theo đường cong của hình học thay vì bật một bậc — chuyện này chỉ lộ
+    /// khi thả tay lúc thẻ đã gần bằng viên kính.
     private(set) var isCollapsing = false
 
-    /// Accessory có nên vẽ nội dung của nó không: lúc nghỉ, và suốt một cú thu
-    /// đã quyết. Ẩn khi thẻ đang mở hoặc đang kéo — lúc ấy chính thẻ đang vẽ
-    /// hàng này, ở đúng chỗ này, và ở trên nó.
-    var showsAccessoryContent: Bool { isCardResting || isCollapsing }
+    /// Accessory có nên vẽ nội dung của nó không: **chỉ lúc nghỉ**.
+    ///
+    /// Suốt cú thu, chính thẻ vẽ hàng mini — trên một mặt kính trong suốt và
+    /// lệch khỏi viên kính trong lúc lún — nên hàng của accessory phải vắng
+    /// mặt, không thì nó hiện xuyên qua thẻ. Nó hiện lại đúng lúc thẻ về nghỉ:
+    /// cú nảy đã xong, hai hàng trùng khít, và thẻ mờ đi phía trên nó
+    /// (`BottomBarStyle.collapseHandoff`).
+    var showsAccessoryContent: Bool { isCardResting }
+
+    /// Mặt thẻ có được phép là kính không — xem `CardSurface` trong
+    /// `PlayerCard.swift`. Đúng khi thẻ đang thu, và cả lúc nghỉ.
+    ///
+    /// Lúc nghỉ vì cú mờ trao tay: `arriveAtRest()` hạ `isCollapsing` trong
+    /// cùng lượt nó dựng `isCardResting`, ngay lúc thẻ bắt đầu mờ. Chỉ dựa vào
+    /// `isCollapsing` thì mặt thẻ quay về đặc **giữa** cú mờ — một mảng xám
+    /// hiện lên trên viên kính rồi tan. Thẻ nghỉ thì vô hình, nên kính ở đó
+    /// không vẽ ra gì; rời nghỉ là cờ này tắt ngay, ngoài mọi animation, và
+    /// thẻ đặc từ khung đầu.
+    var cardSurfaceIsGlass: Bool { isCollapsing || isCardResting }
 
     /// Phần `progress` do cú kéo trên accessory đóng góp; 0 khi không kéo.
     /// `PlayerCard` cộng nó vào `progress` của mình mỗi khung. Không đi qua
@@ -152,7 +171,8 @@ final class PlayerExpansion {
         isCardResting = false
     }
 
-    /// Thẻ gọi lúc bắt đầu một cú thu về 0 — xem `isCollapsing`.
+    /// Thẻ gọi lúc bắt đầu một cú thu về 0, **bên trong** `withAnimation` của
+    /// hình học — xem `isCollapsing`.
     func commitCollapse() {
         guard !isCollapsing else { return }
         isCollapsing = true

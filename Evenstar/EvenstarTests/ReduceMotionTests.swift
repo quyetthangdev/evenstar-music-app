@@ -448,7 +448,7 @@ final class ReduceMotionTests: XCTestCase {
 ///
 /// What it can observe is `PlayerExpansion`, which the test owns: the card
 /// writes both the destination and the curve into it from inside
-/// `morph(to:curve:)`, so the object is a direct readout of which branch ran.
+/// `morph(to:curves:)`, so the object is a direct readout of which branch ran.
 /// `settled`, `dragDelta` and `cardOpacity` are private `@State` and stay
 /// unobservable — this class cannot tell you the card *looks* right, only that
 /// the branch it took is the branch the setting asks for.
@@ -544,7 +544,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
 /// Everything below runs on `Harness`, declared in this file. None of it
 /// imports a line of `PlayerCard`, and a green run here says nothing about the
 /// player; what it says is whether the mechanism the player's
-/// `morph(to:curve:)` leans on is the mechanism SwiftUI has. Same division of
+/// `morph(to:curves:)` leans on is the mechanism SwiftUI has. Same division of
 /// labour as `SwiftUIOnChangeOrderingEvidenceTests` below, and here for the
 /// same reason: this project has been wrong about SwiftUI internals often
 /// enough, and corrected by measurement often enough, that a comment claiming
@@ -555,7 +555,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
 ///   1. `withAnimation` really does drive intermediate values — so a fade
 ///      written this way actually fades.
 ///   2. `withTransaction(Transaction(animation: nil))` drives **none** — so
-///      the geometry change in `morph(to:curve:)` is a jump and not a fast
+///      the geometry change in `morph(to:curves:)` is a jump and not a fast
 ///      interpolation. The whole point of the feature is that the jump is
 ///      never on screen.
 ///   3. Clearing a value to 0 without animation and animating it back to 1
@@ -622,7 +622,7 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
                         }
                     }
                     // Both writes in one synchronous scope, which is the
-                    // shape `PlayerCard.morph(to:curve:)` has.
+                    // shape `PlayerCard.morph(to:curves:)` has.
                     Trace.dip = { animation in
                         withTransaction(Transaction(animation: nil)) { value = 0 }
                         withAnimation(animation) { value = 1 }
@@ -770,7 +770,7 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
     /// fades, from 0 — SwiftUI does not collapse the pair into the value the
     /// update ends on.
     ///
-    /// This is `PlayerCard.morph(to:curve:)`'s whole mechanism, so the trace
+    /// This is `PlayerCard.morph(to:curves:)`'s whole mechanism, so the trace
     /// is asserted in three ways rather than one: it starts at 0, it passes
     /// through the middle, and it ends at 1.
     func testClearingAndRestoringInOneUpdateStillFadesFromZero() throws {
@@ -909,7 +909,7 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         // whatever it is, it is not the ground — and it says so without naming
         // a channel, so it survives any renderer. The first pins the exact
         // triple, and its job is different: `[255, 0, 0]` is quoted verbatim in
-        // `PlayerCard.morph(to:curve:)`'s doc comment as a measurement, and a
+        // `PlayerCard.morph(to:curves:)`'s doc comment as a measurement, and a
         // measurement quoted in production prose with nothing executing it is
         // how the other findings in this round happened. Keeping only the
         // second would leave that number unpinned; keeping only the first would
@@ -930,7 +930,7 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
     ///
     /// "The additive drop always lands at or below 0" holds because a running
     /// fade never presents *above* its target of 1. That is a property of the
-    /// curve, not of the mechanism: `PlayerCard.morph(to:curve:)` takes any
+    /// curve, not of the mechanism: `PlayerCard.morph(to:curves:)` takes any
     /// `Animation`, and a curve that overshoots would present above 1
     /// mid-flight, put the additive drop at a **positive** value, and show the
     /// geometry jump — the exact failure the feature exists to prevent.
@@ -955,7 +955,7 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
             return Trace.interpolated.max() ?? .nan
         }
 
-        // Every curve `morph(to:curve:)` can be handed with the setting on:
+        // Every curve `morph(to:curves:)` can be handed with the setting on:
         // `expand()` and `collapse()` pass `BottomBarStyle.expand`, and the
         // drag's release passes `settle(initialVelocity:)` — whose reduced
         // branch drops the velocity, so the extremes are the same curve.

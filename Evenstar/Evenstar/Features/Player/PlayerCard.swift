@@ -255,7 +255,7 @@ struct PlayerCard: View {
     ///
     /// Đây là thứ thay cho cú morph ở chế độ giảm chuyển động: thẻ không lớn
     /// dần từ viên thuốc ra toàn màn hình nữa mà đổi hình học tức thì lúc đang
-    /// vô hình rồi mờ vào ở đích. Xem `morph(to:curve:)`.
+    /// vô hình rồi mờ vào ở đích. Xem `morph(to:curves:)`.
     ///
     /// Với Giảm chuyển động tắt, giá trị này không bao giờ bị ghi và
     /// `.opacity(1)` là một modifier không làm gì — đường đi cũ không đổi một
@@ -263,18 +263,37 @@ struct PlayerCard: View {
     ///
     /// **Trong `@State` nó chỉ ở 0 đúng một khoảnh khắc, không bao giờ chờ ai
     /// đặt lại**, và đó là lý do không cần con dấu, không cần cờ "đang hoà mờ",
-    /// không cần `completion` nào. `morph(to:curve:)` hạ nó xuống 0 rồi đưa
+    /// không cần `completion` nào. `morph(to:curves:)` hạ nó xuống 0 rồi đưa
     /// ngay về 1 trong cùng một lượt; thứ chạy tiếp sau đó là phần nội suy của
     /// SwiftUI, còn giá trị trong state đã là 1 rồi. Một cú morph mới cắt
     /// ngang cũng chỉ dựng lại đúng cú hoà mờ ấy, và một cú hoà mờ bị bỏ dở
     /// không để lại tấm thẻ vô hình — đích của nó vốn đã là 1.
     @State private var cardOpacity: Double = 1
 
+    /// Bản sao của `progress` chạy trên đường cong **không dừng ở đích** — chỉ
+    /// để `CollapseLanding` đọc phần âm của nó thành cú lún cuối cú thu.
+    ///
+    /// Hình học của thẻ không được vọt qua 0: SwiftUI nội suy khung thẻ, và vọt
+    /// qua là ngoại suy — thẻ bẹp lại. Nên cú thu chạy cùng một lò xo hai lần
+    /// (`BottomBarStyle.collapse(initialVelocity:afterDrag:)`): hình học dừng ở
+    /// lần đầu chạm 0, còn giá trị này đi tiếp xuống dưới 0 rồi nảy về.
+    ///
+    /// Mỗi cú morph — cả chiều mở — đặt nó về đúng `progress` (không
+    /// animation) rồi animate tới cùng đích với hình học. Hai việc ấy giữ nó
+    /// đi đúng nhịp với hình học: cùng chỗ xuất phát, cùng lúc bắt đầu, và vì
+    /// SwiftUI cộng dồn animation chứ không huỷ, một cú morph cắt ngang cú
+    /// trước cũng mang theo đúng phần dư như hình học mang. Không ghi gì mỗi
+    /// khung kéo — chỉ hai lần ghi mỗi cú morph.
+    ///
+    /// `completion` của nó — không phải của hình học — là lúc thẻ về nghỉ:
+    /// hình học tới 0 ngay trước cú lún, còn thẻ chỉ được nhường chỗ sau cú nảy.
+    @State private var landing: Double = 0
+
     /// Độ mờ của **riêng tấm bìa** trong lúc nó đổi chỗ giữa cú mở và cú đóng
     /// hàng đợi, khi giảm chuyển động.
     ///
     /// Song song với `cardOpacity` và cùng một cơ chế ba dòng — xem
-    /// `setQueueFactor(to:)` và `morph(to:curve:)`. Khác đúng hai điểm, và cả
+    /// `setQueueFactor(to:)` và `morph(to:curves:)`. Khác đúng hai điểm, và cả
     /// hai đều có lý do:
     ///
     ///   - **Chỉ bao tấm bìa, không bao cả thẻ.** Áp ở `artworkView`, phía trên
@@ -828,7 +847,7 @@ struct PlayerCard: View {
                 .task(id: artworkIdentity) { await loadArtwork() }
         }
         // Cú hoà mờ thay cho cú morph khi giảm chuyển động — xem
-        // `cardOpacity` và `morph(to:curve:)`. Ở chế độ thường nó là hằng số 1.
+        // `cardOpacity` và `morph(to:curves:)`. Ở chế độ thường nó là hằng số 1.
         //
         // Một modifier riêng, nhân vào modifier bên dưới chứ không gộp thành
         // một biểu thức với nó. Hai giá trị này trả lời hai câu hỏi khác nhau
@@ -847,7 +866,7 @@ struct PlayerCard: View {
         //
         // **`.opacity` của `View`, và ở đây điều đó là load-bearing.** Giá trị
         // này đi *xuống dưới 0* khi một cú morph đè lên cú hoà mờ đang chạy —
-        // xem `morph(to:curve:)` — và `View.opacity` kẹp số âm thành trong
+        // xem `morph(to:curves:)` — và `View.opacity` kẹp số âm thành trong
         // suốt hoàn toàn. `ShapeStyle.opacity` (tức `Color.blue.opacity(x)`)
         // thì **không**: nó nhân thẳng vào alpha của màu và một alpha âm vẽ ra
         // một bóng ma âm bản. Hai thứ trùng tên và khác hẳn nhau. Đo ở
@@ -864,16 +883,14 @@ struct PlayerCard: View {
         // Vẫn là `View.opacity` bên trong, nên đoạn văn ngay trên còn nguyên
         // hiệu lực.
         .modifier(PresentedOpacity(opacity: cardOpacity))
-        // Cú trao tay sang accessory ở cuối cú thu: thẻ mờ đi ở vài phần trăm
-        // cuối của `progress`, khi còn gần bằng viên kính, thay vì đứng đặc
-        // suốt đuôi lò xo rồi tắt phụt ở `completion`. Xem
-        // `collapseHandoffOpacity`. Ở ngoài cùng, cùng chỗ với
-        // `PresentedOpacity` và cùng lý do: cả thẻ tan như **một** vật.
-        .modifier(CollapseHandoffOpacity(progress: progress,
-                                         isCollapsing: expansion.isCollapsing))
         .opacity(playback.currentTrack == nil ? 0 : 1)
         // Lúc nghỉ, chỗ của thẻ là viên kính accessory của hệ thống, và chính
         // accessory vẽ hàng mini player. Thẻ chỉ hiện khi rời trạng thái nghỉ.
+        //
+        // Rời nghỉ là ngoài mọi animation, nên thẻ hiện ngay trong một khung.
+        // Về nghỉ thì bên trong `BottomBarStyle.collapseHandoff` — xem
+        // `morph(to:curves:)` — nên đây là cú mờ trao tay: kính mờ trên kính,
+        // trên hàng mini của accessory đã nằm sẵn đúng chỗ.
         .opacity(expansion.isCardResting ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
@@ -955,8 +972,8 @@ struct PlayerCard: View {
         .onChange(of: dragIsLive) { _, live in
             guard !live, isDragging else { return }
             isDragging = false
-            morph(to: settled + dragDelta > 0.5 ? 1 : 0,
-                  curve: BottomBarStyle.settle(initialVelocity: 0))
+            let target: Double = settled + dragDelta > 0.5 ? 1 : 0
+            morph(to: target, curves: Self.releaseCurves(to: target, initialVelocity: 0))
         }
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
@@ -1088,7 +1105,7 @@ struct PlayerCard: View {
         let dragTravel = anchor.dragTravel
 
         return ZStack(alignment: .topLeading) {
-            background
+            background(anchor: anchor)
             // Behind the controls, not in front of them.
             //
             // It used to sit last, above `expandedContent`, and that was
@@ -1123,6 +1140,10 @@ struct PlayerCard: View {
         .frame(width: cardWidth, height: height, alignment: .top)
         .modifier(CardClip(progress: progress, insets: insets,
                            collapsedRadius: anchor.collapsedCornerRadius))
+        // Cú lún cuối cú thu: một phép dời, sau khung và sau cú cắt góc, nên
+        // không đụng bố cục, không đụng hình dạng — thẻ đi xuống nguyên vẹn
+        // rồi nảy về. Quãng dời đổi ra điểm bằng chính `dragTravel` đặt thẻ.
+        .modifier(CollapseLanding(progress: landing, travel: dragTravel))
         // Positions the card horizontally. It cannot be centred in the frame
         // below any more: with the accessory's two side margins unequal —
         // which is exactly the landscape case — centring
@@ -1174,16 +1195,18 @@ struct PlayerCard: View {
 
     // MARK: - Pieces
 
-    private var background: some View {
+    private func background(anchor: PlayerAnchor) -> some View {
         ZStack {
             // Mặt thẻ, đọc **giá trị đang được vẽ** chứ không phải giá trị
             // đích — xem doc của `CardSurface`.
             //
             // Nó tồn tại vì hai lớp trên hoà vào nhau bằng opacity, mà opacity
             // **hợp thành** chứ không cộng — không có nó thì tấm thẻ trong suốt
-            // suốt quãng giữa cú morph (F4). Thẻ đặc từ khung đầu — xem
-            // `CardSurface`.
-            CardSurface(progress: progress)
+            // suốt quãng giữa cú morph (F4). Thẻ đặc từ khung đầu khi bung, và
+            // thành kính ở đoạn cuối cú thu — xem `CardSurface`.
+            CardSurface(progress: progress,
+                        glassGate: expansion.cardSurfaceIsGlass ? 1 : 0,
+                        anchor: anchor)
             LinearGradient(
                 // **Bám theo vệt tan của bìa, không phải trải đều cả thẻ.**
                 //
@@ -2338,7 +2361,8 @@ struct PlayerCard: View {
                 // tự animate bằng `@State` của mình, còn cú thu nhỏ nội dung
                 // nhận nó qua `expansion`. Hai bản khác nhau ở đây là hai vật
                 // rời nhau trên màn hình.
-                let curve = BottomBarStyle.settle(
+                let curves = Self.releaseCurves(
+                    to: target,
                     initialVelocity: Self.settleVelocity(
                         verticalVelocity: value.velocity.height,
                         travel: travel,
@@ -2346,28 +2370,39 @@ struct PlayerCard: View {
                         to: target
                     )
                 )
-                // Cú đáp cũng đi qua `morph(to:curve:)`, không tự gọi
+                // Cú đáp cũng đi qua `morph(to:curves:)`, không tự gọi
                 // `withAnimation`. Nó là **animation**, không phải thao tác
                 // trực tiếp: ngón tay đã rời màn hình, và quãng còn lại — một
                 // cú búng từ thẻ đang mở là gần trọn 750 điểm — là đúng thứ
                 // Giảm chuyển động tồn tại để bỏ đi. Phần bám ngón tay nằm ở
                 // `onChanged` phía trên và không đổi.
-                morph(to: target, curve: curve)
+                morph(to: target, curves: curves)
             }
     }
 
     private func expand() {
-        morph(to: 1, curve: BottomBarStyle.expand)
+        morph(to: 1, curves: .init(BottomBarStyle.expand))
     }
 
+    /// Cùng nhịp với `expand()` — xem `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
     private func collapse() {
-        morph(to: 0, curve: BottomBarStyle.expand)
+        morph(to: 0, curves: BottomBarStyle.collapse(afterDrag: false))
+    }
+
+    /// Đường cong cho một cú thả tay — sau cú kéo trên thẻ, trên accessory,
+    /// hoặc cú kéo bị huỷ. Mở thì đúng như cũ, `settle(initialVelocity:)`;
+    /// thu thì tách đôi cho cú lún, cùng vận tốc ấy.
+    private static func releaseCurves(to target: Double,
+                                      initialVelocity: Double) -> BottomBarStyle.MorphCurves {
+        target > 0
+            ? .init(BottomBarStyle.settle(initialVelocity: initialVelocity))
+            : BottomBarStyle.collapse(initialVelocity: initialVelocity, afterDrag: true)
     }
 
     // MARK: - Morph
 
     /// Đưa `queueFactor` tới `target`, bằng **hai** đường tuỳ theo Giảm chuyển
-    /// động — cùng ranh giới, cùng cơ chế và cùng lý do như `morph(to:curve:)`
+    /// động — cùng ranh giới, cùng cơ chế và cùng lý do như `morph(to:curves:)`
     /// ngay bên dưới. Đọc ghi chú ấy trước; chỗ này chỉ nói phần khác.
     ///
     /// ─────────────────────────────────────────────────────────────────────
@@ -2398,7 +2433,7 @@ struct PlayerCard: View {
     /// lượt ấy `queueArtworkOpacity` bị hạ về 0, rồi `withAnimation` đưa nó về
     /// 1. Khung duy nhất có hình học mới ở độ mờ 0 là khung không vẽ ra gì.
     ///
-    /// Cái mất, nói thẳng, giống hệt `morph(to:curve:)`: trạng thái **cũ** bị
+    /// Cái mất, nói thẳng, giống hệt `morph(to:curves:)`: trạng thái **cũ** bị
     /// cắt phụt chứ không tan dần. Một cú hoà mờ chéo thật sự đòi hai bản tấm
     /// bìa cùng tồn tại ở hai `queueFactor` khác nhau, tức đúng cái tái cấu
     /// trúc đang bị chặn ở file này.
@@ -2470,8 +2505,9 @@ struct PlayerCard: View {
     ///   - **Animation** — chạm mở, chạm đóng, cú đáp sau khi thả. Cả ba đều
     ///     gọi hàm này, và chỉ ở đây mới có gì để bỏ đi.
     ///
-    /// Nhánh thường giữ nguyên si cú `withAnimation` cũ, kể cả việc `curve`
-    /// phải tới cả `settled` lẫn `expansion` — xem ghi chú ở `onEnded`.
+    /// Nhánh thường giữ nguyên si cú `withAnimation` cũ, kể cả việc đường cong
+    /// của hình học phải tới cả `settled` lẫn `expansion` — xem ghi chú ở
+    /// `onEnded`. Cú thu thêm một đường thứ hai cho `landing` — xem đoạn cuối.
     ///
     /// Nhánh giảm chuyển động **không phải một đường cong khác**. Đổi curve
     /// thôi thì thẻ vẫn phóng từ viên thuốc ra toàn màn hình, chỉ là phóng theo
@@ -2579,20 +2615,55 @@ struct PlayerCard: View {
     /// ─────────────────────────────────────────────────────────────────────
     /// Rời trạng thái nghỉ ở đầu hàm khi đích > 0; về nghỉ trong `completion`
     /// (hoặc ngay lập tức khi giảm chuyển động) — xem `arriveAtRestIfCollapsed()`.
-    private func morph(to target: Double, curve: Animation) {
-        // Ngoài `withAnimation`: accessory hiện nội dung ngay, dưới tấm thẻ
-        // còn đặc — không có gì để nội suy. Xem `PlayerExpansion.isCollapsing`.
-        if target > 0 { expansion.leaveRest() } else { expansion.commitCollapse() }
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// CÚ THU: HAI ĐƯỜNG CONG, MỘT ĐỒNG HỒ (sửa 2026-10-06 sau QA trên máy)
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Ở nhánh thường, cú thu nhận **hai** đường từ
+    /// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`: hình học dừng ở
+    /// lần đầu chạm 0, còn `landing` đi tiếp xuống dưới 0 rồi nảy về —
+    /// `CollapseLanding` đọc phần âm ấy thành cú lún ~10pt. Ở đoạn cuối, khi
+    /// thẻ còn lớn hơn viên kính một chút, mặt thẻ chuyển sang kính
+    /// (`CardSurface`, `collapseGlass`). Chiều mở thì hai đường là một, và
+    /// không có gì trong ấy đổi so với trước.
+    ///
+    /// Thẻ về nghỉ trong `completion` của `landing`, tức **sau** cú nảy, và về
+    /// bên trong `BottomBarStyle.collapseHandoff`: thẻ kính mờ đi trên viên
+    /// kính của hệ thống, nơi hàng mini của accessory vừa hiện ra đúng chỗ ấy.
+    /// Kính nhường cho kính, nên không có cú đổi màu nào; cái duy nhất thật sự
+    /// hoà vào nhau là ô bìa của bài không bìa.
+    ///
+    /// `commitCollapse()` nằm **trong** `withAnimation` của hình học, để lớp
+    /// kính đi theo đường cong ấy thay vì bật một bậc lúc nhấc tay (xem
+    /// `PlayerExpansion.isCollapsing`). Không còn gì phải hiện "ngay" ở
+    /// accessory: nó chờ tới lúc thẻ về nghỉ.
+    private func morph(to target: Double, curves: BottomBarStyle.MorphCurves) {
+        if target > 0 { expansion.leaveRest() }
         guard BottomBarStyle.reduceMotion else {
-            withAnimation(curve) {
+            // Hai lượt ghi cho `landing`, và thứ tự là cả ý nghĩa — xem doc
+            // của nó. Lượt đầu không animation: bắt kịp `progress` ở đúng chỗ
+            // thẻ đang đứng, kể cả phần ngón tay đã kéo.
+            withTransaction(Transaction(animation: nil)) { landing = progress }
+            withAnimation(curves.landing) {
+                landing = target
+            } completion: {
+                // Một cú mờ: thẻ là thứ duy nhất đọc `isCardResting` mà vẽ ra
+                // thứ nội suy được; accessory tự từ chối animation.
+                withAnimation(BottomBarStyle.collapseHandoff) {
+                    arriveAtRestIfCollapsed()
+                }
+            }
+            withAnimation(curves.geometry) {
+                if target == 0 { expansion.commitCollapse() }
                 settled = target
                 dragDelta = 0
-                expansion.set(progress: target, animation: curve)
-            } completion: {
-                arriveAtRestIfCollapsed()
+                expansion.set(progress: target, animation: curves.geometry)
             }
             return
         }
+
+        if target == 0 { expansion.commitCollapse() }
+        let curve = curves.geometry
 
         // Hỏi trước khi `settled` đổi: `progress` là chỗ xuất phát, và sau
         // dòng dưới thì nó đã là đích rồi.
@@ -2611,6 +2682,7 @@ struct PlayerCard: View {
         withTransaction(Transaction(animation: nil)) {
             settled = target
             dragDelta = 0
+            landing = target
             expansion.set(progress: target, animation: nil)
             if needsFade { cardOpacity = 0 }
         }
@@ -2641,7 +2713,8 @@ struct PlayerCard: View {
             withTransaction(Transaction(animation: nil)) { dragDelta = carried }
             let target: Double = predictedProgress > 0.5 ? 1 : 0
             let travel = PlayerAnchor.dragTravel(for: expansion.anchorFrame)
-            let curve = BottomBarStyle.settle(
+            let curves = Self.releaseCurves(
+                to: target,
                 initialVelocity: Self.settleVelocity(
                     verticalVelocity: verticalVelocity,
                     travel: travel,
@@ -2649,7 +2722,7 @@ struct PlayerCard: View {
                     to: target
                 )
             )
-            morph(to: target, curve: curve)
+            morph(to: target, curves: curves)
         }
     }
 
@@ -2756,42 +2829,61 @@ struct PlayerCard: View {
     /// Xem `morphNeedsFade(from:to:)`.
     static let morphFadeMinimumTravel: Double = 0.02
 
-    /// Độ mờ của cả tấm thẻ ở một `progress` **đang được vẽ**, trong cú trao
-    /// tay sang accessory.
+    /// Mặt thẻ là kính tới đâu, ở một chiều cao thẻ **đang được vẽ**: 0 đặc
+    /// hẳn, 1 kính hẳn. Chỉ có hiệu lực khi đang thu — `CardSurface` nhân nó
+    /// với `PlayerExpansion.cardSurfaceIsGlass`.
     ///
-    /// Chỉ khi đang thu (`PlayerExpansion.isCollapsing`). Chiều mở và lúc kéo
-    /// thì thẻ đặc từ khung đầu — quyết định của spec, chép từ Apple Music (thẻ
-    /// của họ đặc từ khung thứ hai). Áp đối xứng thì cú kéo chậm từ accessory
-    /// lên sẽ cho thấy một tấm thẻ trong suốt nửa chừng trên viên kính rỗng
-    /// suốt nhiều khung, và ở 120Hz khung đầu của cú chạm mở (`progress`
-    /// ~0.01) cũng thành nửa trong.
-    ///
-    /// Kẹp về [0, 1]: lò xo vọt qua 0 khoảng 0,5% rồi quay về, và phần âm ấy
-    /// phải là trong suốt.
-    static func collapseHandoffOpacity(progress: Double, isCollapsing: Bool) -> Double {
-        guard isCollapsing else { return 1 }
-        return min(max(progress / collapseHandoffWindow, 0), 1)
+    /// Theo **hình học**, không theo thời gian: hỏi "thẻ còn lớn gấp mấy viên
+    /// kính", nên cú chuyển rơi vào cùng một cỡ thẻ dù là cú chạm, cú vuốt
+    /// chậm hay cú búng — và đó đúng là cái Apple Music cho thấy: thẻ thành
+    /// kính khi còn lớn hơn viên kính thấy rõ. Tuyến tính trên chiều cao; độ
+    /// chậm dần của lò xo đã là phần êm ở hai đầu.
+    static func collapseGlass(cardHeight: CGFloat, capsuleHeight: CGFloat) -> Double {
+        guard capsuleHeight > 0 else { return 0 }
+        let ratio = Double(cardHeight / capsuleHeight)
+        let t = (collapseGlassStartRatio - ratio) / (collapseGlassStartRatio - collapseGlassEndRatio)
+        return min(max(t, 0), 1)
     }
 
-    /// Quãng `progress` cuối của cú thu mà thẻ mờ đi trên đó.
+    /// Thẻ bắt đầu thành kính khi cao gấp **2** viên kính, và đã là kính hẳn
+    /// khi còn gấp **1,25**. **Chọn, có tính**, ba thứ kéo nhau:
     ///
-    /// **Chọn, có tính** — cùng loại với `morphFadeMinimumTravel`, và cũng là
-    /// quãng đường chứ không phải thời gian. Hai thứ kéo ngược nhau:
+    ///   - **Như Apple Music.** Video 33ms/khung: thẻ còn đặc ở 33ms, đã là
+    ///     kính ở 66ms, chạm đáy ở ~132ms — cú chuyển gọn trong một hai khung,
+    ///     xong trước khi chạm đáy một hai khung, lúc thẻ còn to hơn viên kính
+    ///     thấy rõ. Với `BottomBarStyle.collapse` (bounce 0.22), tính bằng lò xo
+    ///     trên iPhone 12: cú chạm (0.36) đi từ 2× tới 1,25× trong ~28ms và
+    ///     chạm đích ~16ms sau; cú thả tay (0.42) ~33ms và ~17ms. Tức hai khung
+    ///     ở 60Hz, bốn ở 120Hz. `CollapseLandingFrameTests` thấy đúng thế trên
+    ///     ảnh: một khung nửa kính khi thẻ cao ~70pt, khung sau kính hẳn.
+    ///   - **Không sớm hơn.** Kể từ lúc này viên kính của hệ thống — luôn nằm
+    ///     đó, nội dung đã ẩn — hiện xuyên qua thẻ, lệch khỏi hàng mini của thẻ
+    ///     đúng `progress × dragTravel` (thẻ cao 2× → ~42pt, 1,25× → ~11pt). Bắt
+    ///     đầu ở 3× là ~85pt lệch, và thêm hai khung nữa.
+    ///   - **Không muộn hơn.** Hẹp hơn thì cú chuyển chỉ còn một khung trước cú
+    ///     lún — lại thành một cú cắt, chính lỗi `fbc0837` đã gặp với cửa sổ 2%
+    ///     của nó.
+    static let collapseGlassStartRatio: Double = 2
+    static let collapseGlassEndRatio: Double = 1.25
+
+    /// Cú dời xuống của thẻ, tính bằng điểm, khi `landing` đã vọt quá 0 một
+    /// đoạn `overshoot` (đơn vị `progress`). 0 khi chưa vọt qua.
     ///
-    ///   - **Không được rộng.** Hàng mini của thẻ nằm ở mép **trên** thẻ, và mép
-    ///     ấy cách mép trên viên kính đúng `progress × dragTravel`. Trong lúc mờ,
-    ///     cả hai hàng cùng hiện, lệch nhau ngần ấy. Trên iPhone 12
-    ///     (`dragTravel` ~710pt): 0.02 → thẻ cao 48 + 796·0.02 ≈ 64pt, hàng lệch
-    ///     14pt khi thẻ còn đặc hẳn, ~7pt ở nửa đường mờ, ~3pt khi chỉ còn ~25%.
-    ///     0.03 đã là 21pt lệch lúc bắt đầu mờ — thấy được thành hai dòng chữ.
-    ///   - **Không được hẹp.** Mô phỏng lò xo `settle` (0.42/0.14, thả không vận
-    ///     tốc) ở 60Hz: `progress` đi 0.022 → 0.013 → 0.006 → 0.002 → 0 qua bốn
-    ///     khung cuối trước khi chạm 0, tức cú mờ trải ~3 khung (~50ms), ~6 khung
-    ///     ở 120Hz. 0.01 chỉ còn một hai khung — lại thành một cú cắt.
-    ///
-    /// Sau đó lò xo còn lơ lửng ở −0.005 thêm hàng trăm mili giây trước
-    /// `completion`; giờ quãng ấy thẻ đã trong suốt và accessory đã ở đó.
-    static let collapseHandoffWindow: Double = 0.02
+    /// Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng mép
+    /// trên thẻ đi trên mỗi đơn vị `progress` — nên ngay lúc chạm đích mép trên
+    /// đi tiếp **cùng tốc độ**: độ dốc của hàm này ở 0 là 1. Rồi trần mềm
+    /// `tanh`: cú thu thường ngày gần như không bị chạm tới (~11pt thô ra
+    /// ~10pt), cú búng mạnh nhất không lún quá `landingCap`.
+    static func landingOffset(overshoot: Double, travel: CGFloat) -> CGFloat {
+        let raw = CGFloat(max(overshoot, 0)) * travel
+        return landingCap * tanh(raw / landingCap)
+    }
+
+    /// Trần của cú lún. Không trần, cú búng mạnh nhất (vận tốc chặn ở
+    /// `BottomBarStyle.maxSettleVelocity`) vọt qua ~10% quãng đường — gần 70pt,
+    /// thẻ chui hẳn xuống thanh tab. 16 cho ~16pt: "búng mạnh thì lún sâu hơn
+    /// một chút", như spec.
+    static let landingCap: CGFloat = 16
 
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
@@ -2914,28 +3006,69 @@ private struct CardClip: ViewModifier {
 /// `PlaybackScrubber`.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// KHÔNG CÒN LỚP SƯƠNG
+/// KHÔNG CÒN LỚP SƯƠNG — VÀ LỚP KÍNH CHỈ CÓ Ở CUỐI CÚ THU
 /// ─────────────────────────────────────────────────────────────────────────
 /// Ở đây từng có một `.thinMaterial` cho viên thuốc lúc nghỉ, mờ dần theo
 /// `progress`. Lúc nghỉ, chỗ ấy giờ là viên kính accessory của hệ thống, còn
-/// thẻ thì vô hình. Thẻ chỉ hiện ra khi đã rời nghỉ, và khi ấy nó đặc ngay —
-/// không có kính chồng kính, không có khoảng nào nhìn xuyên được.
+/// thẻ thì vô hình. Thẻ hiện ra khi rời nghỉ, và khi ấy nó **đặc ngay** — như
+/// Apple Music, viên kính thành thẻ đặc ở khung thứ hai.
+///
+/// Chiều về thì khác (sửa 2026-10-06 sau QA trên máy, theo video Apple
+/// Music): ở đoạn cuối cú thu, mặt thẻ hoà từ đặc sang `.glassEffect` — cùng
+/// chất liệu với viên kính của hệ thống — để cú lún và cú trao tay sau đó là
+/// kính nhường cho kính. Bao nhiêu và lúc nào: `PlayerCard.collapseGlass`.
+///
+/// `glassGate` là `PlayerExpansion.cardSurfaceIsGlass` đổi ra số, và nó là
+/// một nửa của `animatableData` vì một lý do: cờ ấy lật bên trong
+/// `withAnimation` của cú thu. Thả tay lúc thẻ đã gần bằng viên kính thì
+/// `collapseGlass` đã là 1 ngay; không có cổng nội suy được, mặt thẻ sẽ bật
+/// sang kính trong một khung đúng lúc nhấc tay. Rời nghỉ và mở lại thì cờ tắt
+/// ngoài mọi animation — đặc ngay.
+///
+/// Lớp kính chỉ **có mặt trong cây** khi `glass > 0`: suốt cú bung, lúc kéo, và
+/// gần hết cú thu, không có lớp kính toàn màn hình nào nằm dưới lớp đặc chờ
+/// được vẽ. Nó được chèn vào khi thẻ đã thu còn gấp đôi viên kính — nhỏ.
+/// Lớp đặc mờ đi **phía trên** lớp kính đặc: cú hoà là `(1 − g)·đặc + g·kính`,
+/// không có khung nào hai lớp cùng nhạt cho nền lọt qua.
 private struct CardSurface: View, Animatable {
     var progress: Double
+    var glassGate: Double
+    let anchor: PlayerAnchor
 
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(progress, glassGate) }
+        set {
+            progress = newValue.first
+            glassGate = newValue.second
+        }
     }
 
     var body: some View {
-        // Đặc ngay từ khung đầu, như Apple Music (video 2026-10-06): viên kính
-        // thành thẻ đặc ở khung thứ hai, không có kính chồng kính. Lớp dưới đặc
-        // sẵn; lớp trên là nền của player mở rộng, lên dần theo `progress`.
+        let glass = glassGate * PlayerCard.collapseGlass(
+            cardHeight: anchor.cardFrame(progress: progress).height,
+            capsuleHeight: anchor.collapsedHeight
+        )
         ZStack {
-            Color(.secondarySystemBackground)
-            Color(.systemGroupedBackground)
-                .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
+            if glass > 0 {
+                Color.clear.glassEffect(
+                    .regular,
+                    in: RoundedRectangle(
+                        cornerRadius: PlayerCard.cardTopCornerRadius(
+                            progress: progress, collapsedRadius: anchor.collapsedCornerRadius
+                        ),
+                        style: .continuous
+                    )
+                )
+            }
+            // Đặc ngay từ khung đầu khi bung, như Apple Music (video
+            // 2026-10-06). Lớp dưới đặc sẵn; lớp trên là nền của player mở
+            // rộng, lên dần theo `progress`.
+            ZStack {
+                Color(.secondarySystemBackground)
+                Color(.systemGroupedBackground)
+                    .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
+            }
+            .opacity(1 - glass)
         }
     }
 }
@@ -2946,7 +3079,7 @@ private struct CardSurface: View, Animatable {
 /// VÌ SAO CẦN MỘT KIỂU RIÊNG, KHI `.allowsHitTesting` LÀ MỘT DÒNG
 /// ─────────────────────────────────────────────────────────────────────────
 /// Trong SwiftUI, khác với `alpha` của UIKit, một view ở `opacity` 0 **vẫn
-/// nhận chạm**. Nhánh giảm chuyển động của `PlayerCard.morph(to:curve:)` nhảy
+/// nhận chạm**. Nhánh giảm chuyển động của `PlayerCard.morph(to:curves:)` nhảy
 /// hình học tới toàn màn hình rồi hạ `cardOpacity` về 0 và hoà mờ về 1 trong
 /// `expandFlat` = 0,37s, nên suốt quãng ấy có một tấm player tràn màn hình
 /// không nhìn thấy nằm chắn trên thư viện. Chạm một hàng bài mình vẫn còn
@@ -2976,7 +3109,7 @@ private struct CardSurface: View, Animatable {
 /// Nửa đường chia đôi hai kiểu lệch ấy: lớp nào đang đục hơn thì lớp ấy nhận
 /// chạm. Không có con số đo được nào tốt hơn nửa đường ở đây.
 ///
-/// Với `cardOpacity` xuất phát từ số **âm** — xem `morph(to:curve:)`, cú morph
+/// Với `cardOpacity` xuất phát từ số **âm** — xem `morph(to:curves:)`, cú morph
 /// đè lên một cú hoà mờ đang chạy — ngưỡng này chỉ kéo dài thêm chính khoảng
 /// trống mà ghi chú ấy đã ghi lại và chấp nhận. Không có trạng thái mới nào.
 ///
@@ -2989,7 +3122,7 @@ private struct CardSurface: View, Animatable {
 /// `.allowsHitTesting(true)` — đúng bằng dòng `.opacity(cardOpacity)` nó thay.
 ///
 /// `content.opacity(_:)` là `View.opacity`, **không** phải `ShapeStyle.opacity`
-/// — cả chuỗi lập luận về số âm ở `morph(to:curve:)` đứng trên chỗ ấy, nên
+/// — cả chuỗi lập luận về số âm ở `morph(to:curves:)` đứng trên chỗ ấy, nên
 /// đừng đổi nó thành một `Color` có alpha.
 private struct PresentedOpacity: ViewModifier, Animatable {
     var opacity: Double
@@ -3009,30 +3142,26 @@ private struct PresentedOpacity: ViewModifier, Animatable {
     }
 }
 
-/// Mờ cả tấm thẻ ở vài phần trăm cuối của một cú thu — xem
-/// `PlayerCard.collapseHandoffOpacity`.
+/// Cú lún ở cuối cú thu: dời cả tấm thẻ xuống theo phần **âm** của
+/// `PlayerCard.landing` — xem `PlayerCard.landingOffset` và
+/// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
 ///
 /// Phải là `Animatable`, cùng lẽ với `CardSurface` và `PresentedOpacity`: dưới
-/// `withAnimation`, `.opacity(f(progress))` trần được tính **một lần** ở đích
-/// (`progress` 0 → độ mờ 0) rồi SwiftUI nội suy tuyến tính từ 1 xuống 0 suốt cả
-/// cú lò xo — thẻ nửa trong suốt ở giữa đường, bất kể nó đang to bằng nào.
-/// Chỉ `animatableData` mới thấy giá trị đang vẽ, nên `f` phải chạy trong
-/// `body`, mỗi khung.
+/// `withAnimation`, một `.offset(y: f(landing))` trần được tính **một lần** ở
+/// đích (`landing` 0 → dời 0) rồi SwiftUI nội suy giữa hai số 0 — không có cú
+/// lún nào cả. Chỉ `animatableData` thấy được giá trị đang vẽ, kể cả khi nó
+/// vọt qua đích.
 ///
-/// `isCollapsing` không nội suy: nó lật cùng lượt với đích của lò xo, lúc thẻ
-/// còn ở xa ngoài cửa sổ mờ, nên không có bậc nào.
+/// Một phép dời thuần — `.offset` là một hiệu ứng hình học, không phải bố cục —
+/// nên thân của kiểu này chạy mỗi khung mà không kéo theo một lượt bố cục nào,
+/// và khung thẻ (thứ SwiftUI nội suy) giữ nguyên cỡ suốt cú lún: không bẹp.
+/// Ngoài cú lún, `landing` ≥ 0 và đây là `.offset(y: 0)`.
 ///
 /// Không động tới hit testing: suốt cú thu `progress` (giá trị đích) đã là 0,
-/// nên `.allowsHitTesting` trong `PlayerCard.body` đã nhả chạm xuống thư viện
-/// và accessory từ lúc nhấc tay.
-///
-/// Ở độ mờ 1 — mọi lúc trừ ~3 khung cuối cú thu — đây là một modifier không
-/// làm gì. Trong ~3 khung ấy `.opacity` < 1 trên cả cây thẻ là một lượt hợp
-/// thành ngoài màn hình, nhưng ở cỡ ~64pt × bề ngang viên kính, không phải
-/// toàn màn hình.
-private struct CollapseHandoffOpacity: ViewModifier, Animatable {
+/// nên thẻ đã nhả chạm xuống accessory và thư viện từ lúc nhấc tay.
+private struct CollapseLanding: ViewModifier, Animatable {
     var progress: Double
-    let isCollapsing: Bool
+    let travel: CGFloat
 
     var animatableData: Double {
         get { progress }
@@ -3040,7 +3169,6 @@ private struct CollapseHandoffOpacity: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        content.opacity(PlayerCard.collapseHandoffOpacity(progress: progress,
-                                                          isCollapsing: isCollapsing))
+        content.offset(y: PlayerCard.landingOffset(overshoot: -progress, travel: travel))
     }
 }
