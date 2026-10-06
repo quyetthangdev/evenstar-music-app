@@ -16,4 +16,18 @@ enum MiniPlayerMetrics {
     static let buttonGap: CGFloat = 4
     /// Chữ bắt đầu sau ô bìa và khe hở.
     static var titleLeadingInset: CGFloat { artworkLeadingInset + artworkSide + artworkTitleGap }
+
+    /// Bề rộng cụm ▶ ⏭ của `MiniPlayerControls`: hai nút và khe giữa, hoặc
+    /// một nút khi ⏭ đã co về 0 (khe bị `padding` âm nuốt mất).
+    static func controlsWidth(showsNext: Bool) -> CGFloat {
+        showsNext ? buttonSize * 2 + buttonGap : buttonSize
+    }
+
+    /// Chỗ dành cho tên bài trong một hàng rộng `rowWidth` — đúng chỗ mà
+    /// `HStack` của accessory chừa cho nó: trừ lề trái tới chữ, khe tối thiểu
+    /// của `Spacer`, cụm nút và lề phải.
+    static func titleWidth(rowWidth: CGFloat, showsNext: Bool) -> CGFloat {
+        max(0, rowWidth - titleLeadingInset - artworkTitleGap
+            - controlsWidth(showsNext: showsNext) - trailingInset)
+    }
 }

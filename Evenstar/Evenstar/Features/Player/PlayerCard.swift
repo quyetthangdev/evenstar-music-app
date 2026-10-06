@@ -1103,7 +1103,8 @@ struct PlayerCard: View {
             // anything.
             artworkView(size: cardSize, artworkSide: artworkSide, topInset: insets.top,
                         collapsedHeight: anchor.collapsedHeight)
-            miniChrome(width: cardWidth, height: anchor.collapsedHeight)
+            miniChrome(width: cardWidth, restWidth: anchor.frame.width,
+                       height: anchor.collapsedHeight)
             // Tối chỉ trong phạm vi này. `\.colorScheme` là environment nên nó
             // đi **xuống**, khác `preferredColorScheme` vốn đi ngược lên cửa sổ
             // và kéo theo cả app — xem ghi chú ở `RootView`.
@@ -1358,8 +1359,8 @@ struct PlayerCard: View {
             .allowsHitTesting(false)
     }
 
-    private func miniChrome(width: CGFloat, height: CGFloat) -> some View {
-        MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline)
+    private func miniChrome(width: CGFloat, restWidth: CGFloat, height: CGFloat) -> some View {
+        MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline, restWidth: restWidth)
             .frame(width: width, height: height)
             .opacity(max(0, 1 - progress * 3))
             .allowsHitTesting(progress < 0.1)

@@ -70,13 +70,27 @@ struct MiniPlayerControls: View {
 
 /// Hàng mini player bên trong thẻ, ở `progress` 0. Không có ô bìa: thẻ tự vẽ
 /// bìa để nó lớn liên tục suốt cú bung.
+///
+/// **Tên bài giữ đúng bề rộng của nó trong accessory, dù hàng rộng bao nhiêu.**
+/// Hàng lấy bề rộng của thẻ, mà thẻ rộng dần ra khi bung. Để `Text` đi theo thì
+/// nó có hai bố cục ở hai đầu cú morph — cắt chữ ở hai chỗ khác nhau — và trong
+/// một `withAnimation` SwiftUI nội suy *giữa hai bố cục chữ* chứ không dời một
+/// khối chữ: trên iPhone 12 (QA 2026-10-06) tên bài trôi ở tận phần dưới thẻ
+/// lúc cuối cú thu, và mất hẳn lúc đầu cú bung, trong khi ▶ ⏭ — không đổi cỡ —
+/// vẫn nằm đúng hàng. Khoá bề rộng thì không còn gì để nội suy; phần thẻ rộng
+/// thêm rơi vào `Spacer`, nên ▶ ⏭ vẫn bám mép phải. Ghim ở
+/// `MiniPlayerRowTitleWidthTests`.
 struct MiniPlayerRow: View {
     let playback: PlaybackService
     let showsNext: Bool
+    /// Bề rộng của hàng **lúc nghỉ** — bề rộng accessory, không phải của thẻ.
+    let restWidth: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
             MiniPlayerTitle(playback: playback)
+                .frame(width: MiniPlayerMetrics.titleWidth(rowWidth: restWidth, showsNext: showsNext),
+                       alignment: .leading)
             Spacer(minLength: MiniPlayerMetrics.artworkTitleGap)
             MiniPlayerControls(playback: playback, showsNext: showsNext)
         }
