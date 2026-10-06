@@ -1,21 +1,16 @@
 import SwiftUI
 
-/// How the floating bottom surfaces look and move.
+/// How the player and the controls around it move.
 ///
-/// The counterpart to `BottomBarMetrics`, which owns *where* they are. Between
-/// them: Metrics answers "how big and how far in", Style answers "what it looks
-/// like and how it gets there".
+/// The name is older than the current layout: this file used to style a
+/// hand-drawn floating tab bar as well. The tab bar and its accessory are the
+/// system's now (iOS 26), and what is left here is motion — the player card's
+/// springs, the press feedback, the queue's choreography.
 ///
-/// It exists because the pieces down there are separate views that must read as
-/// one system. The collapsed player and the tab bar sit on the same screen and,
-/// while minimised, on the same row — a shadow on one and none on the other is
-/// visible immediately, and two morphs on different springs read as two
-/// unrelated things happening at once.
-///
-/// It also fixes a dependency that pointed the wrong way. The springs used to
-/// live on `FloatingTabBar`, so `ScrollMinimise` and `RootView` reached into a
-/// *view* to find out how fast to animate. Anything new down here should take
-/// its motion from this type, not from whichever view happens to define it.
+/// It exists because the pieces are separate views that must read as one
+/// system: two morphs on different springs read as two unrelated things
+/// happening at once. Anything new should take its motion from this type, not
+/// from whichever view happens to define it.
 enum BottomBarStyle {
 
     // MARK: - Motion
@@ -39,13 +34,13 @@ enum BottomBarStyle {
     /// `TransportButtonStyle`, `QueueToggleStyle` and `TapHalo` are
     /// `ButtonStyle`s and `ViewModifier`s that cannot read the environment
     /// where the constant is actually needed. The stronger one is agreement:
-    /// `morph` alone is read from `RootView`, `FloatingTabBar`, `PlayerCard`
-    /// and `ScrollMinimise`, and if any two of those disagreed within a frame,
-    /// the two halves of one morph would run different curves — a worse bug
-    /// than having no reduced mode at all. A single storage location makes that
-    /// disagreement impossible to express rather than merely unlikely. This is
-    /// the same argument `RootView.isMinimisedActive` makes: filter once, in
-    /// one place, instead of asking every reader to remember.
+    /// the player's morph is run by `PlayerCard` and, on the same curve, by
+    /// the recede behind it (`RecedeBehindPlayer`), and if those two disagreed
+    /// within a frame the two halves of one morph would run different curves —
+    /// a worse bug than having no reduced mode at all. A single storage
+    /// location makes that disagreement impossible to express rather than
+    /// merely unlikely: filter once, in one place, instead of asking every
+    /// reader to remember.
     ///
     /// **When a change takes effect.** `withAnimation(BottomBarStyle.x)` reads
     /// the constant at the moment of the write, so those sites are always
@@ -252,11 +247,11 @@ enum BottomBarStyle {
     /// a difference — and this file exists to stop the pieces down here drifting
     /// apart.
     ///
-    /// **0.45, and why that is enough to see.** The bar already stakes a
-    /// readability claim on a smaller gap than this one: `tint(isCurrent:)` in
-    /// `FloatingTabBar` distinguishes the current destination from the other
-    /// three by 1.0 against 0.6 and nothing else, and that difference is
-    /// expected to be read at a glance, on a 15pt glyph, without moving. A press
+    /// **0.45, and why that is enough to see.** The hand-drawn tab bar this was
+    /// written for staked a readability claim on a smaller gap than this one:
+    /// it distinguished the current destination from the other three by 1.0
+    /// against 0.6 and nothing else, and that difference was expected to be
+    /// read at a glance, on a 15pt glyph, without moving. A press
     /// dim has to clear that bar, because it is momentary where the tint is
     /// permanent — 0.45 is more than twice the distance from 1. It stops short
     /// of the 0.3 or so that reads as *disabled*: the control is being pressed,
@@ -728,56 +723,9 @@ enum BottomBarStyle {
     @MainActor static var queueTitleIn: Animation { reduceMotion ? queueTitleInFlat : queueTitleInFull }
     private static let queueTitleInFull = Animation.easeOut(duration: 0.10).delay(0.13)
     private static let queueTitleInFlat = queueTitleInFull
-
-    // MARK: - Surface
-
-    /// What lifts a floating surface off the content behind it.
-    ///
-    /// Constant — never interpolated with any progress value. A shadow forces
-    /// an offscreen pass, and one whose radius changes per frame forces a fresh
-    /// one every frame on a view that is already moving. **If the bar or the
-    /// player ever drops frames while animating, this is the first thing to
-    /// remove**; nothing else down here draws offscreen.
-    ///
-    /// The expanded player needs no exception: at full screen it covers
-    /// everything, so its shadow is occluded rather than wasted.
-    ///
-    /// That warning has since been measured, not just guessed at. On device
-    /// (Instruments "Animation Hitches", Release, scrolling the Songs list)
-    /// `FloatingTabBar`'s three call sites cost 87.6 ms/s of hitch — even
-    /// constant, a shadow over `.regularMaterial` cannot be cached, because its
-    /// shape has to be re-derived from the blurred content behind it every
-    /// frame. Removing all three brought it to 0.0 ms/s, against Apple's
-    /// 10 ms/s "bad" threshold, and `FloatingTabBar.swift` no longer calls
-    /// `floatingBarShadow()` anywhere. `PlayerCard`'s one call — on the card
-    /// itself, in `card(size:insets:)`, just above the `.offset` that positions
-    /// it horizontally — is still standing and still **unmeasured**; its fate is
-    /// a separate decision, not something to infer from the tab bar's number.
-    ///
-    /// (That used to read "~line 1176". It was 1240 by the end of the branch and
-    /// is elsewhere again now. Line numbers in a 2,800-line file are a pointer
-    /// that goes stale on the next commit and gives no sign of having done so,
-    /// so it is named by what it is attached to instead — `grep -n
-    /// floatingBarShadow Features/Player/PlayerCard.swift` finds it in one
-    /// step and cannot rot.)
-    private static let shadowColor = Color.black.opacity(0.15)
-    private static let shadowRadius: CGFloat = 10
-    private static let shadowOffsetY: CGFloat = 4
-
-    /// Applies the shared shadow. Use this rather than restating the numbers,
-    /// so a surface added later cannot land with a slightly different lift.
-    static func floatingShadow<V: View>(_ view: V) -> some View {
-        view.shadow(color: shadowColor, radius: shadowRadius, y: shadowOffsetY)
-    }
 }
 
 extension View {
-    /// The shadow every floating bottom surface shares. See
-    /// `BottomBarStyle.floatingShadow`.
-    func floatingBarShadow() -> some View {
-        BottomBarStyle.floatingShadow(self)
-    }
-
     /// One glyph replacing another in place — **without the scale, when motion
     /// is reduced.**
     ///
@@ -809,16 +757,15 @@ extension View {
     /// The same trade `selectionWash(for:)` and the two `ButtonStyle`s made:
     /// answer with opacity, not with shape.
     ///
-    /// **One mechanism, not seven branches.** Five production sites, one each in
-    /// five files, plus two sites in the one demo file reachable from Settings —
-    /// seven sites across six files — read this. Written per-site it would be
-    /// seven chances to miss the eighth.
+    /// **One mechanism, not four branches.** Four production sites, one each in
+    /// four files, read this. Written per-site it would be four chances to miss
+    /// the fifth.
     ///
-    /// (The count used to read "six production sites plus the demo". It was
-    /// never right; it is written out in full here so the next reader can check
-    /// it against `grep -rn symbolReplace\(\)` in one pass rather than
-    /// recounting from a summary. `SymbolReplaceCoverageTests` holds the
-    /// executable half.)
+    /// (The count has moved more than once — "six production sites plus the
+    /// demo", then five plus the demo, then the demo was deleted. It is written
+    /// out in full here so the next reader can check it against
+    /// `grep -rn symbolReplace\(\)` in one pass rather than recounting from a
+    /// summary. `SymbolReplaceCoverageTests` holds the executable half.)
     ///
     /// The unreduced branch is exactly the call it replaces, so nothing changes
     /// for anyone with the setting off.

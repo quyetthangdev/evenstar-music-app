@@ -491,7 +491,7 @@ final class PlayerCardReducedMorphWiringTests: XCTestCase {
         let expansion = PlayerExpansion()
 
         let host = UIHostingController(
-            rootView: PlayerCard(playback: playback, minimised: 0, expansion: expansion)
+            rootView: PlayerCard(playback: playback, expansion: expansion)
                 .environment(library)
                 .environment(playback)
         )

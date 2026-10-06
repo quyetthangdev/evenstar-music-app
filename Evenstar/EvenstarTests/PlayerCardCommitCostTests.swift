@@ -215,10 +215,10 @@ private enum CommitProbe {
 /// The state the harness views hand back so a test can drive them.
 @MainActor
 private enum Drive {
-    /// Writes `PlayerCard.minimised` — the only input to the real card a test
-    /// can write from outside. See `PlayerCardTapVersusDragCostTests` for what
-    /// it does and does not stand for.
-    static var minimised: ((Double) -> Void)?
+    /// Writes `PlayerExpansion.accessoryDragDelta` — the per-frame input a drag
+    /// on the mini player feeds the real card. See
+    /// `PlayerCardTapVersusDragCostTests`.
+    static var accessoryDrag: ((Double) -> Void)?
     /// Starts a control view's morph.
     static var morph: (() -> Void)?
 }
@@ -309,13 +309,12 @@ private struct CardHarness: View {
     let playback: PlaybackService
     let library: LibraryService
     let expansion: PlayerExpansion
-    @State private var minimised: Double = 0
 
     var body: some View {
-        PlayerCard(playback: playback, minimised: minimised, expansion: expansion)
+        PlayerCard(playback: playback, expansion: expansion)
             .environment(library)
             .environment(playback)
-            .onAppear { Drive.minimised = { minimised = $0 } }
+            .onAppear { Drive.accessoryDrag = { expansion.setAccessoryDragDelta($0) } }
     }
 }
 
@@ -420,7 +419,7 @@ private struct CardRig {
             library: library
         )
         let expansion = PlayerExpansion()
-        Drive.minimised = nil
+        Drive.accessoryDrag = nil
 
         if alreadyPlaying { playback.play(track, in: [track]) }
 
@@ -475,7 +474,7 @@ final class PlayerCardCommitCostControlTests: XCTestCase {
     override func tearDown() async throws {
         window?.isHidden = true
         window = nil
-        Drive.minimised = nil
+        Drive.accessoryDrag = nil
         Drive.morph = nil
         try await super.tearDown()
     }
@@ -606,7 +605,7 @@ final class PlayerCardCommitCostTests: XCTestCase {
     override func tearDown() async throws {
         window?.isHidden = true
         window = nil
-        Drive.minimised = nil
+        Drive.accessoryDrag = nil
         try await super.tearDown()
     }
 
@@ -698,12 +697,13 @@ final class PlayerCardCommitCostTests: XCTestCase {
     /// from pixels, so the ranking can be read against the card's travel rather
     /// than against a spring curve taken on trust.
     ///
-    /// The card's own arithmetic gives the inversion, and its derivation is
-    /// spelled out in `card(size:insets:)`: with `H` the full height, `C` the
-    /// collapsed height and `B` the collapsed bottom offset,
-    /// `top(p) = H − B(1−p) − C − (H−C)p`, which is linear in `p` with
-    /// `top(1) = 0`. So `p = 1 − top / top(0)`, and `top(0) = H − B − C` comes
-    /// from the app's own constants rather than a literal.
+    /// The card's own arithmetic gives the inversion: the top edge of
+    /// `PlayerAnchor.cardFrame(progress:)` is linear in `p` with `top(1) = 0`
+    /// and `top(0)` the anchor frame's `minY` (pinned by
+    /// `PlayerAnchorTests.testDragTravelIsExactlyHowFarTheTopEdgeMoves`). So
+    /// `p = 1 − top / top(0)`. The rig has no accessory, so the card grows from
+    /// `PlayerAnchor.fallbackFrame`, and `top(0)` comes from that rather than a
+    /// literal.
     ///
     /// **The resting edge is not read from pixels, and that is a finding rather
     /// than a shortcut.** The first attempt read it right after the tap, on the
@@ -747,9 +747,7 @@ final class PlayerCardCommitCostTests: XCTestCase {
             return nil
         }
 
-        let rest = Int(CGFloat(height)
-                       - BottomBarMetrics.playerBottomOffset
-                       - PlayerCard.collapsedHeight)
+        let rest = Int(PlayerAnchor.fallbackFrame(screen: CGSize(width: 390, height: 844)).minY)
 
         rig.tapToOpen()
         var trace: [(Int, Int?)] = []
@@ -1005,7 +1003,8 @@ final class PlayerCardColdArtworkArrivalTests: XCTestCase {
 /// Either the dynamic properties are re-evaluated every frame anyway, or the
 /// expensive direction is the one the user **drags**, where
 /// `DragGesture.onChanged` writes `@State` at ~250Hz (the number is this
-/// project's own, at the head of `Features/Prototypes/PlayerMorphUIKitView.swift`)
+/// project's own, from the head of the `PlayerMorphUIKitView.swift` prototype,
+/// deleted 2026-10-06 — see git history)
 /// and every write rebuilds the tree, three of every four rebuilds being
 /// thrown away.
 ///
@@ -1030,7 +1029,7 @@ final class PlayerCardColdArtworkArrivalTests: XCTestCase {
 /// each given their own pass of the run loop, and whatever the size of the
 /// change, the frame lands on the same 1.34x. There is one update per frame,
 /// not four — SwiftUI coalesces, and the write itself is only an
-/// invalidation. The note at the head of `PlayerMorphUIKitView.swift` — "four
+/// invalidation. The note at the head of that prototype — "four
 /// rebuilds of the view tree per display frame, three of them thrown away" —
 /// does not describe what this measures.
 ///
@@ -1040,23 +1039,14 @@ final class PlayerCardColdArtworkArrivalTests: XCTestCase {
 /// still.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// WHAT `minimised` STANDS FOR, AND WHERE IT FALLS SHORT
+/// THE DRAG INPUT
 /// ─────────────────────────────────────────────────────────────────────────
-/// A real drag writes `dragDelta`, which is `private @State`. Nothing outside
-/// the type can write it, and there is no way to deliver a touch to a
-/// `DragGesture` from a unit-test process — so the drag is modelled with
-/// `minimised`, the card's own `let` input, written from the harness above it.
-/// Writing it produces a genuinely different `PlayerCard` value and therefore a
-/// full `body` evaluation, which is the thing being counted.
-///
-/// It is **not** the same in one respect: `minimised` feeds fewer downstream
-/// attributes than `progress` does, so more of the graph compares equal and is
-/// skipped. Two amplitudes exist to bracket that — 0.002, a rebuild whose
-/// results are nearly all discarded, and 0.5, which moves the card's margins
-/// and bottom offset so layout is genuinely redone. They came out within 1% of
-/// each other, which says the bracket is narrow and the penalty is the rebuild
-/// itself rather than what the rebuild changes. The 1.34x is still a floor
-/// rather than an estimate, but a floor with a measured ceiling close above it.
+/// A drag that starts on the mini player writes
+/// `PlayerExpansion.accessoryDragDelta` once per frame, and `PlayerCard` folds
+/// it into `progress`. The harness writes that same value through
+/// `setAccessoryDragDelta(_:)` — the real per-frame input, not a stand-in. The
+/// earlier version had to model the drag with `minimised`, which fed fewer
+/// downstream attributes than `progress`; that caveat no longer applies.
 @MainActor
 final class PlayerCardTapVersusDragCostTests: XCTestCase {
 
@@ -1065,7 +1055,7 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
     override func tearDown() async throws {
         window?.isHidden = true
         window = nil
-        Drive.minimised = nil
+        Drive.accessoryDrag = nil
         try await super.tearDown()
     }
 
@@ -1077,7 +1067,7 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
         let name: String
         /// Writes per simulated display frame. 0 is the tap path.
         let writes: Int
-        /// How far `minimised` moves on each write.
+        /// How far `accessoryDragDelta` moves on each write.
         let amplitude: Double
         /// Whether the run loop is serviced *between* the writes of one frame.
         ///
@@ -1102,7 +1092,7 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
 
             var tick = 0
             let frames = CommitProbe.sweep(rig.host.view, frames: Self.frames) { _ in
-                guard let write = Drive.minimised else { return }
+                guard let write = Drive.accessoryDrag else { return }
                 for _ in 0..<path.writes {
                     tick += 1
                     write(Double(tick % 2) * path.amplitude)
@@ -1153,159 +1143,4 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
     }
 }
 
-
-/// **Tấm thẻ có trong suốt giữa cú morph không.**
-///
-/// Người dùng báo hai lần rằng khi thu nhỏ player, thanh tab và danh sách phía
-/// sau nhìn xuyên qua được và bị làm mờ, rồi trả về nguyên trạng một phát khi
-/// xong. Hai vòng chẩn đoán trước đó sai, và cả hai sai vì suy luận từ mã thay
-/// vì đo — nên đây là phép đo.
-///
-/// Cách đo: đặt thẻ lên một nền **xanh lá thuần** (0,255,0), ép chế độ tối, rồi
-/// đếm số hàng trong thân thẻ mà kênh green trội hẳn hai kênh kia. Mọi lớp của
-/// thẻ đều là xám hoặc màu trội rút từ bìa, nên một hàng xanh trội chỉ có thể
-/// là nền lọt qua.
-///
-/// Ba chi tiết của rig, mỗi cái sửa một phép đo đã hỏng trước đó:
-///
-/// - **`alreadyPlaying: true`.** Trên cú mở **lạnh**, `.opacity(currentTrack ==
-///   nil ? 0 : 1)` hoà cả tấm thẻ vào trên `settle`, và cú hoà mờ ấy làm mọi
-///   thứ trông như đang rò rỉ nền — bản đầu của phép đo này đọc ra 65% rò rỉ ở
-///   giữa cú morph và con số ấy hoàn toàn là cú hoà mờ.
-/// - **`artworkless: true`.** Bài **có** bìa thì tấm bìa tràn màn hình và đục
-///   che mất lớp nền, nên độ trong suốt của nền không quan sát được. Bài trong
-///   video người dùng quay là bài không bìa, và đó cũng là ca duy nhất đo được.
-/// - **chế độ tối.** `systemGroupedBackground` ở chế độ sáng gần trắng nên nó
-///   cho cả ba kênh cao, không tách được "nền lọt qua" khỏi "mặt thẻ vốn sáng".
-///
-/// Chỉ đo được chiều **mở**; `h1` §4.5 đã ghi vì sao chiều đóng không đo được
-/// từ test. Cơ chế đối xứng, nên chiều mở là đại diện.
-@MainActor
-final class PlayerCardTranslucencyTests: XCTestCase {
-
-    private var window: UIWindow?
-
-    override func tearDown() async throws {
-        window?.isHidden = true
-        window = nil
-        try await super.tearDown()
-    }
-
-    func testTheFloatingLookIsPresentWhileTheCardTravels() throws {
-        window?.isHidden = true
-        let rig = try CardRig.make(
-            background: Color(red: 0, green: 1, blue: 0),
-            alreadyPlaying: true,
-            artworkless: true
-        )
-        window = rig.window
-        rig.window.overrideUserInterfaceStyle = .dark
-        rig.warmUp()
-
-        let column = 195
-        let height = 844
-
-        func sample() -> (cardTop: Int?, leaking: Int, rows: Int) {
-            let view = rig.host.view!
-            view.setNeedsLayout()
-            view.layoutIfNeeded()
-            let width = column + 1
-            var data = [UInt8](repeating: 0, count: width * height * 4)
-            guard let ctx = CGContext(
-                data: &data, width: width, height: height, bitsPerComponent: 8,
-                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return (nil, 0, 0) }
-            ctx.translateBy(x: 0, y: CGFloat(height))
-            ctx.scaleBy(x: 1, y: -1)
-            view.layer.render(in: ctx)
-
-            var top: Int?
-            for row in 0..<height {
-                let p = (row * width + column) * 4
-                if data[p] > 20 || Int(data[p + 1]) < 200 || data[p + 2] > 20 { top = row; break }
-            }
-            guard let found = top else { return (nil, 0, 0) }
-            // **Độ trội xanh trung bình, không phải số hàng rò rỉ.** Đếm hàng
-            // bão hoà: ở lớp nền đục 0,38 thì *mọi* hàng đều vượt ngưỡng, nên
-            // 38% trong suốt và 95% trong suốt đọc ra như nhau. Cái cần đo là
-            // rò rỉ *bao nhiêu*, và nền là (0,255,0) nên `g` trội hơn hai kênh
-            // kia bao nhiêu chính là chừng ấy.
-            // Bỏ 40 hàng đầu: `found` rơi vào dải **bóng đổ** phía trên mép
-            // thẻ, và dải ấy vẫn gần như xanh nguyên nên nó bơm một sàn ~27 đơn
-            // vị vào mọi phép đo — đủ để một cấu hình đục hẳn đọc ra như đang
-            // rò rỉ. Bắt được vì một đột biến đáng ra phải đỏ lại xanh.
-            let bodyStart = min(found + 40, height - 1)
-            // Và cắt cả đuôi. Đáy thẻ chưa chạm đáy màn hình cho tới khi mở
-            // hết — ở `progress` 0,46 nó còn cách 43pt — nên 43 hàng nền xanh
-            // **nguyên vẹn** nằm dưới thẻ, và tính chúng vào thân thẻ bơm thêm
-            // một sàn ~29 đơn vị. Đủ để một cấu hình đục hẳn đọc ra 29 thay vì
-            // 0, và đủ để một đột biến đáng ra phải đỏ lại xanh. Bắt được vì
-            // đột biến ấy không đỏ.
-            var bodyEnd = height
-            while bodyEnd > bodyStart {
-                let p = ((bodyEnd - 1) * width + column) * 4
-                let isGround = data[p] < 20 && Int(data[p + 1]) > 200 && data[p + 2] < 20
-                if !isGround { break }
-                bodyEnd -= 1
-            }
-            var excess = 0
-            for row in bodyStart..<max(bodyStart + 1, bodyEnd) {
-                let p = (row * width + column) * 4
-                let r = Int(data[p]), g = Int(data[p + 1]), b = Int(data[p + 2])
-                excess += max(0, g - max(r, b))
-            }
-            return (found, excess / max(1, bodyEnd - bodyStart), bodyEnd - bodyStart)
-        }
-
-        rig.tapToOpen()
-        var trace: [(Int?, Int, Int)] = []
-        for _ in 0..<20 {
-            CommitProbe.pump(1.0 / 60)
-            trace.append(sample())
-        }
-
-        for row in trace {
-            CommitProbe.log("[opaque] mép thẻ \(row.0.map(String.init) ?? "—")pt  "
-                  + "trội xanh \(row.1), cao \(row.2) hàng")
-        }
-
-        // Mẫu giữa đường: thẻ đã rời hẳn viên thuốc nhưng chưa tới đích. Ở
-        // trạng thái nghỉ thẻ **phải** trong — viên thuốc là một mặt sương, và
-        // đó là chủ ý — nên mốc dưới 200pt loại đúng trạng thái ấy ra.
-        let midway = trace.first { row in
-            guard let top = row.0 else { return false }
-            return top > 200 && top < 520
-        }
-        let sample = try XCTUnwrap(
-            midway,
-            "không bắt được mẫu nào ở giữa cú morph để chấm"
-        )
-
-        // Đo được ngày 2026-08-19, cùng máy cùng buổi, độ trội xanh trung bình
-        // trong thân thẻ theo `opaqueBaseRamp`:
-        //
-        //              p≈0,46   p≈0,75   đích
-        //   ramp 1          31        5      0     ← dốc đều
-        //   ramp 10          0        0      0     ← chỉ đổi ở khúc cuối
-        //
-        // Tách sạch: 0 so với 31. Ngưỡng 15 nằm giữa với biên rộng cả hai phía. Nó **không** nói "thẻ phải trong bao
-        // nhiêu" — nó nói vẻ nổi trên nội dung phải *có mặt* trong lúc thẻ còn
-        // đang đi, chứ không xuất hiện trong một khung ở cuối. Đó là yêu cầu
-        // người dùng nêu: "lúc nào cũng giữ hiệu ứng đó".
-        //
-        // Bản đầu của test này ghim điều **ngược lại** — rằng thẻ phải đục giữa
-        // cú morph — vì tôi đọc sai triệu chứng. Nó xanh suốt bốn vòng sửa sai
-        // và không cứu được vòng nào; một test ghim đúng giả định của người
-        // viết thì chỉ xác nhận người viết.
-        XCTAssertGreaterThan(
-            sample.1, 15,
-            """
-            vẻ nổi trên nội dung vắng mặt giữa cú morph: độ trội xanh chỉ \
-            \(sample.1) ở mép thẻ \(sample.0.map(String.init) ?? "?")pt. Thân thẻ \
-            đang đục suốt quãng đi rồi mới thành mờ ở khúc cuối, và cú chuyển ấy \
-            đọc ra như một cái nháy. Xem `opaqueBaseRamp`.
-            """
-        )
-    }
-}
+// PlayerCardTranslucencyTests đã xoá 2026-10-06: thẻ giờ đặc từ khung đầu — xem CardSurface.

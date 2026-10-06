@@ -729,11 +729,12 @@ final class SymbolReplaceCoverageTests: XCTestCase {
         // The helper is actually in use, so "no offenders" cannot be satisfied
         // by there being no symbol swaps left in the app.
         //
-        // Five *files*, not five sites: four production files and the demo
-        // file (which has two calls). `adopters` counts files, because a file
-        // that stopped calling the helper is the shape of regression this is
-        // watching for. Was six until `FloatingTabBar`, an adopter, was deleted.
-        XCTAssertGreaterThanOrEqual(adopters, 5, "only \(adopters) files call symbolReplace()")
+        // Four *files*, all production, one call each. `adopters` counts
+        // files, because a file that stopped calling the helper is the shape
+        // of regression this is watching for. Was six until `FloatingTabBar`,
+        // an adopter, was deleted, and five until the `PlayerMorphDemoView`
+        // prototype went with `BottomBarMetrics` (2026-10-06).
+        XCTAssertGreaterThanOrEqual(adopters, 4, "only \(adopters) files call symbolReplace()")
     }
 }
 
@@ -1520,7 +1521,8 @@ final class QueueTransitionDistanceTests: XCTestCase {
             // from the artwork's own square. This is the full-bleed cover.
             artworkTop: 0,
             queueThumbCentre: PlayerCard.queueThumbCentre(topInset: topInset),
-            queueThumbSide: QueuePanel.headerArtwork
+            queueThumbSide: QueuePanel.headerArtwork,
+            collapsedHeight: 48
         )
     }
 }

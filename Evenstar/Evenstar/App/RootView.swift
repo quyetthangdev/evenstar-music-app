@@ -112,6 +112,7 @@ struct RootView: View {
             // Thanh tab, cú thu nhỏ khi cuộn và tab tìm kiếm tách riêng đều là
             // của hệ thống — thay cho `FloatingTabBar` và `ScrollMinimise`.
             .tabBarMinimizeBehavior(.onScrollDown)
+            .miniPlayerAccessory(playback: playback, expansion: expansion)
             // The content recedes as the player opens. The transform lives in
             // the modifier, not here — see `PlayerExpansion.swift`.
             .recedesBehindPlayer(expansion)
@@ -127,8 +128,7 @@ struct RootView: View {
                     .zIndex(-1)
             }
 
-            // Tạm cho tới Task 5: thẻ cũ, không bao giờ thu nhỏ.
-            PlayerCard(playback: playback, minimised: 0, expansion: expansion)
+            PlayerCard(playback: playback, expansion: expansion)
         }
         // The one write of `BottomBarStyle.reduceMotion`, in the whole app.
         //
@@ -208,5 +208,34 @@ struct RootView: View {
         // ấy — xem ghi chú dài ở chỗ đó. Đừng thêm lại một `.task` khôi phục ở
         // đây: hai `.task` anh em không được SwiftUI xếp thứ tự, và cái giá là
         // một hàng đợi bị xoá trắng.
+    }
+}
+
+/// Gắn accessory. Đây là chỗ **duy nhất** đọc `currentTrack` cho nó, và nằm
+/// trong một modifier chứ không trong `RootView.body`: body ấy dựng lại
+/// `TabView` cùng năm tab, còn body của modifier này chỉ bọc `content` đã dựng
+/// sẵn. Cùng mẫu với `RecedeBehindPlayer`.
+///
+/// `EmptyView()` khi không có bài: spike 2026-10-06 xác nhận hệ thống khi ấy ẩn
+/// hẳn viên kính, rồi cho nó trượt vào khi có bài, giữ nguyên tab đang mở và
+/// vị trí cuộn.
+private struct MiniPlayerAccessoryModifier: ViewModifier {
+    let playback: PlaybackService
+    let expansion: PlayerExpansion
+
+    func body(content: Content) -> some View {
+        content.tabViewBottomAccessory {
+            if playback.currentTrack != nil {
+                MiniPlayerAccessory(playback: playback, expansion: expansion)
+            } else {
+                EmptyView()
+            }
+        }
+    }
+}
+
+private extension View {
+    func miniPlayerAccessory(playback: PlaybackService, expansion: PlayerExpansion) -> some View {
+        modifier(MiniPlayerAccessoryModifier(playback: playback, expansion: expansion))
     }
 }

@@ -42,7 +42,8 @@ final class ArtworkGeometryTests: XCTestCase {
             artworkSide: artworkSide,
             artworkTop: artworkTop,
             queueThumbCentre: thumbCentre,
-            queueThumbSide: thumbSide
+            queueThumbSide: thumbSide,
+            collapsedHeight: 48
         )
     }
 
@@ -65,10 +66,10 @@ final class ArtworkGeometryTests: XCTestCase {
     func testTheCollapsedPillKeepsItsOwnSizeAndPlace() {
         let g = geometry(progress: 0, queueFactor: 0)
 
-        XCTAssertEqual(g.width, 36, accuracy: 0.001, "collapsedArtwork")
-        XCTAssertEqual(g.height, 36, accuracy: 0.001)
-        XCTAssertEqual(g.centre.x, 36, accuracy: 0.001, "inset 18 + half of 36")
-        XCTAssertEqual(g.centre.y, 27, accuracy: 0.001, "half of collapsedHeight 54")
+        XCTAssertEqual(g.width, 30, accuracy: 0.001, "MiniPlayerMetrics.artworkSide")
+        XCTAssertEqual(g.height, 30, accuracy: 0.001)
+        XCTAssertEqual(g.centre.x, 27, accuracy: 0.001, "inset 12 + half of 30")
+        XCTAssertEqual(g.centre.y, 24, accuracy: 0.001, "half of the accessory's 48")
         XCTAssertEqual(g.shapeProgress, 0, accuracy: 0.001, "rounded, no dissolve")
     }
 
@@ -110,7 +111,7 @@ final class ArtworkGeometryTests: XCTestCase {
         XCTAssertEqual(g.centre.y, cardSize.height / 2, accuracy: 0.001)
     }
 
-    /// Hai chế độ chỉ khác nhau ở đầu **mở**. Viên thuốc thu gọn là 36pt vuông
+    /// Hai chế độ chỉ khác nhau ở đầu **mở**. Viên thuốc thu gọn là 30pt vuông
     /// ở cùng một chỗ, dù bài có bìa hay không — nếu không, đổi bài sẽ làm
     /// thumbnail nhảy.
     func testBothModesShareTheSameCollapsedThumbnail() {
@@ -210,7 +211,8 @@ final class ArtworkGeometryTests: XCTestCase {
                     artworkSide: artworkSide,
                     artworkTop: artworkTop,
                     queueThumbCentre: thumbCentre,
-                    queueThumbSide: thumbSide
+                    queueThumbSide: thumbSide,
+                    collapsedHeight: 48
                 )
                 let leading = g.centre.x - g.width / 2
                 let trailing = g.centre.x + g.width / 2
@@ -265,13 +267,13 @@ final class ArtworkGeometryTests: XCTestCase {
             let g = geometry(progress: progress, queueFactor: 0, fullBleed: false)
 
             XCTAssertEqual(
-                g.width, 36 + (artworkSide - 36) * progress,
+                g.width, 30 + (artworkSide - 30) * progress,
                 accuracy: 0.001, "width ở progress \(progress)"
             )
             XCTAssertEqual(g.height, g.width, accuracy: 0.001,
                            "vuông ở progress \(progress)")
             XCTAssertEqual(
-                g.centre.x, 36 + (cardSize.width / 2 - 36) * progress,
+                g.centre.x, 27 + (cardSize.width / 2 - 27) * progress,
                 accuracy: 0.001, "centre.x ở progress \(progress)"
             )
         }
@@ -292,13 +294,13 @@ final class ArtworkGeometryTests: XCTestCase {
             let g = geometry(progress: progress, queueFactor: 1, fullBleed: true)
 
             XCTAssertEqual(
-                g.width, 36 + (thumbSide - 36) * progress,
+                g.width, 30 + (thumbSide - 30) * progress,
                 accuracy: 0.001, "width ở progress \(progress)"
             )
             XCTAssertEqual(g.height, g.width, accuracy: 0.001,
                            "ô header vuông ở progress \(progress)")
             XCTAssertEqual(
-                g.centre.x, 36 + (thumbCentre.x - 36) * progress,
+                g.centre.x, 27 + (thumbCentre.x - 27) * progress,
                 accuracy: 0.001, "centre.x ở progress \(progress)"
             )
         }
@@ -310,10 +312,10 @@ final class ArtworkGeometryTests: XCTestCase {
     func testTheFullBleedEndsAreWhereTheyAlwaysWere() {
         for factor in stride(from: 0.0, through: 1.0, by: 0.25) {
             let collapsed = geometry(progress: 0, queueFactor: factor, fullBleed: true)
-            XCTAssertEqual(collapsed.width, 36, accuracy: 0.001, "queueFactor \(factor)")
-            XCTAssertEqual(collapsed.height, 36, accuracy: 0.001, "queueFactor \(factor)")
-            XCTAssertEqual(collapsed.centre.x, 36, accuracy: 0.001, "queueFactor \(factor)")
-            XCTAssertEqual(collapsed.centre.y, 27, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.width, 30, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.height, 30, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.centre.x, 27, accuracy: 0.001, "queueFactor \(factor)")
+            XCTAssertEqual(collapsed.centre.y, 24, accuracy: 0.001, "queueFactor \(factor)")
         }
 
         let open = geometry(progress: 1, queueFactor: 0, fullBleed: true)

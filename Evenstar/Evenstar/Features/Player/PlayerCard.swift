@@ -1,7 +1,12 @@
 import SwiftUI
 
 /// The player. One card whose shape is a function of `progress`: 0 is the
-/// collapsed bar above the library, 1 is the full screen.
+/// frame of the system's tab-bar accessory, 1 is the full screen.
+///
+/// At rest the card is invisible and takes no touches: the accessory
+/// (`MiniPlayerAccessory`) draws the mini player there. The card appears the
+/// moment it leaves rest, covering the accessory exactly, and grows out of the
+/// accessory's frame — see `PlayerAnchor` and `PlayerExpansion`.
 ///
 /// Mini player and Now Playing are not separate views. They are this card at
 /// two ends of one continuum, which is what lets the artwork grow continuously
@@ -11,83 +16,6 @@ import SwiftUI
 struct PlayerCard: View {
     let playback: PlaybackService
 
-    /// 0 collapsed on its own row above the tab bar, 1 slotted into the tab
-    /// row between the leading circle and the search button. Interpolated
-    /// rather than a `Bool` so the card can animate between the two.
-    ///
-    /// Three things read it and **all three must**: `collapsedSideMargin`,
-    /// `collapsedBottomOffset`, and — through that offset — `dragTravel`.
-    let minimised: Double
-
-    // No explicit init. The one that stood here defaulted `minimised` to 0 so
-    // `RootView` kept compiling while it was out of scope; it now passes a real
-    // value, and a default of 0 would mean any future call site silently gets a
-    // player that never joins the tab row — no compiler error, no failing test,
-    // nothing visible. The synthesized memberwise init requires both arguments.
-
-    /// The collapsed bar's own height. Lists do not read this directly — they
-    /// apply `clearsBottomBar()`, which reaches
-    /// `BottomBarMetrics.clearanceWithPlayer(bottomSafeAreaInset:)` and adds
-    /// everything below the floating pill. Do not duplicate this as a literal.
-    ///
-    /// `nonisolated` because this type is a `View`, and under
-    /// `InferIsolatedConformances` that makes the whole type — including its
-    /// static constants — main-actor isolated. A `let CGFloat` has nothing for
-    /// an actor to protect, and the isolation is not free: it stops any
-    /// nonisolated type from reading the number, which is exactly what the
-    /// paragraph above forbids solving by writing `54` again. `BottomBarMetrics`
-    /// hands out its own constants the same way, from a plain nonisolated enum.
-    nonisolated static let collapsedHeight: CGFloat = 54
-
-    /// How far the collapsed pill is inset from each side of the safe area.
-    ///
-    /// Reads the bar's own margin rather than restating it. The pill and the
-    /// tab bar are two floating surfaces one above the other, and their side
-    /// edges have to line up; as two separate literals they lined up only for
-    /// as long as nobody changed one of them.
-    private static let pillSideMargin = BottomBarMetrics.sideMargin
-    /// A true pill: half the collapsed height, so the caps are semicircles.
-    private static let collapsedCornerRadius: CGFloat = collapsedHeight / 2
-
-    private static let collapsedArtwork: CGFloat = 36
-
-    /// Viên pill co bấy nhiêu khi đã thu hẳn, cho khớp với hai viên tròn hai bên.
-    ///
-    /// 0.90 chứ không 0.86 như `BottomBarStyle.collapsedChromeScale`: viên pill
-    /// rộng gấp bốn lần viên tròn, và cùng một tỉ lệ phần trăm trên một vật dài
-    /// hơn thì đọc ra là co nhiều hơn hẳn. Hai con số khác nhau để hai vật
-    /// **trông như** co bằng nhau.
-    private static let pillMinimisedScale: CGFloat = 0.90
-
-    /// Lề của viên pill nới vào bấy nhiêu khi thu, để bù khe hở mà chính cú co
-    /// vừa đẻ ra.
-    ///
-    /// Cùng bài toán với `BottomBarStyle.collapsedChromeInset` ở thanh bar, chỉ
-    /// ngược dấu: ở đó hai viên tròn neo mép ngoài nên co làm khe rộng ra, và ta
-    /// kéo chúng vào. Ở đây viên pill co quanh tâm nó, nên **cả hai** mép lùi
-    /// vào và cả hai khe rộng ra. Nới lề cho khung rộng thêm trước khi co thì
-    /// hai mép trở lại gần hai viên tròn.
-    private static let pillMinimisedRelief: CGFloat = 13
-    /// How far the collapsed artwork sits in from the pill's leading edge.
-    ///
-    /// Larger than it looks like it needs to be, because the pill's leading
-    /// cap is a semicircle and the visible gap is therefore not uniform: at
-    /// mid-height the pill's edge is at x = 0, but level with the artwork's
-    /// top and bottom edges the curve has already come in — at this height, to
-    /// x ≈ 6.9. The eye judges that tightest point, not the generous gap in
-    /// the middle, so the inset has to be set against it.
-    ///
-    /// At 18 the tightest gap is ~11pt and the artwork's corner sits 20.1pt
-    /// from the cap's centre against a 27pt radius. Room remains to go further,
-    /// but not indefinitely — the corner starts touching the curve around 27,
-    /// and past that the artwork clips.
-    ///
-    /// These three numbers move together. Changing `collapsedHeight` or
-    /// `collapsedArtwork` changes where the curve is at the artwork's edge, so
-    /// the inset has to be re-derived rather than carried over.
-    private static let collapsedArtworkInset: CGFloat = 18
-    /// Between the collapsed artwork's trailing edge and the title.
-    private static let collapsedArtworkGap: CGFloat = 10
     /// Reference size for the placeholder glyph's `.scaleEffect`, and nothing
     /// else. Any fixed number works — see the note at the placeholder in
     /// `artworkView` for why the glyph is drawn at a constant `.font(size:)`
@@ -281,94 +209,18 @@ struct PlayerCard: View {
     }
 
 
-    /// Bao lâu thì lớp nền đục của `background` đục hẳn, tính theo `progress`.
+    /// Lớp nền của player mở rộng lên tới đâu, theo `progress`, trên lớp đặc
+    /// của viên thuốc trong `CardSurface`.
     ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// 3 → 10, VÀ ĐÂY LÀ LÝ DO
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Người dùng báo: thu nhỏ player thì thanh tab bị mờ và tối đi suốt cú
-    /// thu, rồi trả về nguyên trạng một phát khi xong.
+    /// Con số này từng là cái núm quyết định thẻ **trong suốt** bao lâu giữa
+    /// cú morph: lớp nền khi ấy là lớp đục duy nhất, nằm dưới một `.thinMaterial`
+    /// của viên thuốc, và mọi giá trị khác 1 đều đẻ ra một cú nháy ở chỗ thẻ
+    /// thôi đặc (đo trên video người dùng quay — xem git log của file này).
     ///
-    /// Cơ chế, đọc ra từ thứ tự lớp chứ không phải đoán: `.thinMaterial` nằm
-    /// **trên** lớp nền đục trong `ZStack` của `background`, nên nó làm mờ mọi
-    /// thứ lọt qua lớp nền ấy. Với `progress * 3`, lớp nền chỉ đục hẳn ở 1/3,
-    /// nên suốt `0 < progress < 1/3` thanh tab phía sau lọt qua rồi bị làm mờ.
-    /// Và đó **đúng** là khoảng tấm thẻ đè lên thanh tab: mép dưới của thẻ chỉ
-    /// đi được `collapsedBottomOffset` (79pt ở `minimised` 0) trong cả cú morph,
-    /// trong khi thanh tab cao hơn thế.
-    ///
-    /// Đo bằng ảnh chụp giữ tay giữa cú kéo: ở `progress` ≈ 0,28 lớp nền mới
-    /// đục 0,84 — 16% còn lại là thanh tab lọt qua — và cả hàng tab đọc ra xám
-    /// đi, viên chọn mất màu.
-    ///
-    /// Với 10, lớp nền đục hẳn ở 0,1. Từ đó trở lên thanh tab bị **che hẳn**
-    /// thay vì bị nhìn xuyên qua, tức nó luôn rõ nét ở mọi chỗ còn nhìn thấy
-    /// được — không còn gì để nhảy khi cú thu kết thúc.
-    ///
-    /// **Vẻ mờ của viên thuốc lúc nghỉ không mất.** Ở `progress` 0 lớp nền vẫn
-    /// là 0 và `.thinMaterial` vẫn đục hoàn toàn, nên viên thuốc vẫn nhìn thấy
-    /// danh sách phía sau đúng như trước — và ở đúng lúc ấy nó **không** đè lên
-    /// thanh tab, nên hai chuyện không đụng nhau. Cái mất là vẻ mờ trong khoảng
-    /// `0,1 < progress < 1/3` của một cú kéo dở tay, nơi thẻ giờ đục sớm hơn.
-    ///
-    /// Đừng đổi con số này mà quên `materialCutoff` ngay dưới: hai cái là một
-    /// phép suy, không phải hai lựa chọn.
-    /// **Đây là cái núm quyết định cú nháy ở cuối cú thu nhỏ.** Nó nói lớp nền
-    /// đục hết đục ở `progress` nào, và vì thế cú chuyển từ *thẻ đặc* sang *thẻ
-    /// mờ* trải ra bao lâu:
-    ///
-    ///     10   mờ từ progress 0,10   ~2–3 khung   ⇒ đọc ra như một cú nháy
-    ///      3   mờ từ progress 0,33   ~6 khung     (giá trị gốc)
-    ///      2   mờ từ progress 0,50   ~9 khung
-    ///      1   mờ từ progress 1,00   cả cú morph
-    ///
-    /// Đo bằng cách đếm khung trên video người dùng quay: ở `progress` 0,34 và
-    /// 0,13 thân thẻ vẫn đặc — không thấy hàng danh sách nào phía sau — rồi ở
-    /// trạng thái nghỉ thì thấy hết. Cả cú chuyển gói trong 2–3 khung.
-    ///
-    /// Đánh đổi, và nó không tránh được: cú chuyển *là* chỗ tấm thẻ thôi đặc.
-    /// Trải nó ra lâu hơn nghĩa là tấm thẻ nhìn xuyên thấy được sớm hơn, lúc nó
-    /// còn to. Không có giá trị nào vừa giữ thẻ đặc lúc còn to vừa không có cú
-    /// chuyển ở cuối.
-    /// **1 nghĩa là không còn mốc nào cả.** Lớp nền đục đúng bằng `progress`,
-    /// nên tấm thẻ mờ theo tỉ lệ ở mọi thời điểm và vẻ nổi trên nội dung giữ
-    /// liên tục suốt cú morph — không có `progress` nào mà nó "bắt đầu mờ",
-    /// nên không có gì để nhảy.
-    ///
-    /// Đo trên video người dùng quay bản hệ số 10: dải màn hình y600–700 tụt
-    /// 12,05 đơn vị sáng **trong một khung** (khung 157), trong khi cùng đoạn
-    /// ấy cú thu nhỏ nền trôi đều qua 11 khung và thanh tab đậm dần qua 13
-    /// khung. Cú nhảy nằm gọn ở chỗ tấm thẻ thôi đặc, và hệ số này là thứ
-    /// quyết định nó diễn ra trong bao lâu.
+    /// Câu hỏi ấy không còn: thẻ đặc từ khung đầu — xem `CardSurface`. Giờ nó
+    /// chỉ nói màu mặt thẻ chuyển từ màu viên thuốc sang màu player mở rộng
+    /// nhanh tới đâu. 1 là đúng bằng `progress`: không có mốc nào để mắt bắt.
     static let opaqueBaseRamp: Double = 1
-
-    /// Where the frosted layer in `background` stops being rendered at all.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// KHÔNG CÒN SUY RA TỪ `opaqueBaseRamp`, VÀ ĐÂY LÀ LÝ DO
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Nó từng là `1 / opaqueBaseRamp + 0.01`, dẫn từ chỗ lớp nền đục hết đục:
-    /// trên mốc ấy lớp sương bị che hoàn toàn nên tháo đi là miễn phí.
-    ///
-    /// Phép dẫn ấy **chết khi `opaqueBaseRamp` xuống 1**: lớp nền khi ấy không
-    /// bao giờ đục hẳn trừ đúng `progress` = 1, nên công thức cho ra **1,01** —
-    /// tức `progress < materialCutoff` luôn đúng, và một `.thinMaterial` cỡ
-    /// màn hình nằm trong cây **vĩnh viễn**, ở opacity ~0,01.
-    ///
-    /// Bắt được bằng ảnh Color Offscreen-Rendered Yellow trên Release: màn
-    /// player bài **không bìa** vàng trở lại toàn bộ, sau khi lần đo trước nó
-    /// gần sạch. Đúng cái bẫy mà chú thích của chính lớp ấy đã gọi tên — "it
-    /// costs the same at opacity 0.01 as at 1" — và tôi vô hiệu hoá cái rào ấy
-    /// bằng cách cột nó vào một hằng số vừa đi xuống 1.
-    ///
-    /// Nay là một con số riêng, và nó trả lời một câu khác: **trên `progress`
-    /// nào thì lớp sương không còn đóng góp gì nhìn thấy được.** Với
-    /// `opacity(1 - progress / materialCutoff)` thì tại đúng mốc này độ mờ
-    /// bằng 0, nên tháo nó ở đây không thể chớp.
-    ///
-    /// 0,5: lớp sương chỉ sống ở nửa dưới cú morph, nơi tấm thẻ đủ nhỏ để nó
-    /// còn là một mặt kính chứ không phải một tấm phủ cả màn hình.
-    static let materialCutoff: Double = 0.5
 
     // `@Environment(\.displayScale)` đã bị bỏ khỏi kiểu này.
     //
@@ -386,11 +238,11 @@ struct PlayerCard: View {
     @State private var settled: Double = 0
     /// How far the in-flight drag has moved it. Zeroed when the drag settles.
     @State private var dragDelta: Double = 0
-    /// Whether a drag is in flight. Sizes the hit region — see the note at the
-    /// `.contentShape` call site for why that cannot be derived from
-    /// `progress`. Deliberately not folded into `dragDelta != 0`: a drag that
-    /// has clamped `progress` to 0 is still in flight and must keep the large
-    /// region, which is precisely the case that broke.
+    /// Whether a drag is in flight. Keeps the card taking touches — see
+    /// `.allowsHitTesting` in `body` for why that cannot be derived from
+    /// `progress` alone. Deliberately not folded into `dragDelta != 0`: a drag
+    /// that has clamped `progress` to 0 is still in flight and must keep the
+    /// finger, which is precisely the case that broke.
     @State private var isDragging = false
 
     /// Độ mờ của cả tấm thẻ. **Chỉ rời khỏi 1 khi Giảm chuyển động đang bật.**
@@ -546,7 +398,13 @@ struct PlayerCard: View {
     @State private var tint: Color?
 
 
-    private var progress: Double { min(max(settled + dragDelta, 0), 1) }
+    /// Cộng thêm phần kéo đến từ accessory. Một cú kéo bắt đầu trên mini player
+    /// lái thẻ qua `expansion` chứ không qua `dragDelta`, vì cử chỉ ấy thuộc về
+    /// view khác. Lúc thả, thẻ chuyển phần ấy sang `dragDelta` — xem
+    /// `handle(_:)`.
+    private var progress: Double {
+        min(max(settled + dragDelta + expansion.accessoryDragDelta, 0), 1)
+    }
 
     /// Publishes `progress` outward so the content behind the card can recede
     /// with it, the way a sheet pushes its presenting screen back.
@@ -569,78 +427,6 @@ struct PlayerCard: View {
     /// parameters and lands with the card, rather than being driven frame by
     /// frame from here.
     let expansion: PlayerExpansion
-
-    /// How far the collapsed pill is inset from each edge of the **safe area**
-    /// *at collapsed rest*: `pillSideMargin` (21) on its own row, widening to
-    /// `BottomBarMetrics.minimisedPlayerInset` (79) as the pill slots into the
-    /// tab row between the leading circle and the search button.
-    ///
-    /// Safe-area-relative, and it stays that way even though the vertical
-    /// measurements are now screen-relative: `FloatingTabBar` divides up the
-    /// safe-area width (its `.padding(.horizontal,)` is applied inside the safe
-    /// area), so the slot this pill has to land in is measured from there.
-    ///
-    /// Safe area, not screen: this is the space `FloatingTabBar` divides up,
-    /// and the pill has to land in the slot the bar reserved. `card(size:insets:)`
-    /// adds `insets.leading`/`insets.trailing` to convert it into the physical
-    /// coordinates this view actually lays out in — separately per side, since
-    /// those two are not equal in landscape. See the note there.
-    ///
-    /// Deliberately free of `progress`. The card's own layout multiplies it by
-    /// `(1 - progress)` at the call site so an expanded card is unaffected; the
-    /// hit region must NOT, and reads this resting value directly behind its
-    /// drag-state gate — see the note at the `.contentShape` call site.
-    private var collapsedSideMargin: CGFloat {
-        Self.pillSideMargin
-            + (BottomBarMetrics.minimisedPlayerInset - Self.pillMinimisedRelief
-               - Self.pillSideMargin) * CGFloat(minimised)
-    }
-
-    /// Hệ số co của viên pill, **buộc vào cùng phép nội suy** mà mọi thứ khác
-    /// trong khối này dùng.
-    ///
-    /// Đây là chỗ tôi đã làm sai một lần và đáng ghi lại. Bản đầu đặt một
-    /// `.scaleEffect` lên `PlayerCard` từ `RootView`, keyed vào cờ nhị phân
-    /// `isMinimisedActive` với `.animation` riêng — nên cú co chạy trên một
-    /// đường cong còn `collapsedSideMargin` và `collapsedBottomOffset` chạy
-    /// trên đường cong khác. Giữa chừng hai bên bất đồng, và viên pill không
-    /// tới được chỗ nó phải tới.
-    ///
-    /// `minimised` là `Double` thẻ vốn nhận, `(1 - progress)` tắt hiệu ứng khi
-    /// thẻ đang mở — đúng hình dạng `collapsedSideMargin` ngay trên dùng. Không
-    /// `.animation` nào ở đây: nó cưỡi lên chính transaction đang lái hai giá
-    /// trị kia, nên ba thứ không thể lệch nhau.
-    private var pillShrink: CGFloat {
-        1 - (1 - Self.pillMinimisedScale) * CGFloat(minimised) * (1 - progress)
-    }
-
-    /// **Physical screen** bottom edge up to the collapsed pill's bottom edge:
-    /// `BottomBarMetrics.playerBottomOffset` (79) on its own row above the tab
-    /// bar, dropping to `BottomBarMetrics.screenBottomInset` (21) as the pill
-    /// joins that row.
-    ///
-    /// The screen, not the safe area. Both endpoints are measured from the
-    /// physical edge now, matching where the tab bar itself is anchored, and
-    /// this view is the right place for that: the card `.ignoresSafeArea()`, so
-    /// it already lays out in physical coordinates and this offset is already
-    /// in the units the padding below needs. That is why `insets.bottom` no
-    /// longer appears in either the padding or `dragTravel` — adding it back
-    /// would push the pill 34pt above where the bar reserved room for it on a
-    /// phone with a home indicator, and leave it correct on an SE, which is the
-    /// worst way for this to be wrong.
-    ///
-    /// **This is the one expression both the bottom padding and `dragTravel`
-    /// read.** It exists as a single value precisely because those two have
-    /// drifted apart twice already, and it is now worse than a forgotten
-    /// constant: this distance changes continuously while the user scrolls, so
-    /// a `dragTravel` left reading the literal `playerBottomOffset` would lag
-    /// the finger by 58pt while minimised and by a fraction of that mid-morph.
-    /// Do not restate either half of it anywhere.
-    private var collapsedBottomOffset: CGFloat {
-        BottomBarMetrics.playerBottomOffset
-            + (BottomBarMetrics.screenBottomInset - BottomBarMetrics.playerBottomOffset)
-            * CGFloat(minimised)
-    }
 
     // The spring that used to live here is now `BottomBarStyle.settle`, shared
     // with `expand()` and with the fade that accompanies `collapse()` when the
@@ -1008,8 +794,20 @@ struct PlayerCard: View {
         // review for why the naive `GeometryReader { }.ignoresSafeArea()`
         // ordering zeroes the insets.
         GeometryReader { outer in
+            // Cỡ màn hình vật lý, dựng lại như `card(size:insets:)` dựng. Tính
+            // sẵn thành một `CGSize` vì closure của `onGeometryChange` là
+            // `@Sendable`, và `GeometryProxy` thì không.
+            let screen = CGSize(
+                width: outer.size.width + outer.safeAreaInsets.leading + outer.safeAreaInsets.trailing,
+                height: outer.size.height + outer.safeAreaInsets.top + outer.safeAreaInsets.bottom
+            )
             card(size: outer.size, insets: outer.safeAreaInsets)
                 .ignoresSafeArea()
+                .onGeometryChange(for: CGSize.self) { _ in
+                    screen
+                } action: { size in
+                    expansion.screenSize = size
+                }
                 // **Cỡ giải mã không còn tới từ `outer`, và chú thích cũ ở
                 // đây đã hết đúng.** Nó viết: "Attached here, rather than
                 // outside the reader, so the artwork's target size can be
@@ -1061,6 +859,9 @@ struct PlayerCard: View {
         // hiệu lực.
         .modifier(PresentedOpacity(opacity: cardOpacity))
         .opacity(playback.currentTrack == nil ? 0 : 1)
+        // Lúc nghỉ, chỗ của thẻ là viên kính accessory của hệ thống, và chính
+        // accessory vẽ hàng mini player. Thẻ chỉ hiện khi rời trạng thái nghỉ.
+        .opacity(expansion.isCardResting ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
         // ấy đổi. `artworkIdentity` bắt được cả hai — `setArtwork` luôn ghi ra
@@ -1125,11 +926,16 @@ struct PlayerCard: View {
                 }
             }
         }
-        .allowsHitTesting(playback.currentTrack != nil)
+        // Theo `progress` và cú kéo đang dở, không theo `isCardResting`: lúc thả
+        // để thu về, `progress` đã là 0 ngay khi nhấc tay, nên thư viện phía sau
+        // nhận chạm lại ngay chứ không phải đợi lò xo chạy xong.
+        .allowsHitTesting(playback.currentTrack != nil && (progress > 0 || isDragging))
         // Nothing is announced or focusable while the card is invisible —
         // without this a screen reader can still reach the "—" title, the
         // scrubber and the transport buttons of a card no one can see. See F4.
-        .accessibilityHidden(playback.currentTrack == nil)
+        // At rest that includes the card hiding behind the accessory, which
+        // offers the mini player to VoiceOver itself.
+        .accessibilityHidden(playback.currentTrack == nil || expansion.isCardResting)
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
@@ -1195,6 +1001,11 @@ struct PlayerCard: View {
                 }
             }
         }
+        // Chạm và cú thả từ accessory. Accessory là view khác, nên nó chỉ gửi
+        // ý định; `morph` và `settled` là của thẻ — xem `handle(_:)`.
+        .onChange(of: expansion.intent) { _, intent in
+            if let intent { handle(intent) }
+        }
         // Picking a track from a list opens the full player.
         //
         // Keyed on `explicitSelections`, NOT on `currentTrack` changing. The
@@ -1226,45 +1037,16 @@ struct PlayerCard: View {
         // `fullWidth` instead. See R1.
         let fullWidth = size.width + insets.leading + insets.trailing
         let fullSize = CGSize(width: fullWidth, height: fullHeight)
-        let travel = max(fullHeight - Self.collapsedHeight, 1)
-        let height = Self.collapsedHeight + travel * progress
-        // The collapsed card is a floating pill inset from each edge of the
-        // SAFE AREA; the expanded card still spans the whole display.
-        //
-        // The safe area, not the physical screen, and the two are not the same
-        // space. This view reconstructs `fullWidth` and sits inside
-        // `.ignoresSafeArea()`, so its own coordinates start at the physical
-        // edge — but `FloatingTabBar`, whose row the pill has to slot into,
-        // applies its `.padding(.horizontal, sideMargin)` OUTSIDE its
-        // `GeometryReader` and never ignores the safe area, so the bar divides
-        // up the *safe-area* width. Measuring the pill from the physical edge
-        // therefore placed it `insets.leading`/`insets.trailing` outside the
-        // slot the bar had reserved for it. In portrait those insets are 0 and
-        // the two spaces coincide, which is why this looked correct; in
-        // landscape on an iPhone 17 they are 59, and the minimised pill
-        // overhung the leading circle and the search button by 59pt on each
-        // side — and, being last in `RootView`'s `ZStack`, ate their taps,
-        // including the only tap-to-restore affordance. Đợt A's Critical
-        // defect again, in a supported orientation.
-        //
-        // **Leading and trailing are computed separately and never averaged.**
-        // A single symmetric margin cannot express this: rotate a notched
-        // device one way and the notch's inset lands on one side while the
-        // other side gets only the rounded-corner allowance, so the two are
-        // genuinely unequal. Averaging them, or taking `max`, would centre the
-        // pill in a slot the bar has not centred and reintroduce the overhang
-        // on one side at half the size — harder to see and no less wrong.
-        //
-        // Both are scaled by `(1 - progress)` and so are exactly 0 at
-        // progress 1: `cardWidth == fullWidth` when expanded, the card still
-        // reaches both physical edges, and every layout inside it is unchanged
-        // there. Minimisation, like the pill margin it generalises, applies
-        // only while the card is collapsed.
-        let collapsedLeadingMargin = insets.leading + collapsedSideMargin
-        let collapsedTrailingMargin = insets.trailing + collapsedSideMargin
-        let leadingMargin = collapsedLeadingMargin * (1 - progress)
-        let trailingMargin = collapsedTrailingMargin * (1 - progress)
-        let cardWidth = fullWidth - leadingMargin - trailingMargin
+        let anchor = PlayerAnchor(
+            frame: expansion.anchorFrame == .zero
+                ? PlayerAnchor.fallbackFrame(screen: fullSize) : expansion.anchorFrame,
+            screen: fullSize
+        )
+        let cardRect = anchor.cardFrame(progress: progress)
+        let height = cardRect.height
+        // Lề lấy thẳng từ khung accessory — xem PlayerAnchor.
+        let leadingMargin = cardRect.minX
+        let cardWidth = cardRect.width
         // The size everything laid out *inside* the card measures against.
         // Note this is deliberately NOT what `artworkHeight` below is given —
         // see the comment there.
@@ -1276,63 +1058,12 @@ struct PlayerCard: View {
         // `artworkHeight(fullSize:)` from its own geometry — the two must
         // agree or the decoded image no longer matches what is drawn.
         let artworkSide = Self.artworkSide(fullSize: fullSize, topInset: insets.top)
-        // Distinct from `travel` above: that one sizes the frame so it
-        // still reaches exactly `fullHeight` at progress 1. This one is
-        // only the pixel-to-progress divisor for the gesture below. The
-        // card's top edge doesn't actually travel the full `travel`
-        // distance — the bottom padding shortens the visible range by
-        // `collapsedBottomOffset` (the tab bar, its gap below the screen edge,
-        // and the gap between the bar and the pill — shrinking to just that
-        // first gap as the pill joins the tab row) — so using `travel` there
-        // made the card trail the finger by exactly that much. The same term
-        // must appear here and in that padding, or they drift apart again —
-        // which has now happened twice. See R2.
-        //
-        // `insets.bottom` used to be a third term in both, and is now in
-        // neither. It was there while `collapsedBottomOffset` was measured from
-        // the safe area and had to be converted into the physical coordinates
-        // this view lays out in; the offset is measured from the screen now, so
-        // the conversion is gone. Adding it back to one site alone puts the
-        // card 34pt behind the finger on a phone with a home indicator and
-        // leaves it exactly right on an iPhone SE — do not.
-        //
-        // The offset is not a constant somebody can forget to update in one of
-        // the two places either: it moves continuously with `minimised` while
-        // the user scrolls. That is why it is written once, as
-        // `collapsedBottomOffset`, and read here and by the padding rather than
-        // restated. Substituting the literal `playerBottomOffset` back into
-        // either site puts the card 58pt behind the finger while minimised.
-        //
-        // The derivation that keeps them honest, with the card bottom-aligned
-        // in a full-screen frame whose height this padding shortens, writing
-        // `B` for `collapsedBottomOffset`, `H` for `fullHeight` and `C` for
-        // `collapsedHeight`. The padding is applied outside that frame, so it
-        // shortens the region rather than moving the card inside it: the
-        // region's bottom, and hence the card's bottom, lands at H − B(1−p),
-        // and the card's height is C + (H − C)p. Therefore
-        //
-        //   top(p) = H − B(1−p) − C − (H − C)p
-        //   top(0) = H − B − C
-        //   top(1) = H − C − (H − C) = 0
-        //
-        // Visible travel is top(0) − top(1) = H − C − B, which is exactly the
-        // expression below, term for term, for *every* value of `B` and hence
-        // of `minimised`. The slope is what the finger actually feels, and it
-        // is constant rather than merely right at the ends:
-        //
-        //   d top / d p = B − (H − C) = −(H − C − B) = −dragTravel
-        //
-        // so one point of upward finger travel raises the card by exactly one
-        // point at every progress, at either end of `minimised` and mid-morph.
-        //
-        // On an iPhone 17 (H 874, C 50, insets.bottom 34 — which appears
-        // nowhere): at minimised 0, B 79, top(0) 745 and dragTravel 745; at
-        // minimised 1, B 21, top(0) 803 and dragTravel 803. If you change one,
-        // change the other.
-        let dragTravel = max(
-            fullHeight - Self.collapsedHeight - collapsedBottomOffset,
-            1
-        )
+        // The pixel-to-progress divisor for the gesture below. Read from the
+        // same `PlayerAnchor` that places the card, never restated: the card
+        // trailing the finger came back twice while the card's position and
+        // this divisor were computed in two places (R2). The derivation that
+        // they agree is `PlayerAnchorTests.testDragTravelIsExactlyHowFarTheTopEdgeMoves`.
+        let dragTravel = anchor.dragTravel
 
         return ZStack(alignment: .topLeading) {
             background
@@ -1355,62 +1086,28 @@ struct PlayerCard: View {
             // above `contentOffset`, where the content stack begins, so the
             // two do not overlap and nothing needs to be painted over
             // anything.
-            artworkView(size: cardSize, artworkSide: artworkSide, topInset: insets.top)
-            miniChrome(width: cardWidth)
+            artworkView(size: cardSize, artworkSide: artworkSide, topInset: insets.top,
+                        collapsedHeight: anchor.collapsedHeight)
+            miniChrome(width: cardWidth, height: anchor.collapsedHeight)
             // Tối chỉ trong phạm vi này. `\.colorScheme` là environment nên nó
             // đi **xuống**, khác `preferredColorScheme` vốn đi ngược lên cửa sổ
             // và kéo theo cả app — xem ghi chú ở `RootView`.
-            expandedContent(size: cardSize, topInset: insets.top)
+            expandedContent(size: cardSize, topInset: insets.top,
+                            collapsedHeight: anchor.collapsedHeight)
                 .environment(\.colorScheme, .dark)
             grabber(topInset: insets.top)
         }
         .frame(width: cardWidth, height: height, alignment: .top)
-        // Neo **đáy**: mép dưới viên pill phải đứng yên trong hàng nó vừa hạ
-        // xuống, nên nó co lên trên và vào trong chứ không trôi khỏi hàng.
-        //
-        // `scaleEffect` chứ không sửa `collapsedHeight`: doc của
-        // `collapsedArtworkInset` ghi rõ ba con số ấy đi cùng nhau, nên đổi
-        // chiều cao là phải tính lại chỗ ô bìa chạm đường cong. Một phép biến
-        // đổi đều thì co tất cả theo cùng tỉ lệ — bán kính bo, ô bìa, chữ — và
-        // không có hằng số nào phải tính lại.
-        .modifier(CardClip(progress: progress, insets: insets))
-        // **Sau `CardClip`, không phải trước.** Đặt trước thì nội dung bị co
-        // rồi mới cắt, và mặt nạ cắt vẫn ở kích thước khung chưa co — viên pill
-        // mất luôn hình pill.
-        //
-        // Ở đây nó co **hình đã cắt xong**, như một vật: bán kính bo, ô bìa,
-        // chữ, tất cả theo cùng một tỉ lệ. Đó cũng là lý do dùng `scaleEffect`
-        // thay vì sửa `collapsedHeight` — xem `pillShrink`.
-        //
-        // **Neo tâm, không neo đáy.** Hai viên tròn trong `FloatingTabBar` co
-        // bằng `anchor: .leading` và `.trailing` — cả hai là (x, **0.5**), tức
-        // theo trục dọc chúng co quanh TÂM. Neo `.bottom` ở đây làm tâm dọc của
-        // viên pill tụt xuống so với hai viên kia, và ba khối hết cùng hàng.
-        //
-        // Cả ba cùng cao 54pt và cùng đáy `screenBottomInset` khi thu, nên tâm
-        // dọc của chúng nằm trên một đường. Co quanh tâm thì đường ấy giữ
-        // nguyên, bất kể mỗi khối co bao nhiêu.
-        .scaleEffect(pillShrink, anchor: .center)
-        // Lifts the collapsed pill off the list behind it, with the same shadow
-        // the tab bar's surfaces use — they share a screen, and while minimised
-        // they share a row, so a lift on one and none on the other is visible
-        // immediately. Shared rather than restated so a surface added later
-        // cannot land with a slightly different one.
-        //
-        // Its colour, radius and offset are constant by design and must not be
-        // interpolated with `progress`: this view moves every frame during a
-        // drag, and animating a shadow forces a fresh offscreen pass each time.
-        // No fade-out is needed — expanded, the card fills the screen and the
-        // shadow is occluded anyway.
-        .floatingBarShadow()
+        .modifier(CardClip(progress: progress, insets: insets,
+                           collapsedRadius: anchor.collapsedCornerRadius))
         // Positions the card horizontally. It cannot be centred in the frame
-        // below any more: with `leadingMargin` and `trailingMargin` unequal —
-        // which is exactly the landscape case this pair exists for — centring
-        // would split the difference and put the pill in neither the slot the
-        // bar reserved nor anywhere principled. Padding one side and aligning
+        // below any more: with the accessory's two side margins unequal —
+        // which is exactly the landscape case — centring
+        // would split the difference and put the pill neither over the
+        // accessory nor anywhere principled. Padding one side and aligning
         // to the other states the asymmetry directly: the card's leading edge
-        // lands at `leadingMargin`, its trailing edge at `fullWidth -
-        // trailingMargin`, whatever those two happen to be. When they are
+        // lands at `leadingMargin`, its trailing edge at `leadingMargin +
+        // cardWidth`, whatever the two margins happen to be. When they are
         // equal (every portrait case) this is identical to the centring it
         // replaces.
         //
@@ -1426,77 +1123,10 @@ struct PlayerCard: View {
         // above resolves against the leading edge rather than being centred
         // away.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        // This line has now been wrong in BOTH directions, so read before you
-        // touch it.
-        //
-        // Attached to the full-screen frame with a plain `Rectangle()`, a
-        // collapsed card hit-tests the whole display and the library behind it
-        // becomes untappable: rows expand the player instead of playing, the
-        // toolbar `+` is unreachable, and the list neither scrolls nor swipes
-        // to delete — from launch, since restoring persisted state sets a
-        // current track. That was F1 (Critical).
-        //
-        // Attached to the card-sized view instead, the region SHRINKS WITH THE
-        // CARD. During a collapse the card's top edge rises past the finger,
-        // the finger falls outside the region, and the in-flight drag is
-        // dropped and re-recognised — frames "held back", continuous flicker.
-        // Expanding grows the card towards the finger and is unaffected, which
-        // is why only collapsing stuttered. Four probes ruled out drawing
-        // entirely: even a bare resizing `Rectangle` dropped frames.
-        //
-        // Both versions shared one assumption — that the region should track
-        // the card's size. It must not. It keys on whether a drag is in
-        // flight: while dragging (or whenever the card is off its collapsed
-        // rest) the region is the whole screen and cannot shrink out from
-        // under the finger; at collapsed rest it is exactly the bar, so the
-        // library stays fully usable. Do not re-derive this height from
-        // `progress` alone.
-        //
-        // The same reasoning governs the horizontal dimension, added with the
-        // floating pill: at collapsed rest the region is inset by
-        // `collapsedSideMargin` so the strips beside the pill fall through to
-        // the library — without it, tapping near a screen edge expands the
-        // player. But the inset must come from this same drag-state gate, NOT
-        // from the interpolated `sideMargin`: derived from `progress` it would
-        // narrow the region mid-drag and drop the finger sideways, exactly the
-        // failure described above in the vertical direction.
-        //
-        // `collapsedSideMargin` widens 12 -> 76 with `minimised`, and the rest
-        // inset must follow it. Left at the bare `pillSideMargin`, a minimised
-        // player hit-tests the full width of the row and swallows both the
-        // leading circle and the search button — Đợt A's Critical defect, one
-        // layer down. Note this changes only the region's *horizontal extent at
-        // rest*: `minimised` is not `progress`, it does not move during a drag,
-        // and the `isDragging || progress > 0` gate on all three dimensions is
-        // untouched, so the region is still the whole screen for the entire
-        // duration of a drag.
-        //
-        // The two sides are passed separately and read the *collapsed* margins,
-        // not `leadingMargin`/`trailingMargin`: those carry the `(1 - progress)`
-        // factor, and a region that narrows with `progress` would drop the
-        // finger sideways mid-drag — the failure described above, in the
-        // horizontal direction. These two are functions of `minimised` and the
-        // safe area only. They must match the card's own edges exactly, or the
-        // region and the pill disagree about where the pill is.
-        //
-        // Moving the bar's anchor from the safe area to the screen changed
-        // nothing here, and that is worth stating rather than leaving to be
-        // rediscovered. The horizontal insets read `collapsedSideMargin`, which
-        // is still safe-area-relative because the tab bar still divides up the
-        // safe-area width — they took the 12 -> 21 change through
-        // `pillSideMargin` and needed nothing else. The vertical dimension
-        // follows the anchor on its own: `BottomHitRegion` measures `height` up
-        // from `rect.maxY`, and `rect` is the frame the bottom padding below
-        // shortens, so the region's bottom edge *is* the card's bottom edge at
-        // whatever the offset now says — which is exactly why that padding has
-        // to stay outside this frame.
-        .contentShape(
-            BottomHitRegion(
-                height: isDragging || progress > 0 ? fullHeight : Self.collapsedHeight,
-                leadingInset: isDragging || progress > 0 ? 0 : collapsedLeadingMargin,
-                trailingInset: isDragging || progress > 0 ? 0 : collapsedTrailingMargin
-            )
-        )
+        // Toàn màn hình, và chỉ nhận chạm khi `allowsHitTesting` trong `body`
+        // cho phép (thẻ đang mở hoặc đang kéo). Lúc nghỉ thẻ không nhận chạm
+        // nào: accessory của hệ thống nhận thay.
+        .contentShape(Rectangle())
         // `.subviews` chứ không phải tắt hẳn: cử chỉ của chính thẻ ngừng nhận,
         // nhưng mọi thứ bên trong — kể cả hai recogniser của danh sách hàng đợi
         // — vẫn chạy. Tắt hẳn sẽ giết luôn cú kéo đang diễn ra.
@@ -1505,75 +1135,31 @@ struct PlayerCard: View {
             including: queueIsReordering ? .subviews : .all
         )
         .onTapGesture { if progress < 0.5 { expand() } }
-        // At progress 0 this holds the card's bottom `collapsedBottomOffset`
-        // above the **physical** bottom edge, so the pill floats clear of the
-        // floating tab bar — which is anchored to that same edge — and matches
-        // where every list's `clearsBottomBar` spacer stops; or, once
-        // minimised, drops onto the tab row itself. At progress 1 it goes to 0
-        // so the expanded card reaches the physical bottom edge. See F3.
-        // `dragTravel` above subtracts exactly this same term, reading the very
-        // same `collapsedBottomOffset` — see the note there. No `insets.bottom`
-        // in either: this view lays out in physical coordinates and the offset
-        // is already stated in them.
+        // At progress 0 this holds the card's bottom `anchor.bottomOffset`
+        // above the **physical** bottom edge — exactly where the accessory's
+        // bottom edge is. At progress 1 it goes to 0 so the expanded card
+        // reaches the physical bottom edge. See F3. No `insets.bottom`: this
+        // view lays out in physical coordinates, and so does the accessory's
+        // global frame the offset comes from.
         //
-        // It must stay *outside* the frame and the hit region above. Applied
-        // here it shortens the height proposed to that frame, so the frame's
-        // bottom edge lands exactly where the card's bottom edge is, and
-        // `BottomHitRegion` — which measures up from `rect.maxY` — lines up
-        // with the collapsed bar. Moved inside (padding the card itself), the
-        // frame would still span the full screen and the collapsed region
-        // would sit `insets.bottom` too low, missing the top of the bar.
-        .padding(.bottom, collapsedBottomOffset * (1 - progress))
-    }
-
-    /// The bottom `height` points of whatever it is applied to, inset by
-    /// `leadingInset` and `trailingInset` on the respective sides.
-    ///
-    /// Used instead of `Rectangle()` so the hit region's size can be chosen
-    /// by state rather than inherited from the card's current size. See the
-    /// note at the `.contentShape` call site.
-    ///
-    /// The two insets are separate rather than one `horizontalInset` because
-    /// the safe area they now include is not symmetric: in landscape on a
-    /// notched device one side carries the notch's inset and the other does
-    /// not. A single number would have to average them and would leave the
-    /// region overhanging the tab bar's circles on one side.
-    ///
-    /// `path(in:)` has no access to the environment, so `leadingInset` is
-    /// applied at `rect.minX` — correct under a left-to-right layout, which is
-    /// the only direction this app currently ships. If it is ever localised
-    /// right-to-left the card's own `.padding(.leading, …)` would flip and this
-    /// would not, so the two would have to be reconciled here.
-    private struct BottomHitRegion: Shape {
-        var height: CGFloat
-        var leadingInset: CGFloat
-        var trailingInset: CGFloat
-
-        func path(in rect: CGRect) -> Path {
-            Path(
-                CGRect(
-                    x: rect.minX + leadingInset,
-                    y: rect.maxY - height,
-                    width: rect.width - leadingInset - trailingInset,
-                    height: height
-                )
-            )
-        }
+        // It must stay *outside* the frame above. Applied here it shortens the
+        // height proposed to that frame, so the frame's bottom edge lands
+        // exactly where the card's bottom edge is — where
+        // `PlayerAnchor.cardFrame(progress:)` says it is.
+        .padding(.bottom, anchor.bottomOffset * (1 - progress))
     }
 
     // MARK: - Pieces
 
     private var background: some View {
         ZStack {
-            // Lớp nền đục cộng lớp sương, cả hai đọc **giá trị đang được vẽ**
-            // chứ không phải giá trị đích. Toàn bộ lý lẽ, và số đo từ video cú
-            // thu nhỏ của người dùng, nằm ở doc của `CardSurface`.
+            // Mặt thẻ, đọc **giá trị đang được vẽ** chứ không phải giá trị
+            // đích — xem doc của `CardSurface`.
             //
-            // Lớp nền tồn tại vì hai lớp trên hoà vào nhau bằng opacity, mà
-            // opacity **hợp thành** chứ không cộng — không có nó thì tấm thẻ
-            // trong suốt suốt quãng giữa cú morph (F4). Nó chỉ vắng mặt ở
-            // `progress` 0, nên viên thuốc lúc nghỉ vẫn là một mặt sương nhìn
-            // thấy danh sách phía sau chứ không phải một mảng xám phẳng. Xem R3.
+            // Nó tồn tại vì hai lớp trên hoà vào nhau bằng opacity, mà opacity
+            // **hợp thành** chứ không cộng — không có nó thì tấm thẻ trong suốt
+            // suốt quãng giữa cú morph (F4). Thẻ đặc từ khung đầu — xem
+            // `CardSurface`.
             CardSurface(progress: progress)
             LinearGradient(
                 // **Bám theo vệt tan của bìa, không phải trải đều cả thẻ.**
@@ -1735,7 +1321,7 @@ struct PlayerCard: View {
     /// Named so `QueuePanel`'s header clearance (see `artworkView`) can read
     /// the same gap instead of restating it — the two sit one above the
     /// other at the top of the same card and must not drift apart the way
-    /// `BottomBarMetrics`' doc warns the bottom-edge measurements did.
+    /// the bottom-edge measurements once did (R2 — see `PlayerAnchor`).
     private static let grabberTopGap: CGFloat = 8
     /// The grabber capsule's own height.
     private static let grabberHeight: CGFloat = 5
@@ -1757,53 +1343,9 @@ struct PlayerCard: View {
             .allowsHitTesting(false)
     }
 
-    private func miniChrome(width: CGFloat) -> some View {
-        MiniPlayerChrome(
-            playback: playback,
-            minimised: minimised,
-            // The artwork's centre, which the row's trailing inset mirrors —
-            // derived here because these two constants are private to this
-            // type, and restating either of them there would let the two ends
-            // of the pill drift apart the moment one of them moved.
-            artworkCentreInset: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
-            artworkLeadingInset: Self.collapsedArtworkInset
-        )
-            // Derived rather than a literal so the text cannot drift out of
-            // step with the artwork: this is where the artwork ends, plus the
-            // gap. The old `collapsedArtwork + 24` folded the inset and the
-            // gap into one number, so moving the artwork silently changed the
-            // gap instead of moving the text with it.
-            .padding(.leading, Self.collapsedArtworkInset + Self.collapsedArtwork + Self.collapsedArtworkGap)
-            // The trailing inset moved into `MiniPlayerChrome`: it depends on
-            // which button is last, and that now changes with `minimised`.
-            .frame(width: width, height: Self.collapsedHeight)
-            // The whole row takes the long press, not just the words.
-            //
-            // Same rule the tab bar's slots needed: a `.frame` is layout and
-            // draws nothing, so without this the menu would only open on the
-            // title and artist text and feel broken everywhere else on the pill.
-            .contentShape(Rectangle())
-            // Stopping lives here rather than on a visible control.
-            //
-            // There was no way to end playback at all: `stopPlayback()` only
-            // ever ran when the queue emptied itself, so the pill stayed for the
-            // rest of the session. Apple Music has no equivalent either — its
-            // mini player persists and pause is the end state — and the HIG says
-            // nothing about dismissing one, so this is a deliberate departure.
-            //
-            // A long press, not a swipe. It discards the queue and the position
-            // for real, and the pill is a 54pt strip the thumb passes over
-            // constantly; a horizontal swipe would lose someone's place by
-            // accident, and there is no undo to offer them. A context menu is
-            // also what the platform already uses for infrequent destructive
-            // actions on a row, so it needs no explaining.
-            .contextMenu {
-                Button(role: .destructive) {
-                    playback.stop()
-                } label: {
-                    Label("Dừng phát", systemImage: "stop.fill")
-                }
-            }
+    private func miniChrome(width: CGFloat, height: CGFloat) -> some View {
+        MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline)
+            .frame(width: width, height: height)
             .opacity(max(0, 1 - progress * 3))
             .allowsHitTesting(progress < 0.1)
     }
@@ -1828,7 +1370,7 @@ struct PlayerCard: View {
     /// Khối chữ vẫn **tan** đúng như cũ: `titleOpacity` chạy trên
     /// `queueTitleHidden`, không trên quãng này, nên hai khối chữ vẫn không bao
     /// giờ cùng đọc được và thứ tự khi đóng vẫn là nghịch đảo của chiều mở.
-    private func queueTitleTravel(size: CGSize, topInset: CGFloat) -> CGFloat {
+    private func queueTitleTravel(size: CGSize, topInset: CGFloat, collapsedHeight: CGFloat) -> CGFloat {
         guard !BottomBarStyle.reduceMotion else { return 0 }
         guard queueFactor > 0 else { return 0 }
         func bottom(_ factor: Double) -> CGFloat {
@@ -1840,7 +1382,8 @@ struct PlayerCard: View {
                 artworkSide: Self.artworkSide(fullSize: size, topInset: topInset),
                 artworkTop: Self.artworkTop(topInset: topInset),
                 queueThumbCentre: Self.queueThumbCentre(topInset: topInset),
-                queueThumbSide: QueuePanel.headerArtwork
+                queueThumbSide: QueuePanel.headerArtwork,
+                collapsedHeight: collapsedHeight
             )
             return geometry.centre.y + geometry.height / 2
         }
@@ -1861,11 +1404,11 @@ struct PlayerCard: View {
     /// Xem `queueTitleTravel`.
     private static let queueTitleTravelShare: CGFloat = 0.7
 
-    private func expandedContent(size: CGSize, topInset: CGFloat) -> some View {
+    private func expandedContent(size: CGSize, topInset: CGFloat, collapsedHeight: CGFloat) -> some View {
         NowPlayingContent(
             playback: playback,
             showingQueue: $showingQueue,
-            titleTravel: queueTitleTravel(size: size, topInset: topInset),
+            titleTravel: queueTitleTravel(size: size, topInset: topInset, collapsedHeight: collapsedHeight),
             titleOpacity: 1 - queueTitleHidden
         )
             .padding(.horizontal, 24)
@@ -1887,12 +1430,12 @@ struct PlayerCard: View {
     /// - Parameter topInset: the real top safe-area inset from
     ///   `card(size:insets:)`'s `GeometryReader` — **not** a literal 44 or
     ///   59. Devices differ (notch vs. no notch, portrait vs. landscape on a
-    ///   Dynamic Island phone), the same reason `BottomBarMetrics` takes
-    ///   `bottomSafeAreaInset` as a parameter rather than assuming one.
+    ///   Dynamic Island phone), so nothing here assumes one.
     ///   Used only to pad `QueuePanel` below; the artwork itself reads
     ///   neither this parameter nor any safe-area term, so its own framing
     ///   is untouched by queue mode.
-    private func artworkView(size: CGSize, artworkSide: CGFloat, topInset: CGFloat) -> some View {
+    private func artworkView(size: CGSize, artworkSide: CGFloat, topInset: CGFloat,
+                             collapsedHeight: CGFloat) -> some View {
         // The queue panel's own horizontal inset, named because two things
         // depend on it: the panel's `.padding(.horizontal,)` below, and the
         // header slot's centre computed here. A literal in both places is two
@@ -1938,7 +1481,8 @@ struct PlayerCard: View {
             // measurement would depend on a layout pass that has not run on
             // the first frame of the transition.
             queueThumbCentre: Self.queueThumbCentre(topInset: topInset),
-            queueThumbSide: QueuePanel.headerArtwork
+            queueThumbSide: QueuePanel.headerArtwork,
+            collapsedHeight: collapsedHeight
         )
         let width = geometry.width
         let height = geometry.height
@@ -2036,8 +1580,8 @@ struct PlayerCard: View {
                     // được, lý do cả khối này không dùng `.font(size:)` tính
                     // thẳng từ cạnh.
                     //
-                    // Cùng loại bẫy với ghi chú `clipped()` trong
-                    // `MiniPlayerChrome`: glyph không co theo `.frame` bọc ngoài.
+                    // Cùng loại bẫy với `.clipped()` trên nút ⏭ của
+                    // `MiniPlayerControls`: glyph không co theo `.frame` bọc ngoài.
                     .frame(width: min(width, height), height: min(width, height))
             }
         }
@@ -2153,8 +1697,8 @@ struct PlayerCard: View {
                 style: .continuous
             )
         )
-        // Constant, for the same reason the card's own shadow is constant —
-        // see the note at `.floatingBarShadow()` above. This was
+        // Constant: an animated shadow forces a fresh offscreen pass every
+        // frame on a view that is already moving. This was
         // `radius: 10 * progress, y: 4 * progress`, which broke that rule on
         // the one view in the card that has it worst: the artwork changes
         // *size* every frame as well as position, so an interpolated shadow
@@ -2162,9 +1706,9 @@ struct PlayerCard: View {
         // regenerated from scratch, 36pt to 280pt, for the whole drag.
         //
         // Constant means the collapsed thumbnail now carries the shadow too,
-        // where it used to fade to nothing. At 36pt under a 6pt radius that
-        // reads as the same lift the pill itself has, which is the intent —
-        // one lighting model for every surface on this screen.
+        // where it used to fade to nothing. The accessory's own thumbnail has
+        // none, so the handoff frame adds a faint lift under a 30pt cover —
+        // one of the things to judge on device.
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         .position(centre)
         // Cú hoà mờ thay cho cú bay khi giảm chuyển động — xem
@@ -2483,14 +2027,15 @@ struct PlayerCard: View {
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO CẦN CÓ NÓ
     /// ─────────────────────────────────────────────────────────────────────
-    /// Thẻ và bìa không xuất phát từ cùng một chỗ. Lề thu gọn chỉ là
-    /// `collapsedSideMargin` (21pt, hoặc `minimisedPlayerInset` khi thu nhỏ)
-    /// mỗi bên, nên **thẻ đã rộng ~92% ngay ở `progress == 0`**, trong khi bìa
-    /// bò lên từ `collapsedArtwork` — 36pt. Hai đường tuyến tính, hai điểm
+    /// Thẻ và bìa không xuất phát từ cùng một chỗ. Lề thu gọn chỉ là lề của
+    /// accessory (~20pt mỗi bên ở vị trí `.expanded` — xem `PlayerAnchor`),
+    /// nên **thẻ đã rộng ~90% ngay ở `progress == 0`**, trong khi bìa bò lên
+    /// từ `MiniPlayerMetrics.artworkSide` — 30pt. Hai đường tuyến tính, hai điểm
     /// xuất phát cách nhau xa như thế thì suốt gần cả hành trình còn một dải
     /// hở bên phải mà bìa không phủ tới. Đo trên video bản Release, iPhone
-    /// 390pt: ở `progress` 0,69 thẻ rộng 380 còn bìa 273 — phủ **72%**, dải hở
-    /// 107pt, và chữ của danh sách phía dưới đọc được xuyên qua đó năm dòng.
+    /// 390pt, hồi viên thuốc còn tự vẽ (lề 21, bìa 36): ở `progress` 0,69 thẻ
+    /// rộng 380 còn bìa 273 — phủ **72%**, dải hở 107pt, và chữ của danh sách
+    /// phía dưới đọc được xuyên qua đó năm dòng.
     /// Không phải khung rơi: 15 cú mở/đóng, 0 khung rơi. Là số học.
     ///
     /// ─────────────────────────────────────────────────────────────────────
@@ -2508,12 +2053,14 @@ struct PlayerCard: View {
     /// `queueFactor == 0`, `openWidth == cardWidth` và `openCentre.x ==
     /// cardWidth/2`, viết `h` cho `horizontalProgress`:
     ///
-    ///   trái  = centre.x − width/2 = collapsedArtworkInset · (1 − h)
-    ///   phải  = centre.x + width/2
-    ///         = (collapsedArtworkInset + collapsedArtwork)
-    ///           + h · (cardWidth − collapsedArtworkInset − collapsedArtwork)
+    /// viết `L` cho `MiniPlayerMetrics.artworkLeadingInset` và `A` cho
+    /// `MiniPlayerMetrics.artworkSide`:
     ///
-    /// Tức trái đi 18 → 0 và phải đi 54 → `cardWidth`, **tuyến tính trên `h`,
+    ///   trái  = centre.x − width/2 = L · (1 − h)
+    ///   phải  = centre.x + width/2
+    ///         = (L + A) + h · (cardWidth − L − A)
+    ///
+    /// Tức trái đi 12 → 0 và phải đi 42 → `cardWidth`, **tuyến tính trên `h`,
     /// với mọi `cardWidth`**. Hệ quả: không bao giờ tràn ra ngoài
     /// `[0, cardWidth]`, và phủ trọn nó đúng ở `h == 1` — không sớm hơn, không
     /// muộn hơn. `cardWidth` tự nó cũng đổi theo `progress`, và dạng đóng trên
@@ -2524,11 +2071,11 @@ struct PlayerCard: View {
     /// ─────────────────────────────────────────────────────────────────────
     /// Dải bên phải **không** rỗng ở đầu hành trình: nó là chỗ ở của chrome
     /// mini, và chrome ấy tan trên đúng cửa sổ `1 - progress * 3` — hết ở ⅓.
-    /// Nền thẻ cũng đục dần trên cùng cửa sổ ấy, `min(1, progress * 3)`. ⅓ là
-    /// ranh giới file này đã có sẵn ở hai chỗ cho cùng một ý: "viên thuốc đã
-    /// trở thành tấm thẻ". Cho bìa phủ xong đúng ở đó thì dải bên phải không
-    /// lúc nào vô chủ — chrome giữ nó tới ⅓, bìa nhận nó từ ⅓. Ba con số
-    /// thống nhất một mốc thay vì ba mốc.
+    /// ⅓ là ranh giới file này đã có sẵn cho cùng một ý: "viên thuốc đã trở
+    /// thành tấm thẻ". Cho bìa phủ xong đúng ở đó thì dải bên phải không lúc
+    /// nào vô chủ — chrome giữ nó tới ⅓, bìa nhận nó từ ⅓. Hai con số thống
+    /// nhất một mốc thay vì hai mốc. (Nền thẻ từng đục dần trên cùng cửa sổ
+    /// ấy; giờ thẻ đặc từ khung đầu — xem `CardSurface`.)
     ///
     /// Sớm hơn thì được gì cũng phải trả bằng hình dáng: ở đúng `progress` ==
     /// ngưỡng, bìa dẹt nhất, và tỉ lệ khung ở đó là ngưỡng 0,25 → 1,49:1;
@@ -2568,7 +2115,10 @@ struct PlayerCard: View {
         artworkSide: CGFloat,
         artworkTop: CGFloat,
         queueThumbCentre: CGPoint,
-        queueThumbSide: CGFloat
+        queueThumbSide: CGFloat,
+        /// Chiều cao accessory, tức chiều cao thẻ ở `progress` 0 — xem
+        /// `PlayerAnchor.collapsedHeight`.
+        collapsedHeight: CGFloat
     ) -> ArtworkGeometry {
         // Where the artwork ends up once the card is fully open — full bleed,
         // or the header slot if the queue is showing.
@@ -2612,8 +2162,8 @@ struct PlayerCard: View {
 
         // The collapsed end is untouched by any of this — see the tests.
         let collapsedCentre = CGPoint(
-            x: Self.collapsedArtworkInset + Self.collapsedArtwork / 2,
-            y: Self.collapsedHeight / 2
+            x: MiniPlayerMetrics.artworkLeadingInset + MiniPlayerMetrics.artworkSide / 2,
+            y: collapsedHeight / 2
         )
 
         // Trục ngang chạy trước trục dọc — xem `artworkWidthCatchUp` cho toàn
@@ -2648,8 +2198,10 @@ struct PlayerCard: View {
             horizontalProgress = progress
         }
 
-        let width = Self.collapsedArtwork + (openWidth - Self.collapsedArtwork) * horizontalProgress
-        let height = Self.collapsedArtwork + (openHeight - Self.collapsedArtwork) * progress
+        let width = MiniPlayerMetrics.artworkSide
+            + (openWidth - MiniPlayerMetrics.artworkSide) * horizontalProgress
+        let height = MiniPlayerMetrics.artworkSide
+            + (openHeight - MiniPlayerMetrics.artworkSide) * progress
 
         return ArtworkGeometry(
             width: width,
@@ -2702,7 +2254,10 @@ struct PlayerCard: View {
                 // Guarded rather than assigned unconditionally: this fires on
                 // every touch move, and a redundant `@State` write would
                 // invalidate the view again for nothing.
-                if !isDragging { isDragging = true }
+                if !isDragging {
+                    isDragging = true
+                    expansion.leaveRest()
+                }
                 // Written here rather than from an `onChange` on `progress` —
                 // see the note on `expansion`.
                 // `animation: nil` — trong lúc kéo, mỗi khung là một giá trị
@@ -2823,7 +2378,7 @@ struct PlayerCard: View {
     ///
     ///   1. Tấm bìa — chính hàm này, cộng `.opacity(queueArtworkOpacity)` ở
     ///      `artworkView`.
-    ///   2. Khối chữ của `NowPlayingContent` — `queueTitleTravel(size:topInset:)`
+    ///   2. Khối chữ của `NowPlayingContent` — `queueTitleTravel(size:topInset:collapsedHeight:)`
     ///      trả 0 ngay ở dòng đầu.
     ///   3. Hai khối dưới của panel — `QueuePanel.riseDistance`.
     ///   4. Khối chữ header của panel — `QueuePanel.headerTextRise`.
@@ -2971,18 +2526,27 @@ struct PlayerCard: View {
     /// khác nhau của chúng, đúng như khi còn là chuyển động.
     ///
     /// Cái mất, nói thẳng: trạng thái **cũ** bị cắt phụt chứ không tan dần.
-    /// Đóng player thì thư viện hiện ra ngay trong một khung rồi viên thuốc mờ
-    /// vào. Một cú hoà mờ chéo thật sự sẽ tránh được điều đó, và nó đòi hai bản
+    /// Đóng player thì thư viện và viên kính accessory hiện ra ngay trong một
+    /// khung. Một cú hoà mờ chéo thật sự sẽ tránh được điều đó, và nó đòi hai bản
     /// thẻ cùng tồn tại ở hai `progress` khác nhau — tức phải luồn `progress`
     /// qua từng chỗ đọc nó trong 2.400 dòng của file này, đúng cái tái cấu trúc
     /// đang bị chặn. Xem b3-report. Một cú cắt không phải chuyển động, nên bản
     /// này đạt yêu cầu của HIG; nó chỉ chưa phải bản êm nhất có thể có.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// RỜI VÀ VỀ TRẠNG THÁI NGHỈ
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Rời trạng thái nghỉ ở đầu hàm khi đích > 0; về nghỉ trong `completion`
+    /// (hoặc ngay lập tức khi giảm chuyển động) — xem `arriveAtRestIfCollapsed()`.
     private func morph(to target: Double, curve: Animation) {
+        if target > 0 { expansion.leaveRest() }
         guard BottomBarStyle.reduceMotion else {
             withAnimation(curve) {
                 settled = target
                 dragDelta = 0
                 expansion.set(progress: target, animation: curve)
+            } completion: {
+                arriveAtRestIfCollapsed()
             }
             return
         }
@@ -3011,22 +2575,55 @@ struct PlayerCard: View {
         if needsFade {
             withAnimation(curve) { cardOpacity = 1 }
         }
+        // Giảm chuyển động: hình học đã ở đích ngay, nên về nghỉ ngay.
+        arriveAtRestIfCollapsed()
+    }
+
+    /// Hỏi lại trạng thái **hiện tại** chứ không tin vào đích lúc đăng ký: một
+    /// cú kéo mới có thể đã bắt đầu trước khi lò xo cũ chạy xong.
+    private func arriveAtRestIfCollapsed() {
+        guard settled == 0, dragDelta == 0, !isDragging else { return }
+        expansion.arriveAtRest()
+    }
+
+    private func handle(_ intent: PlayerIntent) {
+        switch intent.kind {
+        case .expand:
+            expand()
+        case let .release(predictedProgress, verticalVelocity):
+            // Chuyển phần kéo của accessory sang `dragDelta` trong cùng một
+            // transaction không animation: tổng `progress` không đổi, thẻ không
+            // nhảy, rồi `morph` lo cú đáp như mọi cú thả khác.
+            let carried = expansion.takeAccessoryDrag()
+            withTransaction(Transaction(animation: nil)) { dragDelta = carried }
+            let target: Double = predictedProgress > 0.5 ? 1 : 0
+            let travel = PlayerAnchor.dragTravel(for: expansion.anchorFrame)
+            let curve = BottomBarStyle.settle(
+                initialVelocity: Self.settleVelocity(
+                    verticalVelocity: verticalVelocity,
+                    travel: travel,
+                    from: progress,
+                    to: target
+                )
+            )
+            morph(to: target, curve: curve)
+        }
     }
 
     /// Bán kính hai góc **trên** của thẻ ở một `progress` cho trước.
     ///
-    /// Thu gọn là một viên thuốc thật (32 = nửa chiều cao), mở hết là tấm thẻ
-    /// Now Playing (38). Không bao giờ về 0 ở hai góc này.
-    static func cardTopCornerRadius(progress: Double) -> CGFloat {
-        collapsedCornerRadius
-            + (expandedCornerRadius - collapsedCornerRadius) * progress
+    /// Thu gọn là đúng viên kính accessory (`collapsedRadius`, nửa chiều cao —
+    /// `PlayerAnchor.collapsedCornerRadius`), mở hết là tấm thẻ Now Playing
+    /// (38). Không bao giờ về 0 ở hai góc này.
+    static func cardTopCornerRadius(progress: Double, collapsedRadius: CGFloat) -> CGFloat {
+        collapsedRadius + (expandedCornerRadius - collapsedRadius) * progress
     }
 
     /// Bán kính hai góc **dưới**, cho những máy phải vẽ chúng cho đúng.
     ///
     /// Vuông dần về 0 khi mở, vì mép dưới của thẻ mở hết áp vào mép màn hình.
-    static func cardBottomCornerRadius(progress: Double) -> CGFloat {
-        collapsedCornerRadius * (1 - progress)
+    static func cardBottomCornerRadius(progress: Double, collapsedRadius: CGFloat) -> CGFloat {
+        collapsedRadius * (1 - progress)
     }
 
     /// Thẻ có được phép cắt bằng **một** bán kính đều cho cả bốn góc không.
@@ -3044,9 +2641,10 @@ struct PlayerCard: View {
     /// 2026-08-18): với `UnevenRoundedRectangle`, **cả màn hình** bị tô vàng —
     /// nền danh sách, từng hàng, tiêu đề, thanh phân đoạn — ở **mọi** màn hình
     /// của app, kể cả khi player đóng, vì thẻ luôn nằm trong cây. Đổi sang một
-    /// bán kính đều thì toàn bộ phần ấy sạch; chỉ còn `.thinMaterial` của viên
-    /// thuốc và của thanh tab, mà Đợt A1 đã đo Material không kèm bóng ra
+    /// bán kính đều thì toàn bộ phần ấy sạch; chỉ còn Material của viên thuốc
+    /// và của thanh tab hồi ấy, mà Đợt A1 đã đo Material không kèm bóng ra
     /// 0,0 ms/giây. Người dùng xác nhận cú bung mượt hơn, thử tay trên Release.
+    /// (Thẻ giờ đặc từ khung đầu — xem `CardSurface`.)
     ///
     /// Đây là thứ mà bốn vòng đo `h1`–`k1` không thể thấy: bộ đo của chúng dừng
     /// ở `CATransaction.flush()`, tức chỉ đo pha commit, còn bảng A1 cho thấy
@@ -3188,17 +2786,21 @@ struct PlayerCard: View {
 private struct CardClip: ViewModifier {
     let progress: Double
     let insets: EdgeInsets
+    /// Bán kính viên kính accessory — `PlayerAnchor.collapsedCornerRadius`.
+    let collapsedRadius: CGFloat
 
     func body(content: Content) -> some View {
-        let top = PlayerCard.cardTopCornerRadius(progress: progress)
+        let top = PlayerCard.cardTopCornerRadius(progress: progress, collapsedRadius: collapsedRadius)
         if PlayerCard.cardCornerRadiiMayBeUniform(bottomSafeAreaInset: insets.bottom) {
             content.clipShape(RoundedRectangle(cornerRadius: top, style: .continuous))
         } else {
             content.clipShape(
                 UnevenRoundedRectangle(
                     topLeadingRadius: top,
-                    bottomLeadingRadius: PlayerCard.cardBottomCornerRadius(progress: progress),
-                    bottomTrailingRadius: PlayerCard.cardBottomCornerRadius(progress: progress),
+                    bottomLeadingRadius: PlayerCard.cardBottomCornerRadius(progress: progress,
+                                                                          collapsedRadius: collapsedRadius),
+                    bottomTrailingRadius: PlayerCard.cardBottomCornerRadius(progress: progress,
+                                                                           collapsedRadius: collapsedRadius),
                     topTrailingRadius: top
                 )
             )
@@ -3206,12 +2808,13 @@ private struct CardClip: ViewModifier {
     }
 }
 
-/// Lớp nền đục và lớp sương của tấm thẻ, cả hai đọc **giá trị đang được vẽ**.
+/// Mặt thẻ: một lớp đặc của viên thuốc và lớp nền của player mở rộng phủ lên
+/// nó, cả hai đọc **giá trị đang được vẽ**.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
 /// VÌ SAO PHẢI LÀ MỘT `Animatable` RIÊNG
 /// ─────────────────────────────────────────────────────────────────────────
-/// Hai lớp này từng nằm thẳng trong `background` và đọc `progress` — tức giá
+/// Các lớp này từng nằm thẳng trong `background` và đọc `progress` — tức giá
 /// trị trong `body`. Trên đường **kéo tay** điều đó đúng: `body` chạy lại mỗi
 /// khung nên `progress` là chỗ tấm thẻ đang thật sự ở. Trên đường
 /// **`withAnimation`** thì không: `settled` nhảy thẳng tới đích, nên `progress`
@@ -3222,10 +2825,7 @@ private struct CardClip: ViewModifier {
 /// 338pt — `progress` ≈ 0,52, chỗ mà lớp nền đáng ra đã đục hẳn — vẫn đọc được
 /// tên các hàng danh sách xuyên qua tấm thẻ. Vì `.opacity` được tính ở
 /// `progress` = 0 rồi nội suy từ 1 xuống 0 suốt cả cú lò xo, nên giữa đường nó
-/// là ~0,5 bất kể tấm thẻ đang to bằng nào. Và lớp sương thì ngược lại: cái
-/// `if` đúng ngay khung đầu nên nó được **chèn** vào ở cường độ đầy đủ, không
-/// nội suy gì. Cộng lại: tấm thẻ trong mờ và bị làm mờ suốt cú thu, rồi trả về
-/// nguyên trạng một phát khi xong — đúng thứ người dùng báo.
+/// là ~0,5 bất kể tấm thẻ đang to bằng nào.
 ///
 /// `Animatable` trên một view **lá** như thế này không phải cách mà `b8a94d6`
 /// đã làm và `b14ad5d` đã hoàn nguyên: ở đó nó bắt cả `PlayerCard.body` chạy
@@ -3234,14 +2834,12 @@ private struct CardClip: ViewModifier {
 /// `PlaybackScrubber`.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// LỚP SƯƠNG HIỆN RA TỪ 0, KHÔNG BẬT RA Ở 0,9
+/// KHÔNG CÒN LỚP SƯƠNG
 /// ─────────────────────────────────────────────────────────────────────────
-/// Cái `if` vẫn còn, và vẫn cố ý — một `.thinMaterial` là một cú làm mờ trực
-/// tiếp, và nó tốn như nhau ở opacity 0,01 hay 1, nên giữ nó trong cây suốt cú
-/// morph là trả tiền cho một thứ không ai thấy. Nhưng giờ nó gắn vào đúng lúc,
-/// và **gắn ở opacity 0**: `1 - progress / materialCutoff` bằng 0 ngay tại mốc
-/// gắn và bằng 1 ở trạng thái nghỉ. Bản cũ dùng `1 - progress`, tức gắn vào ở
-/// 0,9 — một cú bật.
+/// Ở đây từng có một `.thinMaterial` cho viên thuốc lúc nghỉ, mờ dần theo
+/// `progress`. Lúc nghỉ, chỗ ấy giờ là viên kính accessory của hệ thống, còn
+/// thẻ thì vô hình. Thẻ chỉ hiện ra khi đã rời nghỉ, và khi ấy nó đặc ngay —
+/// không có kính chồng kính, không có khoảng nào nhìn xuyên được.
 private struct CardSurface: View, Animatable {
     var progress: Double
 
@@ -3251,14 +2849,13 @@ private struct CardSurface: View, Animatable {
     }
 
     var body: some View {
+        // Đặc ngay từ khung đầu, như Apple Music (video 2026-10-06): viên kính
+        // thành thẻ đặc ở khung thứ hai, không có kính chồng kính. Lớp dưới đặc
+        // sẵn; lớp trên là nền của player mở rộng, lên dần theo `progress`.
         ZStack {
+            Color(.secondarySystemBackground)
             Color(.systemGroupedBackground)
                 .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
-            if progress < PlayerCard.materialCutoff {
-                Rectangle()
-                    .fill(.thinMaterial)
-                    .opacity(max(0, 1 - progress / PlayerCard.materialCutoff))
-            }
         }
     }
 }

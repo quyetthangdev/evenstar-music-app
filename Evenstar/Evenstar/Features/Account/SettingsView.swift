@@ -27,11 +27,8 @@ struct SettingsView: View {
     // `#if DEBUG`, không loại khỏi target: dự án dùng Xcode 16 synced
     // folders, nên loại một file khỏi target đòi sửa `.pbxproj` — việc bị
     // cấm với agent. Bọc thay vì xoá để mục "Bản thử" biến mất khỏi Release
-    // mà bốn bản thử vẫn mở được ở Debug.
+    // mà bản thử vẫn mở được ở Debug.
     #if DEBUG
-    @State private var showingMorphDemo = false
-    @State private var showingUIKitDemo = false
-    @State private var showingZoomDemo = false
     @State private var showingReorderDemo = false
     #endif
 
@@ -120,30 +117,21 @@ struct SettingsView: View {
             Section {
                 // `verbatim` khắp mục này, khác với mọi mục khác trong màn
                 // hình: đây là bản thử sẽ bị xoá, và `Text("…")` là
-                // `LocalizedStringKey` nên ba chuỗi này sẽ được trích thẳng
+                // `LocalizedStringKey` nên các chuỗi này sẽ được trích thẳng
                 // vào `Localizable.xcstrings` rồi nằm lại đó thành khoá chết
                 // sau khi bản thử đi. Hôm nay chúng hiện y hệt nhau vì nguồn
                 // của catalogue vốn là tiếng Việt.
-                Button { showingMorphDemo = true } label: {
-                    Text(verbatim: "Chuyển cảnh player — SwiftUI")
-                }
-                Button { showingUIKitDemo = true } label: {
-                    Text(verbatim: "Chuyển cảnh player — UIKit")
-                }
-                Button { showingZoomDemo = true } label: {
-                    Text(verbatim: "Chuyển cảnh player — hệ thống (.zoom)")
-                }
                 Button { showingReorderDemo = true } label: {
                     Text(verbatim: "Kéo thả playlist — tự dựng cử chỉ")
                 }
             } header: {
                 Text(verbatim: "Bản thử")
             } footer: {
-                // Nói thẳng đây là bản thử, vì nó *trông* như một player thật
-                // và không phải player của app này: dữ liệu giả, không phát
-                // được gì. Một màn hình lạ không có lời giải thích là một lỗi
-                // đối với người dùng, kể cả khi nó nằm sâu trong Cài đặt.
-                Text(verbatim: "Hai player rời, dữ liệu giả, cùng hình dáng nhưng khác động cơ chuyển động: một bằng SwiftUI, một bằng UIViewPropertyAnimator. Không ảnh hưởng gì tới nhạc đang phát.")
+                // Nói thẳng đây là bản thử, vì nó *trông* như một màn thật
+                // của app: dữ liệu giả, không đổi gì trong thư viện. Một màn
+                // hình lạ không có lời giải thích là một lỗi đối với người
+                // dùng, kể cả khi nó nằm sâu trong Cài đặt.
+                Text(verbatim: "Danh sách giả, cử chỉ kéo thả tự dựng. Không ảnh hưởng gì tới thư viện hay nhạc đang phát.")
             }
             #endif
         }
@@ -154,23 +142,6 @@ struct SettingsView: View {
         // bị cấm với agent. Các chú thích bên dưới giải thích mã sắp không
         // tồn tại ở Release, nên phải nằm trong cùng khối này.
         #if DEBUG
-        // `fullScreenCover`, không phải `NavigationLink`: bản thử tự dựng cả
-        // thanh tab và mini player của riêng nó, nên nó cần cả màn hình. Đẩy
-        // nó vào navigation stack thì hai thanh tab chồng lên nhau.
-        .fullScreenCover(isPresented: $showingMorphDemo) {
-            PlayerMorphDemoView { showingMorphDemo = false }
-        }
-        // Bản UIKit, để so cạnh nhau: cùng số đo, cùng hình dáng, khác động cơ.
-        // Xem `PlayerMorphUIKitView` để biết nó trả lời câu hỏi gì.
-        .fullScreenCover(isPresented: $showingUIKitDemo) {
-            PlayerMorphUIKitView { showingUIKitDemo = false }
-                .ignoresSafeArea()
-        }
-        // Bản thứ ba: không một dòng animation nào tự viết. Xem
-        // `PlayerZoomDemoView` — chạm để mở, vuốt để đóng, hệ thống lo hết.
-        .fullScreenCover(isPresented: $showingZoomDemo) {
-            PlayerZoomDemoView { showingZoomDemo = false }
-        }
         // Kéo thả tự dựng: `List` không cho chạm vào hàng đang nhấc, nên nền
         // lúc nhấn giữ và cú đáp đàn hồi lúc thả chỉ có được khi tự sở hữu cử
         // chỉ. Xem `PlaylistReorderDemo`.

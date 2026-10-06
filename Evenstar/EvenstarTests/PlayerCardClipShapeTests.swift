@@ -46,7 +46,7 @@ final class PlayerCardClipShapeTests: XCTestCase {
     /// cắt 55pt) và làm hở góc trên đúng những máy không có trong tay.
     func testTheExpandedCornerStaysInsideTheNarrowestRoundedDisplay() {
         XCTAssertLessThanOrEqual(
-            PlayerCard.cardTopCornerRadius(progress: 1),
+            PlayerCard.cardTopCornerRadius(progress: 1, collapsedRadius: 24),
             PlayerCard.narrowestRoundedDisplayCorner,
             """
             Góc thẻ khi mở hết đã vượt bán kính bo màn hình của iPhone XS/11 Pro. \
@@ -63,16 +63,16 @@ final class PlayerCardClipShapeTests: XCTestCase {
     /// nhiều nhất.
     func testCollapsedTheTopAndBottomRadiiAgree() {
         XCTAssertEqual(
-            PlayerCard.cardTopCornerRadius(progress: 0),
-            PlayerCard.cardBottomCornerRadius(progress: 0),
+            PlayerCard.cardTopCornerRadius(progress: 0, collapsedRadius: 24),
+            PlayerCard.cardBottomCornerRadius(progress: 0, collapsedRadius: 24),
             accuracy: 0.001
         )
     }
 
     /// Mở hết thì hai bên tách ra, và đó chính là chỗ hai nhánh khác nhau.
     func testExpandedTheBottomSquaresOffWhileTheTopDoesNot() {
-        XCTAssertEqual(PlayerCard.cardBottomCornerRadius(progress: 1), 0, accuracy: 0.001)
-        XCTAssertGreaterThan(PlayerCard.cardTopCornerRadius(progress: 1), 0)
+        XCTAssertEqual(PlayerCard.cardBottomCornerRadius(progress: 1, collapsedRadius: 24), 0, accuracy: 0.001)
+        XCTAssertGreaterThan(PlayerCard.cardTopCornerRadius(progress: 1, collapsedRadius: 24), 0)
     }
 
     /// Góc trên **không bao giờ** về 0 — thẻ mở hết vẫn là một tấm thẻ có vai
@@ -81,7 +81,7 @@ final class PlayerCardClipShapeTests: XCTestCase {
         for step in 0...20 {
             let progress = Double(step) / 20
             XCTAssertGreaterThan(
-                PlayerCard.cardTopCornerRadius(progress: progress), 0,
+                PlayerCard.cardTopCornerRadius(progress: progress, collapsedRadius: 24), 0,
                 "góc trên về 0 ở progress \(progress)"
             )
         }
@@ -90,12 +90,12 @@ final class PlayerCardClipShapeTests: XCTestCase {
     /// Cả hai bán kính đi một chiều, không quay đầu giữa đường — một cú đảo
     /// chiều đọc ra như thẻ bị giật một nhịp giữa cú bung.
     func testBothRadiiMoveMonotonicallyAcrossTheMorph() {
-        var previousTop = PlayerCard.cardTopCornerRadius(progress: 0)
-        var previousBottom = PlayerCard.cardBottomCornerRadius(progress: 0)
+        var previousTop = PlayerCard.cardTopCornerRadius(progress: 0, collapsedRadius: 24)
+        var previousBottom = PlayerCard.cardBottomCornerRadius(progress: 0, collapsedRadius: 24)
         for step in 1...20 {
             let progress = Double(step) / 20
-            let top = PlayerCard.cardTopCornerRadius(progress: progress)
-            let bottom = PlayerCard.cardBottomCornerRadius(progress: progress)
+            let top = PlayerCard.cardTopCornerRadius(progress: progress, collapsedRadius: 24)
+            let bottom = PlayerCard.cardBottomCornerRadius(progress: progress, collapsedRadius: 24)
             XCTAssertGreaterThanOrEqual(top, previousTop, "góc trên quay đầu ở \(progress)")
             XCTAssertLessThanOrEqual(bottom, previousBottom, "góc dưới quay đầu ở \(progress)")
             previousTop = top

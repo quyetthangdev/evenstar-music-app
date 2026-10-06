@@ -276,8 +276,8 @@ struct TransportButtonStyle: ButtonStyle {
                 // whole label, in both modes, and one caller's label is not
                 // inert.** `.transportToggle`'s is
                 // `Image(systemName: isPlaying ? "pause.fill" : "play.fill")`
-                // carrying a symbol replace transition (`MiniPlayerChrome`,
-                // `NowPlayingContent`), and `isPlaying` flips in the same
+                // carrying a symbol replace transition (`NowPlayingContent`),
+                // and `isPlaying` flips in the same
                 // touch-down transaction `isPressed` does. So the symbol swap is
                 // inside this modifier's reach, and the question of whether it
                 // now runs on `press`'s 0.09s instead of its own curve is a real

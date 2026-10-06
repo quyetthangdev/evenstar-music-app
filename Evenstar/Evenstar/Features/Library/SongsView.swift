@@ -110,8 +110,8 @@ struct SongsView: View {
                         // music. Three things broke because of it. The `+` that
                         // means "add" on two chips vanished on the third.
                         // A magnifying glass already means "search the library"
-                        // a few points away, in `FloatingTabBar`'s own search
-                        // field. And with the affordance unrecognisable, the
+                        // a few points away, on the tab bar's own search tab.
+                        // And with the affordance unrecognisable, the
                         // only remaining signpost to discovery was
                         // `JamendoSongsList`'s empty state — which deletes
                         // itself the moment the first track is saved, leaving a
@@ -150,8 +150,6 @@ struct SongsView: View {
                         }
                     }
                 }
-                // The system tab bar is hidden in favour of `FloatingTabBar`.
-                // This modifier applies to the content *inside* a tab, never
         }
         .fileImporter(
             isPresented: $showFileImporter,
