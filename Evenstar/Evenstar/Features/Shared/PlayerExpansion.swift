@@ -15,6 +15,7 @@ import SwiftUI
 /// `@Observable` scopes the invalidation to whoever actually reads `progress` in
 /// a body — here, one `ViewModifier` that applies a transform. `RootView`'s body
 /// does not read it and so does not re-run, and the tab hierarchy is built once.
+@MainActor
 @Observable
 final class PlayerExpansion {
     /// Không còn `didSet`, và đó là kết luận của cả một buổi đo.
@@ -68,6 +69,93 @@ final class PlayerExpansion {
     func set(progress newValue: Double, animation: Animation?) {
         self.animation = animation
         self.progress = newValue
+    }
+
+    // MARK: - Accessory
+
+    /// Khung accessory mới nhất đo được **lúc thẻ đang nghỉ**, toạ độ global.
+    ///
+    /// Không quan sát: hệ thống dời accessory mỗi lần thanh tab thu nhỏ, và
+    /// không view nào cần dựng lại vì chuyện đó. Chỉ `leaveRest()` đọc nó.
+    @ObservationIgnored private(set) var accessoryFrame: CGRect = .zero
+    @ObservationIgnored private(set) var accessoryIsInline = false
+
+    /// Cỡ màn hình vật lý, do `PlayerCard` ghi từ `GeometryReader` của nó.
+    @ObservationIgnored var screenSize: CGSize = .zero
+
+    /// Khung thẻ bung ra từ đó, chụp **lúc thẻ rời trạng thái nghỉ** và giữ
+    /// nguyên tới khi thẻ về nghỉ. Không đọc thẳng `accessoryFrame` trong lúc
+    /// bung, vì nội dung phía sau lùi lại làm khung đo được co theo.
+    private(set) var anchorFrame: CGRect = .zero
+    /// Accessory có đang ở `.inline` lúc thẻ rời nghỉ không. Hàng mini player
+    /// trong thẻ đọc nó để ẩn ⏭ giống hệt accessory ở khung đầu.
+    private(set) var anchorIsInline = false
+
+    /// Thẻ đang nằm yên ở 0 và vô hình, còn accessory đang hiện nội dung của nó.
+    private(set) var isCardResting = true
+
+    /// Phần `progress` do cú kéo trên accessory đóng góp; 0 khi không kéo.
+    /// `PlayerCard` cộng nó vào `progress` của mình mỗi khung. Không đi qua
+    /// `onChange`, vì mỗi `onChange` là thêm một lượt cập nhật.
+    private(set) var accessoryDragDelta: Double = 0
+    private(set) var accessoryDragging = false
+
+    /// Ý định gửi từ accessory sang thẻ. Chỉ thẻ thực hiện được cú bung có
+    /// animation, vì `morph` và trạng thái `settled` là của riêng nó.
+    private(set) var intent: PlayerIntent?
+
+    func reportAccessoryFrame(_ frame: CGRect, isInline: Bool) {
+        guard isCardResting else { return }
+        accessoryFrame = frame
+        accessoryIsInline = isInline
+    }
+
+    func leaveRest() {
+        guard isCardResting else { return }
+        anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
+        anchorIsInline = accessoryIsInline
+        isCardResting = false
+    }
+
+    func arriveAtRest() {
+        guard !accessoryDragging else { return }
+        isCardResting = true
+    }
+
+    func requestExpand() {
+        intent = PlayerIntent(kind: .expand)
+    }
+
+    func accessoryDragChanged(translationHeight: CGFloat) {
+        leaveRest()
+        accessoryDragging = true
+        let offset = PlayerCard.dragOffset(translationHeight: translationHeight,
+                                           threshold: AccessoryDragAxis.lockDistance)
+        setAccessoryDragDelta(-Double(offset / PlayerAnchor.dragTravel(for: anchorFrame)))
+    }
+
+    /// Tách riêng để `PlayerCardCommitCostTests` ghi được đúng đầu vào mà một
+    /// cú kéo thật ghi, mỗi khung.
+    func setAccessoryDragDelta(_ delta: Double) {
+        accessoryDragDelta = delta
+        set(progress: min(max(delta, 0), 1), animation: nil)
+    }
+
+    func accessoryDragEnded(predictedTranslationHeight: CGFloat, verticalVelocity: CGFloat) {
+        let offset = PlayerCard.dragOffset(translationHeight: predictedTranslationHeight,
+                                           threshold: AccessoryDragAxis.lockDistance)
+        let predicted = -Double(offset / PlayerAnchor.dragTravel(for: anchorFrame))
+        intent = PlayerIntent(kind: .release(predictedProgress: predicted,
+                                             verticalVelocity: verticalVelocity))
+    }
+
+    /// Thẻ gọi lúc nhận `.release`: chuyển phần kéo sang `dragDelta` của nó
+    /// trong cùng một transaction, nên `progress` không nhảy.
+    func takeAccessoryDrag() -> Double {
+        let carried = accessoryDragDelta
+        accessoryDragDelta = 0
+        accessoryDragging = false
+        return carried
     }
 }
 
@@ -167,4 +255,16 @@ extension View {
     func floatsOverPlayer(_ expansion: PlayerExpansion) -> some View {
         modifier(FloatOverPlayer(expansion: expansion))
     }
+}
+
+/// Một việc accessory nhờ thẻ làm. `id` riêng cho mỗi lần gửi, để hai lần chạm
+/// liền nhau vẫn là hai giá trị khác nhau và `onChange` nổ cả hai.
+struct PlayerIntent: Equatable {
+    enum Kind: Equatable {
+        case expand
+        case release(predictedProgress: Double, verticalVelocity: CGFloat)
+    }
+
+    let id = UUID()
+    let kind: Kind
 }
