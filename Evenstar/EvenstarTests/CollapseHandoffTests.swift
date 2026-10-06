@@ -2,8 +2,8 @@ import XCTest
 import SwiftUI
 @testable import Evenstar
 
-/// Cuối cú thu: thẻ thành **kính**, **lún quá chỗ ~10pt rồi nảy lại**, rồi mới
-/// nhường cho accessory — như Apple Music.
+/// Cuối cú thu: thẻ thành **kính**, **đáy võng quá chỗ ~10pt rồi nảy lại** (mép
+/// trên ghim ở viên kính, hai bên nở ~1,5pt), rồi mới nhường cho accessory.
 ///
 /// Lỗi QA trên máy (iPhone 12, Release, sau `fbc0837`): thẻ thu khít lên viên
 /// kính rồi đứng chết và mờ đi — "mất hiệu ứng đàn hồi, cứng". Bản trước nữa
@@ -12,7 +12,7 @@ import SwiftUI
 /// Các nhóm test ở đây ghim những phần **không phụ thuộc đồng hồ**: đường cong
 /// cửa sổ kính, phép đổi cú vọt qua ra điểm, chính lò xo của cú thu (hỏi thẳng
 /// `CollapseSpring` bằng `Spring.value`, không chạy animation), các cờ của
-/// `PlayerExpansion`, và việc thẻ thật nối chúng lại đúng. Cú lún **vẽ ra**
+/// `PlayerExpansion`, và việc thẻ thật nối chúng lại đúng. Cú giãn **vẽ ra**
 /// thật — mép thẻ, chiều cao, độ trong — được đo từng khung ở
 /// `CollapseLandingFrameTests`.
 @MainActor
@@ -50,30 +50,54 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertEqual(PlayerCard.collapseGlass(cardHeight: 48, capsuleHeight: 0), 0)
     }
 
-    // MARK: - Cú vọt qua đổi ra điểm
+    // MARK: - Cú vọt qua đổi ra điểm võng của đáy
 
     func testNothingMovesUntilTheLandingPassesZero() {
-        XCTAssertEqual(PlayerCard.landingOffset(overshoot: 0, travel: 710), 0)
-        XCTAssertEqual(PlayerCard.landingOffset(overshoot: -0.3, travel: 710), 0)
+        XCTAssertEqual(PlayerCard.landingSag(overshoot: 0, travel: 710), 0)
+        XCTAssertEqual(PlayerCard.landingSag(overshoot: -0.3, travel: 710), 0)
     }
 
-    /// Độ dốc 1 ở 0: ngay sau khi chạm đích, mép trên thẻ đi tiếp đúng tốc độ
-    /// nó đang đi — `travel` điểm cho mỗi đơn vị `progress`.
-    func testTheTopEdgeKeepsItsSpeedAcrossTheTarget() {
+    /// Độ dốc 1 ở 0: ngay sau khi chạm đích, đà của mép trên chuyển nguyên vào
+    /// mép dưới — `travel` điểm cho mỗi đơn vị `progress`.
+    func testTheTopEdgesSpeedCarriesIntoTheBottomEdge() {
         let tiny = 0.0005
-        let offset = PlayerCard.landingOffset(overshoot: tiny, travel: 710)
+        let offset = PlayerCard.landingSag(overshoot: tiny, travel: 710)
         XCTAssertEqual(offset / CGFloat(tiny * 710), 1, accuracy: 0.001)
     }
 
     func testTheLandingIsCapped() {
         var previous: CGFloat = 0
         for overshoot in stride(from: 0.0, through: 0.2, by: 0.005) {
-            let offset = PlayerCard.landingOffset(overshoot: overshoot, travel: 710)
+            let offset = PlayerCard.landingSag(overshoot: overshoot, travel: 710)
             XCTAssertGreaterThanOrEqual(offset, previous, "monotonic")
             XCTAssertLessThanOrEqual(offset, PlayerCard.landingCap)
             previous = offset
         }
         XCTAssertGreaterThan(previous, PlayerCard.landingCap - 0.5, "a deep overshoot reaches the cap")
+    }
+
+    // MARK: - Cú giãn: hai bên nở theo đáy
+
+    func testTheSidesDoNotMoveUntilTheBottomSags() {
+        XCTAssertEqual(PlayerCard.landingWidening(sag: 0), 0)
+        XCTAssertEqual(PlayerCard.landingWidening(sag: -3), 0)
+    }
+
+    /// Phán quyết vòng sửa 2: ~1–2pt mỗi bên ở đỉnh một cú võng ~10pt.
+    func testAnEverydaySagWidensEachSideByOneToTwoPoints() {
+        let side = PlayerCard.landingWidening(sag: 10)
+        XCTAssertGreaterThanOrEqual(side, 1)
+        XCTAssertLessThanOrEqual(side, 2)
+    }
+
+    func testTheWideningGrowsWithTheSagAndStaysSmallAtTheCap() {
+        var previous: CGFloat = 0
+        for sag in stride(from: CGFloat(0), through: PlayerCard.landingCap, by: 0.5) {
+            let side = PlayerCard.landingWidening(sag: sag)
+            XCTAssertGreaterThanOrEqual(side, previous, "monotonic")
+            previous = side
+        }
+        XCTAssertLessThanOrEqual(previous, 3, "at the deepest sag the card only widens \(previous)pt a side")
     }
 
     // MARK: - Lò xo của cú thu
@@ -131,7 +155,7 @@ final class CollapseHandoffTests: XCTestCase {
     private let travel: CGFloat = 710
 
     private func landingPoints(_ run: Run, from start: Double) -> CGFloat {
-        PlayerCard.landingOffset(overshoot: run.deepest * start, travel: travel)
+        PlayerCard.landingSag(overshoot: run.deepest * start, travel: travel)
     }
 
     func testTheGeometryStopsAtItsTargetAndNeverPastIt() {

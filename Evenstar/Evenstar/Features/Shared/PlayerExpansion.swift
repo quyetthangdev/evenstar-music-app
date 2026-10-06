@@ -108,21 +108,23 @@ final class PlayerExpansion {
     ///
     /// **Không** còn quyết accessory hiện nội dung lúc nào. Bản trước
     /// (`fbc0837`) cho accessory hiện ngay lúc quyết thu, nằm sẵn dưới một tấm
-    /// thẻ đặc rồi thẻ mờ đi ở 2% cuối. Thẻ giờ là kính trong suốt suốt đoạn
-    /// cuối và lún lệch khỏi viên kính tới ~10pt, nên một hàng nằm dưới sẽ
-    /// **hiện xuyên qua** thành hai dòng chữ lệch nhau. Xem
-    /// `showsAccessoryContent`.
+    /// thẻ đặc rồi thẻ mờ đi ở 2% cuối. Thẻ giờ là kính trong suốt từ lúc còn
+    /// cao gấp đôi viên kính — hàng mini của nó khi ấy còn ở trên hàng của
+    /// accessory tới ~40pt — nên một hàng nằm dưới sẽ **hiện xuyên qua** thành
+    /// hai dòng chữ lệch nhau. Xem `showsAccessoryContent`.
     ///
-    /// Lật bên trong `withAnimation` của cú thu, nên lớp kính của `CardSurface`
+    /// Lật bên trong `withAnimation` của cú thu, nên lớp kính (`CollapseGlass`)
     /// đi theo đường cong của hình học thay vì bật một bậc — chuyện này chỉ lộ
     /// khi thả tay lúc thẻ đã gần bằng viên kính.
     private(set) var isCollapsing = false
 
     /// Accessory có nên vẽ nội dung của nó không: **chỉ lúc nghỉ**.
     ///
-    /// Suốt cú thu, chính thẻ vẽ hàng mini — trên một mặt kính trong suốt và
-    /// lệch khỏi viên kính trong lúc lún — nên hàng của accessory phải vắng
-    /// mặt, không thì nó hiện xuyên qua thẻ. Nó hiện lại đúng lúc thẻ về nghỉ:
+    /// Suốt cú thu, chính thẻ vẽ hàng mini — trên một mặt kính trong suốt, và
+    /// lệch khỏi viên kính cho tới khi hình học tới đích — nên hàng của
+    /// accessory phải vắng mặt, không thì nó hiện xuyên qua thẻ. Kể cả khi đã
+    /// trùng chỗ: chữ của hai hàng chồng nhau qua một lớp kính không đọc ra là
+    /// một hàng. Nó hiện lại đúng lúc thẻ về nghỉ:
     /// cú nảy đã xong, hai hàng trùng khít, và thẻ mờ đi phía trên nó
     /// (`BottomBarStyle.collapseHandoff`).
     var showsAccessoryContent: Bool { isCardResting }

@@ -271,7 +271,7 @@ struct PlayerCard: View {
     @State private var cardOpacity: Double = 1
 
     /// Bản sao của `progress` chạy trên đường cong **không dừng ở đích** — chỉ
-    /// để `CollapseLanding` đọc phần âm của nó thành cú lún cuối cú thu.
+    /// để `CollapseGlass` đọc phần âm của nó thành cú giãn cuối cú thu.
     ///
     /// Hình học của thẻ không được vọt qua 0: SwiftUI nội suy khung thẻ, và vọt
     /// qua là ngoại suy — thẻ bẹp lại. Nên cú thu chạy cùng một lò xo hai lần
@@ -286,7 +286,7 @@ struct PlayerCard: View {
     /// khung kéo — chỉ hai lần ghi mỗi cú morph.
     ///
     /// `completion` của nó — không phải của hình học — là lúc thẻ về nghỉ:
-    /// hình học tới 0 ngay trước cú lún, còn thẻ chỉ được nhường chỗ sau cú nảy.
+    /// hình học tới 0 ngay trước cú giãn, còn thẻ chỉ được nhường chỗ sau cú nảy.
     @State private var landing: Double = 0
 
     /// Những cú morph có hình học là một lò xo thường, còn đang chạy — để một
@@ -1146,10 +1146,11 @@ struct PlayerCard: View {
         .frame(width: cardWidth, height: height, alignment: .top)
         .modifier(CardClip(progress: progress, insets: insets,
                            collapsedRadius: anchor.collapsedCornerRadius))
-        // Cú lún cuối cú thu: một phép dời, sau khung và sau cú cắt góc, nên
-        // không đụng bố cục, không đụng hình dạng — thẻ đi xuống nguyên vẹn
-        // rồi nảy về. Quãng dời đổi ra điểm bằng chính `dragTravel` đặt thẻ.
-        .modifier(CollapseLanding(progress: landing, travel: dragTravel))
+        // Lớp kính của thẻ, **sau** cú cắt góc: nó phải giãn ra ngoài khung
+        // thẻ trong cú nảy cuối cú thu, mà không đụng bố cục — xem `CollapseGlass`.
+        .modifier(CollapseGlass(progress: progress,
+                                glassGate: expansion.cardSurfaceIsGlass ? 1 : 0,
+                                landing: landing, anchor: anchor))
         // Positions the card horizontally. It cannot be centred in the frame
         // below any more: with the accessory's two side margins unequal —
         // which is exactly the landscape case — centring
@@ -2628,7 +2629,8 @@ struct PlayerCard: View {
     /// Ở nhánh thường, cú thu nhận **hai** đường từ
     /// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`: hình học dừng ở
     /// lần đầu chạm 0, còn `landing` đi tiếp xuống dưới 0 rồi nảy về —
-    /// `CollapseLanding` đọc phần âm ấy thành cú lún ~10pt. Ở đoạn cuối, khi
+    /// `CollapseGlass` đọc phần âm ấy thành cú giãn: mép trên ghim ở viên kính,
+    /// đáy võng ~10pt, hai bên nở ~1,5pt. Ở đoạn cuối, khi
     /// thẻ còn lớn hơn viên kính một chút, mặt thẻ chuyển sang kính
     /// (`CardSurface`, `collapseGlass`). Chiều mở thì hai đường là một, và
     /// không có gì trong ấy đổi so với trước.
@@ -2892,24 +2894,38 @@ struct PlayerCard: View {
     static let collapseGlassStartRatio: Double = 2
     static let collapseGlassEndRatio: Double = 1.25
 
-    /// Cú dời xuống của thẻ, tính bằng điểm, khi `landing` đã vọt quá 0 một
-    /// đoạn `overshoot` (đơn vị `progress`). 0 khi chưa vọt qua.
+    /// Đáy thẻ võng xuống bao nhiêu điểm dưới đáy viên kính, khi `landing` đã
+    /// vọt quá 0 một đoạn `overshoot` (đơn vị `progress`). 0 khi chưa vọt qua.
+    /// Mép trên thì không đi đâu — xem `CollapseGlass`.
     ///
     /// Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng mép
-    /// trên thẻ đi trên mỗi đơn vị `progress` — nên ngay lúc chạm đích mép trên
-    /// đi tiếp **cùng tốc độ**: độ dốc của hàm này ở 0 là 1. Rồi trần mềm
-    /// `tanh`: cú thu thường ngày gần như không bị chạm tới (~11pt thô ra
-    /// ~10pt), cú búng mạnh nhất không lún quá `landingCap`.
-    static func landingOffset(overshoot: Double, travel: CGFloat) -> CGFloat {
+    /// trên thẻ đi trên mỗi đơn vị `progress` — nên ngay lúc chạm đích, đà của
+    /// mép trên chuyển nguyên vào mép dưới: độ dốc của hàm này ở 0 là 1. Rồi
+    /// trần mềm `tanh`: cú thu thường ngày gần như không bị chạm tới (~11pt thô
+    /// ra ~10pt), cú búng mạnh nhất không võng quá `landingCap`.
+    static func landingSag(overshoot: Double, travel: CGFloat) -> CGFloat {
         let raw = CGFloat(max(overshoot, 0)) * travel
         return landingCap * tanh(raw / landingCap)
     }
 
-    /// Trần của cú lún. Không trần, cú búng mạnh nhất (vận tốc chặn ở
+    /// Trần của cú võng. Không trần, cú búng mạnh nhất (vận tốc chặn ở
     /// `BottomBarStyle.maxSettleVelocity`) vọt qua ~10% quãng đường — gần 70pt,
-    /// thẻ chui hẳn xuống thanh tab. 16 cho ~16pt: "búng mạnh thì lún sâu hơn
+    /// thẻ chui hẳn xuống thanh tab. 16 cho ~16pt: "búng mạnh thì võng sâu hơn
     /// một chút", như spec.
     static let landingCap: CGFloat = 16
+
+    /// Mỗi bên thẻ nở ra bao nhiêu điểm khi đáy võng `sag` điểm: tỉ lệ thẳng,
+    /// `landingWideningRatio`. Thẻ giãn **mà không mỏng đi** — một vật mềm bị
+    /// ép xuống thì phình ra hai bên — và, việc thật sự của nó, hai mép bên của
+    /// thẻ không bao giờ lọt vào trong hai mép viên kính hệ thống.
+    static func landingWidening(sag: CGFloat) -> CGFloat {
+        max(sag, 0) * landingWideningRatio
+    }
+
+    /// 0.15: võng ~10pt → nở ~1,5pt mỗi bên; ở trần 16pt là 2,4pt. Theo phán
+    /// quyết vòng sửa 2 ("≈1–2pt mỗi bên ở đỉnh"): đủ để thấy thẻ phình chứ
+    /// không chỉ dài ra, chưa đủ để đọc thành một cú phóng to.
+    static let landingWideningRatio: CGFloat = 0.15
 
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
@@ -3051,15 +3067,12 @@ private struct CardClip: ViewModifier {
 /// sang kính trong một khung đúng lúc nhấc tay. Rời nghỉ và mở lại thì cờ tắt
 /// ngoài mọi animation — đặc ngay.
 ///
-/// Lớp kính chỉ **có mặt trong cây** khi `glass > 0`: suốt cú bung, lúc kéo, và
-/// gần hết cú thu, không có lớp kính toàn màn hình nào nằm dưới lớp đặc chờ
-/// được vẽ. Nó được chèn vào khi thẻ đã thu còn gấp đôi viên kính — nhỏ — và
-/// **ở lại suốt lúc nghỉ**: khi ấy cổng là 1 (`cardSurfaceIsGlass` gồm cả
-/// `isCardResting`) và `progress` là 0, nên lớp kính cỡ viên kính vẫn nằm trong
-/// cây, dưới một tấm thẻ ở độ mờ 0. Rời nghỉ là cổng về 0 ngay và nó rời cây
-/// trước khung đầu của cú bung.
-/// Lớp đặc mờ đi **phía trên** lớp kính đặc: cú hoà là `(1 − g)·đặc + g·kính`,
-/// không có khung nào hai lớp cùng nhạt cho nền lọt qua.
+/// **Lớp kính không nằm ở đây** (vòng sửa 2): nó là `CollapseGlass`, một nền
+/// *ngoài* cú cắt góc của thẻ, để nó giãn được ra ngoài khung thẻ trong cú
+/// nảy. Kiểu này chỉ còn lớp đặc, mờ đi theo đúng lượng kính ấy — cùng hàm,
+/// cùng `animatableData`, nên hai bên khớp từng khung. Lớp đặc nằm **trên**
+/// lớp kính: cú hoà là `(1 − g)·đặc + g·kính`, không có khung nào hai lớp
+/// cùng nhạt cho nền lọt qua.
 private struct CardSurface: View, Animatable {
     var progress: Double
     var glassGate: Double
@@ -3078,28 +3091,15 @@ private struct CardSurface: View, Animatable {
             cardHeight: anchor.cardFrame(progress: progress).height,
             capsuleHeight: anchor.collapsedHeight
         )
+        // Đặc ngay từ khung đầu khi bung, như Apple Music (video 2026-10-06).
+        // Lớp dưới đặc sẵn; lớp trên là nền của player mở rộng, lên dần theo
+        // `progress`.
         ZStack {
-            if glass > 0 {
-                Color.clear.glassEffect(
-                    .regular,
-                    in: RoundedRectangle(
-                        cornerRadius: PlayerCard.cardTopCornerRadius(
-                            progress: progress, collapsedRadius: anchor.collapsedCornerRadius
-                        ),
-                        style: .continuous
-                    )
-                )
-            }
-            // Đặc ngay từ khung đầu khi bung, như Apple Music (video
-            // 2026-10-06). Lớp dưới đặc sẵn; lớp trên là nền của player mở
-            // rộng, lên dần theo `progress`.
-            ZStack {
-                Color(.secondarySystemBackground)
-                Color(.systemGroupedBackground)
-                    .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
-            }
-            .opacity(1 - glass)
+            Color(.secondarySystemBackground)
+            Color(.systemGroupedBackground)
+                .opacity(min(1, progress * PlayerCard.opaqueBaseRamp))
         }
+        .opacity(1 - glass)
     }
 }
 
@@ -3172,24 +3172,111 @@ private struct PresentedOpacity: ViewModifier, Animatable {
     }
 }
 
-/// Cú lún ở cuối cú thu: dời cả tấm thẻ xuống theo phần **âm** của
-/// `PlayerCard.landing` — xem `PlayerCard.landingOffset` và
-/// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
+/// Lớp kính của thẻ, và cú **giãn** ở cuối cú thu — xem `PlayerCard.landingSag`
+/// và `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
 ///
-/// Phải là `Animatable`, cùng lẽ với `CardSurface` và `PresentedOpacity`: dưới
-/// `withAnimation`, một `.offset(y: f(landing))` trần được tính **một lần** ở
-/// đích (`landing` 0 → dời 0) rồi SwiftUI nội suy giữa hai số 0 — không có cú
-/// lún nào cả. Chỉ `animatableData` thấy được giá trị đang vẽ, kể cả khi nó
-/// vọt qua đích.
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO GIÃN CHỨ KHÔNG DỜI (vòng sửa 2, QA trên máy IMG_2559)
+/// ─────────────────────────────────────────────────────────────────────────
+/// Bản trước dời cả tấm thẻ xuống ~10pt. Viên kính accessory của hệ thống thì
+/// đứng yên — không có API nào ẩn được lớp kính ấy mà giữ accessory — nên
+/// trong cú lún, mép trên của nó lộ ra **phía trên** thẻ thành một viền thứ hai
+/// (`device3-bounce.png`, khung #74–83). Giờ mép trên thẻ ghim ở mép trên viên
+/// kính, mép dưới mang cú vọt qua, và hai bên nở ra một chút theo cùng nhịp:
+/// viên kính hệ thống **luôn nằm trọn** trong thẻ suốt cú nảy.
 ///
-/// Một phép dời thuần — `.offset` là một hiệu ứng hình học, không phải bố cục —
-/// nên thân của kiểu này chạy mỗi khung mà không kéo theo một lượt bố cục nào,
-/// và khung thẻ (thứ SwiftUI nội suy) giữ nguyên cỡ suốt cú lún: không bẹp.
-/// Ngoài cú lún, `landing` ≥ 0 và đây là `.offset(y: 0)`.
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO LÀ MỘT NỀN NGOÀI CÚ CẮT GÓC
+/// ─────────────────────────────────────────────────────────────────────────
+/// Thứ phải giãn là **hình** của thẻ, không phải nội dung: hàng mini đứng yên
+/// đúng chỗ hàng của accessory sẽ hiện ra. Giãn khung thẻ thì phải bố cục lại
+/// cả cây thẻ mỗi khung, và thứ đặt thẻ (căn đáy, `padding` đáy theo
+/// `progress`) sẽ đẩy mép trên **lên**. Giãn cú cắt góc thì phải đổi nó thành
+/// một hình khác khung — một mask, lượt vẽ ngoài màn hình mà `CardClip` tồn
+/// tại để tránh. Nên lớp kính ra khỏi `CardSurface` và thành một `.background`
+/// đặt **sau** `CardClip`: không bị cắt, không đổi kích thước bố cục của thẻ,
+/// và `padding` âm cho nó vẽ tràn ra dưới và hai bên. Lúc thẻ đã thu, lớp đặc
+/// trong thẻ ở độ mờ 0, nên thứ nhìn thấy là đúng lớp kính này; khi chưa giãn
+/// (`sag` 0) nó trùng khít khung thẻ như lớp kính cũ.
 ///
-/// Không động tới hit testing: suốt cú thu `progress` (giá trị đích) đã là 0,
-/// nên thẻ đã nhả chạm xuống accessory và thư viện từ lúc nhấc tay.
-private struct CollapseLanding: ViewModifier, Animatable {
+/// Bán kính góc giữ **bán kính viên kính** (24), không phải nửa chiều cao
+/// đang giãn: góc trên của thẻ khi ấy trùng khít góc trên viên kính hệ thống,
+/// và một hình cao hơn, rộng hơn, cùng bán kính, ghim mép trên, thì chứa trọn
+/// viên kính. Lấy nửa chiều cao (29 ở đỉnh cú nảy) thì góc trên của thẻ lẹm vào
+/// sâu hơn góc viên kính ~2pt theo đường chéo — viền hệ thống lại lộ ra ở hai
+/// góc. Và mắt đọc ra đúng ý: đáy võng xuống, hai cạnh thẳng dài ra, như thạch.
+///
+/// **Hai kiểu `Animatable`, không phải một — đo được.** Bản đầu gộp `progress`,
+/// cổng kính và `landing` vào một `AnimatablePair`. Ba giá trị đổi trong cùng
+/// một lượt cập nhật nhưng dưới hai `withAnimation` khác nhau (hình học dừng ở
+/// đích, `landing` thì không), và SwiftUI nội suy cả cặp bằng **một** đường
+/// cong: `landing` đi theo đường của hình học, không bao giờ vọt qua 0 — không
+/// có cú giãn nào — và `completion` của nó không bao giờ nổ, nên thẻ không bao
+/// giờ về nghỉ. Mỗi giá trị chạy trên đường của riêng nó thì phải nằm ở một
+/// `animatableData` riêng: lượng kính ở `CollapseGlassLayer`, cú giãn ở
+/// `LandingStretch` bọc quanh nó.
+///
+/// Lớp kính chỉ có mặt khi lượng kính > 0 — không có lớp kính toàn màn hình
+/// nào suốt cú bung — và ở lại lúc nghỉ, dưới một tấm thẻ ở độ mờ 0 (cổng là
+/// 1, `progress` 0). Không nhận chạm.
+private struct CollapseGlass: ViewModifier {
+    let progress: Double
+    let glassGate: Double
+    let landing: Double
+    let anchor: PlayerAnchor
+
+    func body(content: Content) -> some View {
+        content.background(alignment: .top) {
+            CollapseGlassLayer(progress: progress, glassGate: glassGate, anchor: anchor)
+                .modifier(LandingStretch(progress: landing, travel: anchor.dragTravel))
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// Lớp kính, đọc lượng kính ở giá trị **đang vẽ** — cùng hàm, cùng
+/// `animatableData` với lớp đặc trong `CardSurface`, nên hai lớp hoà vào nhau
+/// khớp từng khung.
+private struct CollapseGlassLayer: View, Animatable {
+    var progress: Double
+    var glassGate: Double
+    let anchor: PlayerAnchor
+
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(progress, glassGate) }
+        set {
+            progress = newValue.first
+            glassGate = newValue.second
+        }
+    }
+
+    var body: some View {
+        let glass = glassGate * PlayerCard.collapseGlass(
+            cardHeight: anchor.cardFrame(progress: progress).height,
+            capsuleHeight: anchor.collapsedHeight
+        )
+        if glass > 0 {
+            Color.clear.glassEffect(
+                .regular,
+                in: RoundedRectangle(
+                    cornerRadius: PlayerCard.cardTopCornerRadius(
+                        progress: progress, collapsedRadius: anchor.collapsedCornerRadius
+                    ),
+                    style: .continuous
+                )
+            )
+        }
+    }
+}
+
+/// Cú giãn: đọc phần **âm** của `PlayerCard.landing` ở giá trị đang vẽ, cho
+/// lớp kính tràn xuống dưới `landingSag` và ra hai bên `landingWidening`. Mép
+/// trên không có `padding` nào — nó đứng yên.
+///
+/// Phải là `Animatable` vì cùng lẽ với `CardSurface`: dưới `withAnimation`, một
+/// `padding(f(landing))` trần được tính một lần ở đích (`landing` 0 → 0) — không
+/// có cú giãn nào. Ngoài cú thu, `landing` ≥ 0 và đây là `padding(0)`.
+private struct LandingStretch: ViewModifier, Animatable {
     var progress: Double
     let travel: CGFloat
 
@@ -3199,7 +3286,9 @@ private struct CollapseLanding: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        content.offset(y: PlayerCard.landingOffset(overshoot: -progress, travel: travel))
+        let sag = PlayerCard.landingSag(overshoot: -progress, travel: travel)
+        let side = PlayerCard.landingWidening(sag: sag)
+        content.padding(EdgeInsets(top: 0, leading: -side, bottom: -sag, trailing: -side))
     }
 }
 

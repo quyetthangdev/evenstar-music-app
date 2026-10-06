@@ -2,14 +2,19 @@ import XCTest
 import SwiftUI
 @testable import Evenstar
 
-/// **Cú thu vẽ ra thật, từng khung**: mép thẻ lún quá viên kính ~10pt rồi về,
-/// chiều cao không bao giờ dưới viên kính, mặt thẻ đặc lúc đầu và là kính lúc
-/// cuối.
+/// **Cú thu vẽ ra thật, từng khung**: thẻ **giãn** trùm lên viên kính — mép
+/// trên đứng yên ở mép trên viên kính, mép dưới võng ~10pt rồi về, hai mép bên
+/// không bao giờ lọt vào trong — chiều cao không bao giờ dưới viên kính, mặt
+/// thẻ đặc lúc đầu và là kính lúc cuối.
+///
+/// Vì sao giãn chứ không dời: QA trên máy (IMG_2559, `device3-bounce.png`) —
+/// viên kính hệ thống đứng yên lộ ra phía trên một tấm thẻ dời xuống. Xem
+/// `CollapseGlass` trong `PlayerCard.swift`.
 ///
 /// `CollapseHandoffTests` ghim đường cong; ở đây là việc SwiftUI có vẽ đúng
 /// đường cong ấy không — thứ phép tính không trả lời được: hình học có thật sự
-/// dừng ở đích dưới `CustomAnimation`, cú dời có thật sự cưỡi lên một khung
-/// thẻ không đổi cỡ, lớp kính có thật sự hiện ra.
+/// dừng ở đích dưới `CustomAnimation`, cú giãn có thật sự chạy trên đường cong
+/// của riêng nó, lớp kính có thật sự hiện ra.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
 /// CÁCH ĐO
@@ -112,7 +117,7 @@ final class CollapseLandingFrameTests: XCTestCase {
         self.window = window
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         var rig = Rig(playback: playback, expansion: expansion, track: track, host: host, screen: screen)
-        let raw = capture(rig)
+        let raw = capture(rig).column
         rig.shift = try XCTUnwrap((0..<raw.pixels.count).first { raw.isBare($0) },
                                   "no stripes in the snapshot at all")
         XCTAssertLessThan(rig.shift, 60, "the snapshot is offset by \(rig.shift)pt; something else is drawn on top")
@@ -155,7 +160,9 @@ final class CollapseLandingFrameTests: XCTestCase {
         }
     }
 
-    private func capture(_ rig: Rig) -> Column {
+    /// Một cột (dọc, ở `rig.column`) và một hàng (ngang, qua giữa viên kính
+    /// lúc nghỉ) của cùng một khung.
+    private func capture(_ rig: Rig) -> (column: Column, row: Column) {
         let width = Int(rig.screen.width), height = Int(rig.screen.height)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -175,12 +182,20 @@ final class CollapseLandingFrameTests: XCTestCase {
             let p = (row * width + rig.column) * 4
             pixels.append((Int(data[p]), Int(data[p + 1]), Int(data[p + 2])))
         }
-        return Column(pixels: pixels)
+        var across: [(r: Int, g: Int, b: Int)] = []
+        let y = min(Int(rig.rest.midY) + rig.shift, height - 1)
+        for x in 0..<width {
+            let p = (y * width + x) * 4
+            across.append((Int(data[p]), Int(data[p + 1]), Int(data[p + 2])))
+        }
+        return (Column(pixels: pixels), Column(pixels: across))
     }
 
     private struct Sample {
         let ms: Double
         let column: Column
+        /// Bề ngang thẻ ở hàng giữa viên kính lúc nghỉ, nếu có.
+        let across: ClosedRange<Int>?
         /// Thẻ quanh giữa viên kính lúc nghỉ, nếu có.
         let cover: ClosedRange<Int>?
         /// …và chỉ khi thẻ đã đủ nhỏ để cả dải nằm gọn trong vùng đo.
@@ -196,9 +211,10 @@ final class CollapseLandingFrameTests: XCTestCase {
         while CACurrentMediaTime() - start < seconds {
             RunLoop.main.run(until: Date().addingTimeInterval(0.004))
             let ms = (CACurrentMediaTime() - start) * 1000
-            let column = capture(rig)
+            let (column, row) = capture(rig)
             let cover = column.cover(around: middle)
-            out.append(Sample(ms: ms, column: column, cover: cover,
+            out.append(Sample(ms: ms, column: column,
+                              across: row.cover(around: Int(rig.rest.midX)), cover: cover,
                               landedCover: cover.flatMap { $0.lowerBound > zoneTop ? $0 : nil }))
         }
         return out
@@ -235,7 +251,7 @@ final class CollapseLandingFrameTests: XCTestCase {
                                          verticalVelocity: velocity)
     }
 
-    func testTheCollapseLandsBelowTheCapsuleWithoutShrinkingAndEndsInGlass() throws {
+    func testTheCollapseStretchesOverTheCapsuleWithoutShrinkingAndEndsInGlass() throws {
         let rig = try mountRestingCard()
         openFully(rig)
 
@@ -253,17 +269,18 @@ final class CollapseLandingFrameTests: XCTestCase {
         var deepest = 0.0
         var time = 0.0
         while let f = spring.fraction(at: time) { deepest = max(deepest, f - 1); time += 0.001 }
-        let predicted = PlayerCard.landingOffset(overshoot: deepest * start, travel: travel)
+        let predicted = PlayerCard.landingSag(overshoot: deepest * start, travel: travel)
 
         let restTop = Int(rig.rest.minY), restBottom = Int(rig.rest.maxY) - 1
         print("[landing] snapshot shift \(rig.shift)pt, rest rows \(restTop)–\(restBottom), column \(rig.column),"
-              + " predicted dip \(String(format: "%.1f", predicted))pt,"
+              + " predicted sag \(String(format: "%.1f", predicted))pt,"
               + " handoff at \(String(format: "%.0f", spring.settlingTime * 1000))ms, \(frames.count) frames")
         for sample in frames {
             let tint = surfaceTint(sample).map { String(format: "%5.1f", $0) } ?? "    —"
             if let cover = sample.cover {
-                print(String(format: "[landing] t=%6.1fms top=%4d bottom=%4d height=%3d tint=%@",
-                             sample.ms, cover.lowerBound, cover.upperBound, cover.count, tint))
+                let across = sample.across.map { "left=\($0.lowerBound) right=\($0.upperBound)" } ?? "left/right —"
+                print(String(format: "[landing] t=%6.1fms top=%4d bottom=%4d height=%3d tint=%@ ",
+                             sample.ms, cover.lowerBound, cover.upperBound, cover.count, tint) + across)
             } else {
                 print(String(format: "[landing] t=%6.1fms no card at the capsule", sample.ms))
             }
@@ -277,7 +294,7 @@ final class CollapseLandingFrameTests: XCTestCase {
         let fading = frames.firstIndex { ($0.landedCover != nil) && (surfaceTint($0) ?? 999) > 60 }
             ?? frames.endIndex
         let measured = frames[..<fading]
-            .compactMap { s in s.landedCover.map { (ms: s.ms, cover: $0, column: s.column) } }
+            .compactMap { s in s.landedCover.map { (ms: s.ms, cover: $0, column: s.column, across: s.across) } }
         // Hình học đã tới đích: thẻ chỉ còn cỡ viên kính. Trước đó mép dưới
         // vốn nằm dưới viên kính — nó đi **lên** 91pt suốt cú thu — nên "lún"
         // chỉ có nghĩa từ đây.
@@ -288,19 +305,51 @@ final class CollapseLandingFrameTests: XCTestCase {
         // cho một máy chậm gấp đôi.
         XCTAssertGreaterThanOrEqual(landed.count, 4, "too few frames caught the card at the capsule's size")
 
-        // 1. Mép dưới lún quá viên kính ~10pt, rồi về.
+        // 1. Mép dưới võng quá viên kính ~10pt, rồi về.
+        //
+        // Độ sâu đo bằng khung sâu nhất của **hai** cú thu giống hệt nhau. Một
+        // `drawHierarchy` tốn ~30ms, có khung tới ~60ms, nên một cuộn phim có
+        // lúc rơi hai bên đỉnh võng và đọc ra 8pt cho một đỉnh 10,7pt (đo được,
+        // hai trong sáu lần chạy). Lần thứ hai lệch pha lấy mẫu với lần đầu;
+        // lấy cái sâu hơn là đo đỉnh, không phải nới biên.
+        openFully(rig)
+        dragDownAndRelease(rig, to: start, velocity: velocity)
+        let again = film(rig, for: 0.8)
+        let againDeepest = again.compactMap { s -> Int? in
+            guard let cover = s.landedCover, cover.count <= Int(rig.rest.height * 1.4) else { return nil }
+            return cover.upperBound
+        }.max() ?? 0
         let deepestBottom = try XCTUnwrap(landed.map(\.cover.upperBound).max())
-        let dip = deepestBottom - restBottom
+        let dip = max(deepestBottom, againDeepest) - restBottom
+        print("[landing] deepest bottom: first run \(deepestBottom), second run \(againDeepest)")
         XCTAssertGreaterThanOrEqual(dip, 8, "the card's bottom edge went only \(dip)pt below the capsule")
         XCTAssertLessThanOrEqual(dip, 12, "the card's bottom edge went \(dip)pt below the capsule")
         XCTAssertEqual(CGFloat(dip), predicted, accuracy: 2.5, "drawn \(dip)pt against \(predicted)pt computed")
         let peak = try XCTUnwrap(landed.firstIndex { $0.cover.upperBound == deepestBottom })
+        XCTAssertGreaterThanOrEqual(deepestBottom - restBottom, 6, "the first run barely sagged")
         XCTAssertTrue(landed[peak...].contains { abs($0.cover.upperBound - restBottom) <= 1 },
                       "the card never came back up to the capsule's bottom edge")
-        // …và cả tấm thẻ đi xuống: mép trên cũng qua mép trên viên kính.
-        let deepestTop = try XCTUnwrap(landed.map(\.cover.lowerBound).max())
-        XCTAssertGreaterThanOrEqual(deepestTop - restTop, dip - 2,
-                                    "only the bottom edge moved — a stretch, not a dip")
+        // …còn mép trên **đứng yên** ở mép trên viên kính: không có khung nào
+        // viên kính hệ thống lộ ra phía trên thẻ (QA IMG_2559). Từng điểm ảnh
+        // ở đây là 1pt, nên "≤ 0,5pt" là "không qua hàng của mép trên".
+        for frame in landed {
+            XCTAssertLessThanOrEqual(frame.cover.lowerBound, restTop,
+                                     "the top edge sank to \(frame.cover.lowerBound) at t=\(frame.ms)ms")
+        }
+        // …và hai mép bên không bao giờ lọt vào trong hai mép viên kính.
+        let restLeft = Int(rig.rest.minX), restRight = Int(rig.rest.maxX) - 1
+        var widest = 0
+        for frame in landed {
+            let across = try XCTUnwrap(frame.across, "no card across the capsule at t=\(frame.ms)ms")
+            XCTAssertLessThanOrEqual(across.lowerBound, restLeft, "left edge inside the capsule at t=\(frame.ms)ms")
+            XCTAssertGreaterThanOrEqual(across.upperBound, restRight,
+                                        "right edge inside the capsule at t=\(frame.ms)ms")
+            widest = max(widest, across.count)
+        }
+        // Và nở ra thật: ở đỉnh cú võng rộng hơn lúc đã về chỗ.
+        let settledWidth = try XCTUnwrap(landed.last?.across?.count)
+        XCTAssertGreaterThanOrEqual(widest - settledWidth, 2,
+                                    "the card did not widen: \(widest)pt at most against \(settledWidth)pt settled")
 
         // 2. Không bao giờ nhỏ hơn viên kính.
         let smallest = try XCTUnwrap(measured.map(\.cover.count).min())
