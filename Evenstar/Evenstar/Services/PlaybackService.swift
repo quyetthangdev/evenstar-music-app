@@ -101,6 +101,14 @@ final class PlaybackService {
         !queue.isEmpty && (queueIndex + 1 < queue.count || repeatMode != .off)
     }
 
+    /// Whether a swipe back has a track to land on. Unlike the Previous button
+    /// — which is never a no-op, because it can always restart — a swipe means
+    /// "the track before this one", and at the head of an unrepeated queue
+    /// there is none.
+    var canGoPrevious: Bool {
+        !queue.isEmpty && (queueIndex > 0 || repeatMode != .off)
+    }
+
     // MARK: - Dependencies
     private let player: AudioPlayerProtocol
     private let nowPlaying: NowPlayingPublisher
@@ -552,6 +560,17 @@ final class PlaybackService {
         } else {
             seek(to: 0)
         }
+    }
+
+    /// Steps back one track, ignoring `restartThreshold`. For the mini player's
+    /// swipe: the previous track's artwork slides in, so restarting the current
+    /// one would contradict what the user just watched. At the head of the
+    /// queue it wraps when a repeat mode is armed, like `previous()`, and does
+    /// nothing otherwise — `canGoPrevious` is false there and the swipe
+    /// rubber-bands instead of calling this.
+    func stepBack() {
+        guard canGoPrevious else { return }
+        advance(to: queueIndex > 0 ? queueIndex - 1 : queue.count - 1)
     }
 
     /// Bật/tắt autoplay.
