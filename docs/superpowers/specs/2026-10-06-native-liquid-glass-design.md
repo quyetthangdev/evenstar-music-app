@@ -137,9 +137,14 @@ pill" không còn đúng.
 - Lúc nghỉ (`progress` 0) thẻ **vẫn nằm trong cây view**, ẩn và không nhận chạm.
   Không dựng/huỷ thẻ theo từng cú bung: E2 cho thấy cú bung đầu sau một quãng
   nghỉ đã gánh 57% hitch còn lại, và dựng thẻ từ đầu sẽ làm nặng thêm đúng cú đó.
-- **Thẻ đặc ngay từ khung đầu, không có lớp kính**, như Apple Music. Lớp
-  `.thinMaterial` cũ của viên pill bị xoá, không thay bằng `.glassEffect`. Lúc
-  nghỉ, khung ấy là viên kính của hệ thống; lúc bung, thẻ đặc phủ lên.
+- **Khi bung: thẻ đặc ngay từ khung đầu, không có lớp kính**, như Apple Music.
+  Lớp `.thinMaterial` cũ của viên pill bị xoá. Lúc nghỉ, khung ấy là viên kính
+  của hệ thống; lúc bung, thẻ đặc phủ lên.
+- **Khi thu (sửa 2026-10-06 sau QA trên máy):** ở đoạn cuối, lúc thẻ còn lớn hơn
+  viên kính một chút, mặt thẻ chuyển từ đặc sang `.glassEffect`; thẻ **lún quá
+  chỗ ~10pt rồi nảy lại** (không bẹp hình) như Apple Music; chỉ sau cú nảy mới
+  nhường cho accessory — kính nhường cho kính, không đổi màu. Video Apple Music:
+  thẻ thành kính ~66–100ms trước khi chạm đáy, lún ~132–200ms, nảy về ~200–500ms.
 
 ### Thay đổi hành vi
 

@@ -16,7 +16,7 @@
 - Không thêm thư viện bên thứ ba.
 - Không dùng `#available(iOS 26, *)`: target đã là 26.
 - `\.tabViewBottomAccessoryPlacement` chỉ được đọc để ẩn/hiện nút ⏭ (mờ dần, như Apple Music), không cho kích thước hay bố cục nào khác. Spike thấy nó không ổn định trên simulator iOS 26.0; Task 6 kiểm trên máy thật.
-- Thẻ player **đặc ngay từ khung đầu**, không có lớp kính (`.glassEffect`, `.thinMaterial`), như Apple Music.
+- Thẻ player **đặc ngay từ khung đầu khi bung**, không có lớp kính. **Khi thu**, ở đoạn cuối mặt thẻ chuyển sang `.glassEffect` và thẻ lún quá chỗ ~10pt rồi nảy lại trước khi nhường cho accessory (sửa 2026-10-06 sau QA trên máy, theo video Apple Music).
 - Chỉ **một** chỗ đọc `accessibilityReduceMotion`: `RootView`. Mọi chỗ khác đọc `BottomBarStyle.reduceMotion`.
 - `RootView.body` không được đọc `playback.currentTrack` hay bất cứ thứ gì đổi theo bài, vì body ấy dựng lại `TabView` và năm tab.
 - Mọi chuỗi hiển thị mới dùng chuỗi tiếng Việt làm khoá và đi qua String Catalog như phần còn lại của app.
