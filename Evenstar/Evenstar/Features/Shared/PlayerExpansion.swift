@@ -104,6 +104,11 @@ final class PlayerExpansion {
     /// animation, vì `morph` và trạng thái `settled` là của riêng nó.
     private(set) var intent: PlayerIntent?
 
+    /// Đã gửi `.release` cho cú kéo hiện tại và thẻ chưa nhận nó. Chặn
+    /// `cancelAccessoryDrag()` gửi lần hai khi trạng thái cử chỉ reset ngay sau
+    /// một cú thả bình thường. Không quan sát: không view nào vẽ theo nó.
+    @ObservationIgnored private var releasePending = false
+
     func reportAccessoryFrame(_ frame: CGRect, isInline: Bool) {
         guard isCardResting else { return }
         accessoryFrame = frame
@@ -145,8 +150,27 @@ final class PlayerExpansion {
         let offset = PlayerCard.dragOffset(translationHeight: predictedTranslationHeight,
                                            threshold: AccessoryDragAxis.lockDistance)
         let predicted = -Double(offset / PlayerAnchor.dragTravel(for: anchorFrame))
+        releasePending = true
         intent = PlayerIntent(kind: .release(predictedProgress: predicted,
                                              verticalVelocity: verticalVelocity))
+    }
+
+    /// Cú kéo trên accessory bị **huỷ** — hệ thống cắt ngang, app xuống nền,
+    /// accessory bị dỡ khỏi cây giữa chừng. SwiftUI không gọi `onEnded` cho cú
+    /// kéo bị huỷ, nên không có đường này thì `accessoryDragging` kẹt ở `true`,
+    /// `arriveAtRest()` từ chối mãi mãi, và thẻ vô hình tràn màn hình nằm chắn
+    /// thư viện tới lần mở app sau.
+    ///
+    /// Thả ở đúng chỗ đang đứng, vận tốc 0: thẻ tự quyết mở hay đóng như mọi
+    /// cú thả khác, và `handle(_:)` vẫn gọi `takeAccessoryDrag()`.
+    ///
+    /// Vô hại khi gọi thừa: không có cú kéo nào, hoặc cú thả đã được gửi, thì
+    /// không làm gì.
+    func cancelAccessoryDrag() {
+        guard accessoryDragging, !releasePending else { return }
+        releasePending = true
+        intent = PlayerIntent(kind: .release(predictedProgress: min(max(accessoryDragDelta, 0), 1),
+                                             verticalVelocity: 0))
     }
 
     /// Thẻ gọi lúc nhận `.release`: chuyển phần kéo sang `dragDelta` của nó
@@ -155,6 +179,7 @@ final class PlayerExpansion {
         let carried = accessoryDragDelta
         accessoryDragDelta = 0
         accessoryDragging = false
+        releasePending = false
         return carried
     }
 }

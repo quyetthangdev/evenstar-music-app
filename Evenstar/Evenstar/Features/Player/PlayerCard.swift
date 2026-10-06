@@ -244,6 +244,12 @@ struct PlayerCard: View {
     /// that has clamped `progress` to 0 is still in flight and must keep the
     /// finger, which is precisely the case that broke.
     @State private var isDragging = false
+    /// `true` suốt cú kéo trên thẻ; SwiftUI tự trả về `false` khi cú kéo kết
+    /// thúc **hoặc bị huỷ**. `onEnded` không nổ cho cú kéo bị huỷ, và khi ấy
+    /// `isDragging` kẹt ở `true`: thẻ vô hình vẫn ăn chạm lúc nghỉ, và
+    /// `arriveAtRestIfCollapsed()` từ chối mãi. Xem `.onChange` của nó trong
+    /// `body`.
+    @GestureState private var dragIsLive = false
 
     /// Độ mờ của cả tấm thẻ. **Chỉ rời khỏi 1 khi Giảm chuyển động đang bật.**
     ///
@@ -936,6 +942,15 @@ struct PlayerCard: View {
         // At rest that includes the card hiding behind the accessory, which
         // offers the mini player to VoiceOver itself.
         .accessibilityHidden(playback.currentTrack == nil || expansion.isCardResting)
+        // Cú kéo trên thẻ bị huỷ (cuộc gọi, app xuống nền…): đáp như một cú
+        // thả vận tốc 0. Sau cú thả bình thường thì `onEnded` đã hạ
+        // `isDragging`, nên nhánh này không làm gì.
+        .onChange(of: dragIsLive) { _, live in
+            guard !live, isDragging else { return }
+            isDragging = false
+            morph(to: settled + dragDelta > 0.5 ? 1 : 0,
+                  curve: BottomBarStyle.settle(initialVelocity: 0))
+        }
         .onChange(of: playback.currentTrack?.id) { _, id in
             if id == nil { collapse() }
         }
@@ -2250,6 +2265,7 @@ struct PlayerCard: View {
 
     private func drag(travel: CGFloat, threshold: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: threshold)
+            .updating($dragIsLive) { _, live, _ in live = true }
             .onChanged { value in
                 // Guarded rather than assigned unconditionally: this fires on
                 // every touch move, and a redundant `@State` write would

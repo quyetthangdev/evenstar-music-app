@@ -58,19 +58,18 @@ enum BottomBarStyle {
     /// **Neither of those two is how this feature mostly reads the flag, and
     /// this paragraph used to stop before saying so.** The dominant mechanism
     /// is a **structural branch**: a `body` that asks `reduceMotion` and returns
-    /// a *different view* — `selectionWash(for:)`, `tabSlotGlyph`,
-    /// `restoreGlyph`, `TapHalo.body`, `symbolReplace()`. That case is not
+    /// a *different view* — `TapHalo.body`, `symbolReplace()`, and until the
+    /// tab bar became the system's, three of the hand-drawn bar's own views.
+    /// That case is not
     /// covered by the argument above, because there is no `v` and no
     /// `withAnimation` to re-read anything: it depends on SwiftUI re-evaluating
     /// the `body` at all after the flag changes, which is a different claim.
     ///
     /// It holds, and it is measured rather than assumed — the flag is written
     /// from `RootView`, which re-renders the tree, so the first render that can
-    /// see the new value is also the one that picks the new structure. Pinned at
-    /// `ReduceMotionSurfacesTests.testTheFirstTabChangeAfterTheFlagArrivesDoesNotTravelEither`,
-    /// which builds with the flag off, publishes it, and changes tab — the
-    /// switch of structure and the switch of selection in one transaction, which
-    /// is the tightest version of the case.
+    /// see the new value is also the one that picks the new structure. (The
+    /// test that pinned this changed tab on the hand-drawn bar and went with
+    /// it; the structural readers left are `TapHalo` and `symbolReplace()`.)
     @MainActor static var reduceMotion = false
 
     // Where the `…Flat` durations below come from — none of them is invented.
@@ -154,8 +153,9 @@ enum BottomBarStyle {
     // What actually disappears for those six is the scale and the offset at
     // their call sites, which is B3/B4's job, not this file's.
 
-    /// A surface changing shape: the tab pill collapsing to a circle, the
-    /// search field growing, the collapsed player sliding into the row.
+    /// A surface changing shape. Written for the hand-drawn tab bar, which the
+    /// system's has replaced; nothing in the app reads it now, and the suite
+    /// still pins its values.
     ///
     /// Written as `duration`/`bounce` rather than `response`/`dampingFraction`.
     /// The two describe the same family of springs, but this pair names what it
@@ -170,11 +170,11 @@ enum BottomBarStyle {
     /// instead of easing into place.
     ///
     /// Reduced: 0.20s `easeInOut`, the point at which the spring above is
-    /// visually done. The shape-change itself stays — a pill becoming a circle
+    /// visually done. The shape-change itself stays — a surface changing shape
     /// is the surface telling the user what it now is, and removing it would
     /// leave two indistinguishable states rather than a calmer transition. What
-    /// goes is the overshoot: the pill no longer arrives past its own edge and
-    /// swings back.
+    /// goes is the overshoot: the surface no longer arrives past its own edge
+    /// and swings back.
     @MainActor static var morph: Animation { reduceMotion ? morphFlat : morphFull }
     private static let morphFull = Animation.spring(duration: 0.36, bounce: 0.24)
     private static let morphFlat = Animation.easeInOut(duration: 0.20)
@@ -197,17 +197,17 @@ enum BottomBarStyle {
     private static let selectionFull = Animation.spring(duration: 0.38, bounce: 0.34)
     private static let selectionFlat = Animation.easeInOut(duration: 0.18)
 
-    /// How a tab answers the finger, before anything has moved.
+    /// How a control answers the finger, before anything has moved.
     ///
     /// 0.09s ease-out, the same figure `TransportButtonStyle.kickDuration` now
     /// carries, and for the same reason: it is the part that has to be
     /// immediate. (That style once had a matching `squeeze` constant named
     /// here; it was removed when its buttons moved to touch-down, because a
-    /// held-press squeeze cancelled out the kick that replaced it.) A tab
-    /// carried no press feedback at all — `.buttonStyle(.plain)` draws none —
-    /// so the first thing that happened after a tap happened on touch-*up*,
-    /// once the wash began to slide. Everything before that was the app
-    /// appearing not to have noticed.
+    /// held-press squeeze cancelled out the kick that replaced it.) It was
+    /// written for the hand-drawn tab bar, whose tabs had carried no press
+    /// feedback at all — `.buttonStyle(.plain)` draws none — so the first
+    /// thing that happened after a tap happened on touch-*up*. Everything
+    /// before that was the app appearing not to have noticed.
     ///
     /// Reduced: unchanged, and see the shared note above. 0.09s of ease-out is
     /// not a curve anyone can perceive as motion; the thing that moves is
@@ -217,10 +217,11 @@ enum BottomBarStyle {
     private static let pressFull = Animation.easeOut(duration: 0.09)
     private static let pressFlat = pressFull
 
-    /// What a pressed tab shrinks to. Shallower than the transport buttons'
-    /// 0.92: those are 44pt circles the thumb lands on squarely, while a tab is
-    /// a whole quarter of the bar, and the same ratio on something that wide
-    /// reads as the bar itself flinching.
+    /// What a pressed tab of the hand-drawn bar shrank to; nothing in the app
+    /// reads it since the bar became the system's. Shallower than the transport
+    /// buttons' 0.92: those are 44pt circles the thumb lands on squarely, while
+    /// a tab was a whole quarter of the bar, and the same ratio on something
+    /// that wide read as the bar itself flinching.
     ///
     /// Reduced: **1**, no shrink at all. The second constant here that is a
     /// distance rather than a curve, and it goes the way `recedeScale` went for
@@ -234,11 +235,11 @@ enum BottomBarStyle {
     ///
     /// **The whole point of this constant is that pressing must still show.** A
     /// control that answers a finger with nothing is a broken control, not a
-    /// more accessible one, so the three styles that lose a scale here —
-    /// `TabPressStyle`, `QueueToggleStyle`, `TransportButtonStyle` — all pick
-    /// this up in its place.
+    /// more accessible one, so the styles that lose a scale here —
+    /// `QueueToggleStyle` and `TransportButtonStyle`, and the hand-drawn tab
+    /// bar's press style before it was deleted — all pick this up in its place.
     ///
-    /// **One number for all three, where `pressedScale` deliberately differs per
+    /// **One number for all of them, where `pressedScale` deliberately differs per
     /// control.** That difference exists because a percentage of a wide thing is
     /// many points of travel and a percentage of a small thing is barely any:
     /// 0.96 on a quarter-bar tab and 0.9 on a 44pt glyph are the same *apparent*
@@ -754,7 +755,7 @@ extension View {
     /// glyph cross-fades, and where it does not it cuts. Either way the glyph
     /// changes — a play button that still reads "play" after being tapped is a
     /// worse outcome than a scale — and neither way does anything change size.
-    /// The same trade `selectionWash(for:)` and the two `ButtonStyle`s made:
+    /// The same trade the two `ButtonStyle`s made:
     /// answer with opacity, not with shape.
     ///
     /// **One mechanism, not four branches.** Four production sites, one each in

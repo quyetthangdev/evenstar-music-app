@@ -125,7 +125,7 @@ struct TransportButtonStyle: ButtonStyle {
     /// button before it commits. So the one thing left answering the finger
     /// once `TapHalo` switches itself off arrived after the finger had gone, or
     /// never. It lives on `configuration.isPressed` now, in `Interaction`,
-    /// exactly where `QueueToggleStyle` and `TabPressStyle` already put theirs.
+    /// exactly where `QueueToggleStyle` already put its own.
     var kickPeak: Kick {
         if BottomBarStyle.reduceMotion {
             return Kick(offset: 0, scaleX: 1, scaleY: 1)
@@ -269,7 +269,7 @@ struct TransportButtonStyle: ButtonStyle {
                 //
                 // Unconditional, and it is `pressedOpacity` that branches — 1 in
                 // the unreduced mode, where the kick is still the answer. Same
-                // arrangement as `QueueToggleStyle` and `TabPressStyle`, so the
+                // arrangement as `QueueToggleStyle`, so the
                 // whole decision stays in `BottomBarStyle`.
                 .opacity(isPressed ? BottomBarStyle.pressedOpacity : 1)
                 // **This `.animation` scopes an implicit animation over the

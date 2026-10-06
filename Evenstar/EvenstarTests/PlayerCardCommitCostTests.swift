@@ -1043,10 +1043,27 @@ final class PlayerCardColdArtworkArrivalTests: XCTestCase {
 /// ─────────────────────────────────────────────────────────────────────────
 /// A drag that starts on the mini player writes
 /// `PlayerExpansion.accessoryDragDelta` once per frame, and `PlayerCard` folds
-/// it into `progress`. The harness writes that same value through
-/// `setAccessoryDragDelta(_:)` — the real per-frame input, not a stand-in. The
-/// earlier version had to model the drag with `minimised`, which fed fewer
-/// downstream attributes than `progress`; that caveat no longer applies.
+/// it into `progress`. The harness writes through that same entry point,
+/// `setAccessoryDragDelta(_:)`, so each write reaches `progress` and runs the
+/// card's `body` the way a real drag frame does. The earlier version wrote
+/// `minimised`, which fed fewer downstream attributes than `progress`.
+///
+/// **It is still a model, in two respects.** The sweep runs on an *open*
+/// card — `tapToOpen()` puts `settled` at 1, because the tap path is the
+/// baseline and every path must run the same morph — so the writes are
+/// **negative** (`progress` = 1 − amplitude). A positive write would clamp at
+/// 1 and change nothing, which is what the first version of this harness did:
+/// its "small" and "large" amplitudes measured the same discarded rebuild. A
+/// real accessory drag only ever writes positive deltas from rest. And
+/// `setAccessoryDragDelta` also writes `expansion.progress`, clamped from the
+/// same negative value to 0 — it disagrees with the card here, which costs
+/// nothing in this rig (nothing reads `expansion.progress` without
+/// `RecedeBehindPlayer`) but means the recede's share of a real drag frame is
+/// not in these numbers.
+///
+/// The two amplitudes bracket the rebuild: 0.002 is a rebuild whose results
+/// are nearly all discarded, 0.5 moves the card's frame, corners and artwork
+/// so layout is genuinely redone.
 @MainActor
 final class PlayerCardTapVersusDragCostTests: XCTestCase {
 
@@ -1095,7 +1112,10 @@ final class PlayerCardTapVersusDragCostTests: XCTestCase {
                 guard let write = Drive.accessoryDrag else { return }
                 for _ in 0..<path.writes {
                     tick += 1
-                    write(Double(tick % 2) * path.amplitude)
+                    // Negative: the card is open (`settled` 1), and a positive
+                    // delta would clamp `progress` at 1 and change nothing —
+                    // see THE DRAG INPUT above.
+                    write(-Double(tick % 2) * path.amplitude)
                     if path.serviced { RunLoop.main.run(until: Date()) }
                 }
             }

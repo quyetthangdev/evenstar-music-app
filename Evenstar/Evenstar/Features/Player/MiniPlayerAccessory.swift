@@ -20,6 +20,21 @@ struct MiniPlayerAccessory: View {
     @State private var axis: AccessoryDragAxis?
     @State private var drivesCard = false
 
+    /// `true` suốt một cú kéo, và SwiftUI tự trả nó về `false` khi cú kéo
+    /// **kết thúc hoặc bị huỷ**. Chỉ cái thứ hai mới cần tới nó: `onEnded`
+    /// không nổ cho cú kéo bị huỷ. Xem `PlayerExpansion.cancelAccessoryDrag()`.
+    @GestureState private var dragIsLive = false
+
+    /// Khung và vị trí đo được gần nhất, giữ lại để báo lại khi thẻ về nghỉ.
+    ///
+    /// `onGeometryChange` chỉ nổ khi khung **đổi**, và `PlayerExpansion` bỏ qua
+    /// mọi lần báo lúc thẻ không nghỉ. Chạm một bài lúc chưa có gì phát thì
+    /// accessory mọc ra và thẻ rời nghỉ cùng một lượt, nên lần đo đầu tiên của
+    /// accessory rơi đúng vào lúc bị bỏ qua — và không bao giờ nổ lại, vì khung
+    /// không đổi nữa. Không báo lại thì mọi cú bung về sau dùng khung dự phòng.
+    @State private var lastFrame: CGRect = .zero
+    @State private var lastIsInline = false
+
     private var isInline: Bool { placement == .inline }
 
     var body: some View {
@@ -34,8 +49,27 @@ struct MiniPlayerAccessory: View {
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
+            lastFrame = frame
+            lastIsInline = isInline
             expansion.reportAccessoryFrame(frame, isInline: isInline)
         }
+        .onChange(of: isInline) { _, inline in
+            lastIsInline = inline
+            expansion.reportAccessoryFrame(lastFrame, isInline: inline)
+        }
+        .onChange(of: expansion.isCardResting) { _, resting in
+            if resting { expansion.reportAccessoryFrame(lastFrame, isInline: lastIsInline) }
+        }
+        .onChange(of: dragIsLive) { _, live in
+            // Sau một cú thả bình thường thì vô hại: cú thả đã được gửi, và
+            // `cancelAccessoryDrag()` không gửi lần hai.
+            guard !live else { return }
+            expansion.cancelAccessoryDrag()
+            axis = nil
+            drivesCard = false
+        }
+        // Accessory bị dỡ giữa cú kéo (bài về nil) cũng là một cú huỷ.
+        .onDisappear { expansion.cancelAccessoryDrag() }
     }
 
     private var info: some View {
@@ -63,6 +97,7 @@ struct MiniPlayerAccessory: View {
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: AccessoryDragAxis.lockDistance, coordinateSpace: .global)
+            .updating($dragIsLive) { _, live, _ in live = true }
             .onChanged { value in
                 if axis == nil {
                     axis = AccessoryDragAxis.resolve(value.translation)

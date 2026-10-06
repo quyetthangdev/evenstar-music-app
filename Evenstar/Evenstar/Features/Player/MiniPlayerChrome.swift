@@ -64,7 +64,7 @@ struct MiniPlayerControls: View {
             .padding(.leading, showsNext ? 0 : -MiniPlayerMetrics.buttonGap)
         }
         .buttonStyle(.plain)
-        .animation(.smooth(duration: 0.25), value: showsNext)
+        .animation(BottomBarStyle.reduceMotion ? nil : .smooth(duration: 0.25), value: showsNext)
     }
 }
 
