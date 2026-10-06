@@ -282,7 +282,11 @@ final class CollapseLandingFrameTests: XCTestCase {
         // vốn nằm dưới viên kính — nó đi **lên** 91pt suốt cú thu — nên "lún"
         // chỉ có nghĩa từ đây.
         let landed = measured.filter { $0.cover.count <= Int(rig.rest.height * 1.25) }
-        XCTAssertGreaterThan(landed.count, 8, "too few frames caught the card at the capsule's size")
+        // Quãng đáp kéo dài ~0,34s (từ lúc chạm đích tới lúc trao chỗ); một
+        // `drawHierarchy` tốn ~30ms ở đây nên thường bắt được ~11 khung. Bốn là
+        // đủ cho các phép kiểm dưới — đỉnh lún phẳng trong ±40ms — và chừa chỗ
+        // cho một máy chậm gấp đôi.
+        XCTAssertGreaterThanOrEqual(landed.count, 4, "too few frames caught the card at the capsule's size")
 
         // 1. Mép dưới lún quá viên kính ~10pt, rồi về.
         let deepestBottom = try XCTUnwrap(landed.map(\.cover.upperBound).max())
@@ -340,13 +344,21 @@ final class CollapseLandingFrameTests: XCTestCase {
         let frames = film(rig, for: 0.35)
 
         var checked = 0
+        var checkedWhereGlassCouldShow = 0
+        let glassWindow = Int(rig.rest.height * PlayerCard.collapseGlassStartRatio)
         for frame in frames {
             guard let tint = surfaceTint(frame), let cover = frame.cover else { continue }
             print(String(format: "[expand] t=%6.1fms top=%4d height=%3d tint=%5.1f",
                          frame.ms, cover.lowerBound, cover.count, tint))
             XCTAssertLessThan(tint, 10, "translucent at t=\(frame.ms)ms")
             checked += 1
+            if cover.count < glassWindow { checkedWhereGlassCouldShow += 1 }
         }
         XCTAssertGreaterThan(checked, 3)
+        // Kính chỉ có thể hiện khi thẻ dưới 2× viên kính: phải bắt được ít nhất
+        // một khung ở đó, không thì "đặc" ở trên chỉ nói về những cỡ vốn không
+        // bao giờ là kính.
+        XCTAssertGreaterThan(checkedWhereGlassCouldShow, 0,
+                             "no expand frame was caught while the card was under 2× the capsule")
     }
 }

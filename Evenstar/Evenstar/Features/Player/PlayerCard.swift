@@ -289,6 +289,12 @@ struct PlayerCard: View {
     /// hình học tới 0 ngay trước cú lún, còn thẻ chỉ được nhường chỗ sau cú nảy.
     @State private var landing: Double = 0
 
+    /// Những cú morph có hình học là một lò xo thường, còn đang chạy — để một
+    /// cú thu tới sau biết trước phần dư của chúng. Xem
+    /// `CollapseSpring.residuals`. Một tham chiếu, không phải giá trị: ghi vào
+    /// nó không được phép dựng lại `body`.
+    @State private var flights = MorphFlights()
+
     /// Độ mờ của **riêng tấm bìa** trong lúc nó đổi chỗ giữa cú mở và cú đóng
     /// hàng đợi, khi giảm chuyển động.
     ///
@@ -2381,7 +2387,7 @@ struct PlayerCard: View {
     }
 
     private func expand() {
-        morph(to: 1, curves: .init(BottomBarStyle.expand))
+        morph(to: 1, curves: BottomBarStyle.expandCurves)
     }
 
     /// Cùng nhịp với `expand()` — xem `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
@@ -2395,7 +2401,7 @@ struct PlayerCard: View {
     private static func releaseCurves(to target: Double,
                                       initialVelocity: Double) -> BottomBarStyle.MorphCurves {
         target > 0
-            ? .init(BottomBarStyle.settle(initialVelocity: initialVelocity))
+            ? BottomBarStyle.settleCurves(initialVelocity: initialVelocity)
             : BottomBarStyle.collapse(initialVelocity: initialVelocity, afterDrag: true)
     }
 
@@ -2637,9 +2643,23 @@ struct PlayerCard: View {
     /// kính đi theo đường cong ấy thay vì bật một bậc lúc nhấc tay (xem
     /// `PlayerExpansion.isCollapsing`). Không còn gì phải hiện "ngay" ở
     /// accessory: nó chờ tới lúc thẻ về nghỉ.
-    private func morph(to target: Double, curves: BottomBarStyle.MorphCurves) {
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// HAI CHỐT CHO NHỮNG CÚ MORPH CHỒNG NHAU (vòng sửa 1)
+    /// ─────────────────────────────────────────────────────────────────────
+    ///   - `completion` chỉ được về nghỉ nếu cú của nó vẫn là cú mới nhất —
+    ///     `PlayerExpansion.motion`. Không có chốt này, cú thu bị cắt ngang
+    ///     cho thẻ về nghỉ giữa cú thu sau.
+    ///   - Cú thu biết trước phần dư của những cú bung còn đang chạy và không để
+    ///     hình học đưa thẻ dưới viên kính vì chúng — `MorphFlights`,
+    ///     `CollapseSpring.residuals`.
+    private func morph(to target: Double, curves requested: BottomBarStyle.MorphCurves) {
         if target > 0 { expansion.leaveRest() }
+        let generation = expansion.beginMotion()
         guard BottomBarStyle.reduceMotion else {
+            let now = CACurrentMediaTime()
+            let curves = requested.flooring(span: progress, residuals: flights.residuals(at: now))
+            flights.record(curves, delta: target - progress, at: now)
             // Hai lượt ghi cho `landing`, và thứ tự là cả ý nghĩa — xem doc
             // của nó. Lượt đầu không animation: bắt kịp `progress` ở đúng chỗ
             // thẻ đang đứng, kể cả phần ngón tay đã kéo.
@@ -2647,8 +2667,14 @@ struct PlayerCard: View {
             withAnimation(curves.landing) {
                 landing = target
             } completion: {
+                // Cú này đã bị một chuyển động mới hơn thay thế: không phải việc
+                // của nó nữa. Xem `PlayerExpansion.motion`.
+                guard expansion.motion == generation else { return }
                 // Một cú mờ: thẻ là thứ duy nhất đọc `isCardResting` mà vẽ ra
-                // thứ nội suy được; accessory tự từ chối animation.
+                // thứ nội suy được; accessory tự từ chối animation. Cú mờ không
+                // có bước "xong" nào phải chốt: `arriveAtRest()` chạy ngay ở
+                // đầu nó, và một chuyển động mới giữa chừng gọi `leaveRest()`,
+                // thứ dựng thẻ lại ngay ngoài mọi animation.
                 withAnimation(BottomBarStyle.collapseHandoff) {
                     arriveAtRestIfCollapsed()
                 }
@@ -2663,7 +2689,7 @@ struct PlayerCard: View {
         }
 
         if target == 0 { expansion.commitCollapse() }
-        let curve = curves.geometry
+        let curve = requested.geometry
 
         // Hỏi trước khi `settled` đổi: `progress` là chỗ xuất phát, và sau
         // dòng dưới thì nó đã là đích rồi.
@@ -3027,7 +3053,11 @@ private struct CardClip: ViewModifier {
 ///
 /// Lớp kính chỉ **có mặt trong cây** khi `glass > 0`: suốt cú bung, lúc kéo, và
 /// gần hết cú thu, không có lớp kính toàn màn hình nào nằm dưới lớp đặc chờ
-/// được vẽ. Nó được chèn vào khi thẻ đã thu còn gấp đôi viên kính — nhỏ.
+/// được vẽ. Nó được chèn vào khi thẻ đã thu còn gấp đôi viên kính — nhỏ — và
+/// **ở lại suốt lúc nghỉ**: khi ấy cổng là 1 (`cardSurfaceIsGlass` gồm cả
+/// `isCardResting`) và `progress` là 0, nên lớp kính cỡ viên kính vẫn nằm trong
+/// cây, dưới một tấm thẻ ở độ mờ 0. Rời nghỉ là cổng về 0 ngay và nó rời cây
+/// trước khung đầu của cú bung.
 /// Lớp đặc mờ đi **phía trên** lớp kính đặc: cú hoà là `(1 − g)·đặc + g·kính`,
 /// không có khung nào hai lớp cùng nhạt cho nền lọt qua.
 private struct CardSurface: View, Animatable {
@@ -3170,5 +3200,43 @@ private struct CollapseLanding: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         content.offset(y: PlayerCard.landingOffset(overshoot: -progress, travel: travel))
+    }
+}
+
+/// Sổ ghi những cú morph có hình học là một lò xo thường (bung, thả tay để
+/// mở), để một cú thu tới sau dựng `CollapseSpring.Residual` cho chúng — xem
+/// `CollapseSpring.residuals`.
+///
+/// Một lớp, giữ trong `@State`: tham chiếu không đổi suốt đời thẻ, còn nội
+/// dung đổi mà không dựng lại `body`. Giờ ghi là `CACurrentMediaTime()` ở lượt
+/// gọi `morph` — mọi cú bắt đầu ở khung kế tiếp, nên độ lệch giữa hai cú vẫn
+/// đúng. Cú đã lắng tự rơi khỏi sổ ở lần hỏi kế.
+@MainActor
+private final class MorphFlights {
+    private struct Flight {
+        let start: CFTimeInterval
+        let spring: Spring
+        let initialVelocity: Double
+        let delta: Double
+    }
+
+    private var flights: [Flight] = []
+
+    func record(_ curves: BottomBarStyle.MorphCurves, delta: Double, at time: CFTimeInterval) {
+        guard let spring = curves.geometrySpring, delta != 0 else { return }
+        flights.append(Flight(start: time, spring: spring,
+                              initialVelocity: curves.initialVelocity, delta: delta))
+    }
+
+    func residuals(at time: CFTimeInterval) -> [CollapseSpring.Residual] {
+        let all = flights.map {
+            CollapseSpring.Residual(spring: $0.spring, initialVelocity: $0.initialVelocity,
+                                    delta: $0.delta, elapsed: time - $0.start)
+        }
+        let running = all.filter(\.isRunning)
+        if running.count != flights.count {
+            flights = zip(flights, all).filter { $0.1.isRunning }.map(\.0)
+        }
+        return running
     }
 }

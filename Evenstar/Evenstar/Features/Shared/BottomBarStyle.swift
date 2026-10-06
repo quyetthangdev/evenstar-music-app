@@ -423,9 +423,10 @@ enum BottomBarStyle {
     /// different tempos in the reduced mode exactly as they had them in the
     /// full one.
     @MainActor static var expand: Animation { reduceMotion ? expandFlat : expandFull }
-    private static let expandFull = Animation.spring(duration: expandDuration, bounce: 0.12)
+    private static let expandFull = Animation.spring(duration: expandDuration, bounce: expandBounce)
     private static let expandFlat = Animation.easeInOut(duration: 0.26)
     private static let expandDuration: Double = 0.36
+    private static let expandBounce: Double = 0.12
 
     // MARK: - Cú thu về accessory
 
@@ -437,16 +438,68 @@ enum BottomBarStyle {
     struct MorphCurves {
         let geometry: Animation
         let landing: Animation
+        /// Hình học, viết lại thành một lò xo thả từ đứng yên với vận tốc ban
+        /// đầu này — khi nó đúng là thế (`expandCurves`, `settleCurves`). Một
+        /// cú thu tới sau dùng nó để biết trước phần dư cú này còn để lại; xem
+        /// `CollapseSpring.Residual`. `nil` cho mọi thứ khác.
+        let geometrySpring: Spring?
+        let initialVelocity: Double
+        /// Lò xo của cú thu có lún, để `flooring(span:residuals:)` dựng lại hình
+        /// học kèm sàn. `nil` khi đây không phải cú thu ấy.
+        let collapseSpring: Spring?
 
-        init(_ both: Animation) {
+        init(_ both: Animation, spring: Spring? = nil, initialVelocity: Double = 0) {
             geometry = both
             landing = both
+            geometrySpring = spring
+            self.initialVelocity = initialVelocity
+            collapseSpring = nil
         }
 
-        init(geometry: Animation, landing: Animation) {
-            self.geometry = geometry
-            self.landing = landing
+        init(collapse spring: Spring, initialVelocity: Double) {
+            geometry = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
+                                                stopsAtTarget: true))
+            landing = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
+                                               stopsAtTarget: false))
+            geometrySpring = nil
+            self.initialVelocity = initialVelocity
+            collapseSpring = spring
         }
+
+        private init(geometry: Animation, keeping other: MorphCurves) {
+            self.geometry = geometry
+            landing = other.landing
+            geometrySpring = other.geometrySpring
+            initialVelocity = other.initialVelocity
+            collapseSpring = other.collapseSpring
+        }
+
+        /// Cú thu có lún, dựng lại hình học để nó không bao giờ đưa thẻ dưới
+        /// viên kính **dù có những cú morph trước còn đang chạy** — xem
+        /// `CollapseSpring.residuals`. Không có phần dư nào (trường hợp thường)
+        /// thì trả nguyên si, nên đường đi thường không đổi một bit.
+        func flooring(span: Double, residuals: [CollapseSpring.Residual]) -> MorphCurves {
+            guard let collapseSpring, !residuals.isEmpty else { return self }
+            return MorphCurves(
+                geometry: Animation(CollapseSpring(spring: collapseSpring, initialVelocity: initialVelocity,
+                                                   stopsAtTarget: true, span: span, residuals: residuals)),
+                keeping: self
+            )
+        }
+    }
+
+    /// `expand`, kèm lò xo của nó cho `MorphCurves.geometrySpring`.
+    @MainActor static var expandCurves: MorphCurves {
+        reduceMotion ? MorphCurves(expandFlat)
+                     : MorphCurves(expandFull, spring: Spring(duration: expandDuration, bounce: expandBounce))
+    }
+
+    /// `settle(initialVelocity:)`, kèm lò xo của nó cho `MorphCurves.geometrySpring`.
+    @MainActor static func settleCurves(initialVelocity: Double) -> MorphCurves {
+        reduceMotion ? MorphCurves(settleFlat)
+                     : MorphCurves(settle(initialVelocity: initialVelocity),
+                                   spring: Spring(duration: settleDuration, bounce: settleBounce),
+                                   initialVelocity: initialVelocity)
     }
 
     /// Thẻ thu về viên kính accessory, **lún quá chỗ ~10pt rồi nảy lại**, như
@@ -491,13 +544,7 @@ enum BottomBarStyle {
     @MainActor
     static func collapse(initialVelocity: Double = 0, afterDrag: Bool) -> MorphCurves {
         if reduceMotion { return MorphCurves(afterDrag ? settleFlat : expandFlat) }
-        let spring = collapseSpring(afterDrag: afterDrag)
-        return MorphCurves(
-            geometry: Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
-                                               stopsAtTarget: true)),
-            landing: Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
-                                              stopsAtTarget: false))
-        )
+        return MorphCurves(collapse: collapseSpring(afterDrag: afterDrag), initialVelocity: initialVelocity)
     }
 
     /// Lò xo của cú thu, trước khi tách đôi. Tách riêng để test dựng lại đúng
@@ -530,14 +577,16 @@ enum BottomBarStyle {
     /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
     /// `PlayerCard.morph(to:curves:)`.
     ///
-    /// Một cú mờ, không phải chuyển động; giảm chuyển động không có gì để bỏ.
     /// Ngắn vì hai hàng trùng khít và hai lớp kính là cùng một chất liệu: thứ
     /// duy nhất thật sự hoà vào nhau là ô bìa của bài không bìa (thẻ tô theo
     /// màu bài, accessory tô xám hệ thống) — đúng cú "ô bìa tối nhảy sang sáng"
     /// đo được ở QA lần trước.
-    @MainActor static var collapseHandoff: Animation { reduceMotion ? collapseHandoffFlat : collapseHandoffFull }
-    private static let collapseHandoffFull = Animation.easeOut(duration: 0.15)
-    private static let collapseHandoffFlat = collapseHandoffFull
+    ///
+    /// **Hằng số duy nhất trong kiểu này không trả lời `reduceMotion`, và đó là
+    /// chủ ý.** Nhánh giảm chuyển động của `morph(to:curves:)` về nghỉ ngay,
+    /// không qua cú mờ này — nên một nhánh "phẳng" ở đây sẽ là một nhánh không
+    /// ai gọi, trông như đã được nghĩ tới mà thật ra chưa từng chạy.
+    static let collapseHandoff = Animation.easeOut(duration: 0.15)
 
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.
@@ -907,15 +956,79 @@ struct CollapseSpring: CustomAnimation {
     /// `true` cho hình học: kết thúc ngay khi chạm đích lần đầu. `false` cho
     /// cú đáp: chạy hết cú vọt qua và cú nảy về, tới khi lắng.
     let stopsAtTarget: Bool
+    /// Quãng `progress` cú thu này đi, từ chỗ thẻ đang đứng (trong mô hình)
+    /// về 0. Chỉ dùng cho sàn — xem `residuals`.
+    let span: Double
+    /// Phần dư của những cú morph **trước** còn đang chạy, chỉ cho hình học.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO CẦN — "DỪNG Ở ĐÍCH" KHÔNG ĐỦ KHI CÓ CÚ KHÁC ĐANG BAY
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Animation của SwiftUI cộng dồn: một cú thu cắt ngang một cú bung còn
+    /// sớm không thay cú bung, mà cộng thêm vào. Thứ vẽ ra là
+    /// `(1 − k)·span + R(t)`, với `R` là phần cú bung còn thiếu tới đích của nó
+    /// — âm, nhỏ dần về 0 theo lò xo `expand`. Dạng hình học dừng ở lần đầu
+    /// `k` chạm 1, lúc ấy `R` có thể vẫn âm vài phần trăm: thử cú chạm thu
+    /// ngay sau cú chạm mở, `R` ≈ −0,046 lúc hình học dừng — thẻ cao ~12pt.
+    ///
+    /// `CustomAnimation` trộn vào được cú trước (`shouldMerge`) chỉ khi cùng
+    /// kiểu, và đo được: trả `true` thì giá trị nhảy thẳng tới đích. Nên thay
+    /// vì trộn, cú thu **biết trước** `R(t)` — cú bung là một lò xo đã biết
+    /// tham số, giờ bắt đầu và quãng đi — và giữ `k ≤ 1 + R(t)/span`: thẻ không
+    /// bao giờ nhỏ hơn viên kính, rồi kết thúc khi đã chạm đích **và** `R` đã
+    /// về 0. Phần thẻ "lẽ ra" còn đi tiếp xuống thì `landing` vẫn mang — không
+    /// có sàn — nên nó thành cú lún, như mọi cú lún khác.
+    ///
+    /// Chỉ ghi những cú có `MorphCurves.geometrySpring` (bung và thả tay để
+    /// mở). Phần dư của một cú thu trước luôn ≥ 0 (`k ≤ 1`), không bao giờ kéo
+    /// thẻ xuống dưới viên kính, nên bỏ qua nó chỉ làm sàn chặt hơn.
+    let residuals: [Residual]
     /// Lúc lò xo coi như đã lắng — xem `settleEpsilon`. Tính một lần ở đây,
-    /// không mỗi khung.
+    /// không mỗi khung. Với hình học có phần dư, là lúc muộn nhất trong số ấy.
     let settlingTime: TimeInterval
 
-    init(spring: Spring, initialVelocity: Double, stopsAtTarget: Bool) {
+    /// Một cú morph trước, đang chạy: lò xo thả từ đứng yên, đi `delta`, đã
+    /// chạy được `elapsed` lúc cú thu bắt đầu.
+    struct Residual: Hashable, Sendable {
+        let spring: Spring
+        let initialVelocity: Double
+        let delta: Double
+        let elapsed: TimeInterval
+        let settlingTime: TimeInterval
+
+        init(spring: Spring, initialVelocity: Double, delta: Double, elapsed: TimeInterval) {
+            self.spring = spring
+            self.initialVelocity = initialVelocity
+            self.delta = delta
+            self.elapsed = elapsed
+            self.settlingTime = CollapseSpring.lastExcursion(of: spring, initialVelocity: initialVelocity)
+        }
+
+        /// Phần cú ấy còn đóng góp vào giá trị đang vẽ, `time` giây sau khi cú
+        /// thu bắt đầu: `delta × (f − 1)`.
+        func value(after time: TimeInterval) -> Double {
+            let t = elapsed + time
+            guard t < settlingTime else { return 0 }
+            return delta * (spring.value(target: 1.0, initialVelocity: initialVelocity, time: t) - 1)
+        }
+
+        var isRunning: Bool { elapsed < settlingTime }
+    }
+
+    init(spring: Spring, initialVelocity: Double, stopsAtTarget: Bool,
+         span: Double = 1, residuals: [Residual] = []) {
         self.spring = spring
         self.initialVelocity = initialVelocity
         self.stopsAtTarget = stopsAtTarget
-        self.settlingTime = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
+        self.span = span
+        self.residuals = stopsAtTarget ? residuals.filter(\.isRunning) : []
+        let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
+        self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
+    }
+
+    /// Tổng phần dư của các cú trước, `time` giây sau khi cú thu bắt đầu.
+    func residual(at time: TimeInterval) -> Double {
+        residuals.reduce(0) { $0 + $1.value(after: time) }
     }
 
     /// Lần cuối đường cong còn lệch đích từ `settleEpsilon` trở lên, cộng một
@@ -927,7 +1040,7 @@ struct CollapseSpring: CustomAnimation {
     /// nên một phần ba giây dư là một phần ba giây thẻ đã đứng yên mà chưa trao
     /// chỗ. Dùng nó làm cận trên rồi dò ngược từng mili giây bằng chính
     /// `Spring.value` — vài trăm phép tính, một lần mỗi cú thu.
-    private static func lastExcursion(of spring: Spring, initialVelocity: Double) -> TimeInterval {
+    fileprivate static func lastExcursion(of spring: Spring, initialVelocity: Double) -> TimeInterval {
         let bound = spring.settlingDuration(target: 1.0, initialVelocity: initialVelocity,
                                             epsilon: settleEpsilon)
         let step = 0.001
@@ -944,9 +1057,15 @@ struct CollapseSpring: CustomAnimation {
     func fraction(at time: TimeInterval) -> Double? {
         guard time < settlingTime else { return nil }
         let fraction = spring.value(target: 1.0, initialVelocity: initialVelocity, time: time)
-        if stopsAtTarget, fraction >= 1 { return nil }
-        return fraction
+        guard stopsAtTarget else { return fraction }
+        let residual = residual(at: time)
+        if fraction >= 1, residual >= -Self.residualTolerance { return nil }
+        guard !residuals.isEmpty, span > 0 else { return fraction }
+        return min(fraction, 1 + residual / span)
     }
+
+    /// Phần dư âm nhỏ tới mức này (~0,07pt trên 710pt) coi như đã về 0.
+    static let residualTolerance: Double = 0.0001
 
     func animate<V: VectorArithmetic>(value: V, time: TimeInterval,
                                       context: inout AnimationContext<V>) -> V? {

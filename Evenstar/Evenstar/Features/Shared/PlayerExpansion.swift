@@ -159,7 +159,34 @@ final class PlayerExpansion {
         accessoryIsInline = isInline
     }
 
+    /// Số thứ tự của chuyển động **mới nhất** của thẻ: mỗi cú morph, mỗi lần rời
+    /// nghỉ (kể cả từng khung của một cú kéo trên accessory) đều tăng nó.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO CẦN — MỘT `completion` CŨ KHÔNG BIẾT MÌNH ĐÃ CŨ
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Thẻ về nghỉ trong `completion` của cú đáp, ~0,6s sau khi thả. Animation
+    /// của SwiftUI cộng dồn chứ không huỷ, nên một cú thu bị cắt ngang — kéo
+    /// accessory giữa cú nảy rồi thả, hay mở lại rồi thu lần nữa — vẫn chạy
+    /// tới cuối và vẫn gọi `completion` **của nó**, giữa cú thu mới. Hỏi trạng
+    /// thái hiện tại (`settled == 0`, không ai đang kéo) thì câu trả lời là
+    /// "đúng, đang thu về 0" — của cú khác. Thẻ về nghỉ sớm: mờ đi khi còn
+    /// đang bay, và hàng accessory hiện ra dưới nó, lệch nhau qua lớp kính.
+    ///
+    /// Nên mỗi `completion` mang theo số của cú đã đăng ký nó, và chỉ được về
+    /// nghỉ nếu số ấy vẫn là số mới nhất. Không quan sát: không view nào vẽ
+    /// theo nó.
+    @ObservationIgnored private(set) var motion = 0
+
+    /// Thẻ gọi ở đầu mỗi cú morph; trả số của cú ấy — xem `motion`.
+    func beginMotion() -> Int {
+        motion &+= 1
+        return motion
+    }
+
     func leaveRest() {
+        // Một cú kéo hay một cú mở bắt đầu: mọi `completion` đang chờ thành cũ.
+        motion &+= 1
         // Trước `guard`: chạm hoặc kéo giữa đuôi cú thu thì thẻ chưa về nghỉ,
         // nhưng cú thu đã bị huỷ và thẻ lại đè lên accessory. Có điều kiện vì
         // cú kéo trên accessory gọi hàm này mỗi khung, và mỗi lần ghi một

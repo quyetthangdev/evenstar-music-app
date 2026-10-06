@@ -227,6 +227,69 @@ final class CollapseHandoffTests: XCTestCase {
         }
     }
 
+    // MARK: - Sàn: cú thu cắt ngang một cú bung còn sớm
+
+    /// Thứ vẽ ra là `(1 − k)·span + R(t)`: phần của cú thu cộng phần dư của cú
+    /// bung còn đang chạy. Âm là thẻ thấp hơn viên kính.
+    private func lowestDrawn(afterDrag: Bool, interruptAt elapsed: Double, floored: Bool) -> Double {
+        let expand = try! XCTUnwrap(BottomBarStyle.expandCurves.geometrySpring)
+        let residual = CollapseSpring.Residual(spring: expand, initialVelocity: 0, delta: 1, elapsed: elapsed)
+        let geometry = CollapseSpring(spring: BottomBarStyle.collapseSpring(afterDrag: afterDrag),
+                                      initialVelocity: 0, stopsAtTarget: true,
+                                      span: 1, residuals: floored ? [residual] : [])
+        var lowest = Double.infinity
+        var time = 0.0
+        while time < 2 {
+            let ours = geometry.fraction(at: time).map { 1 - $0 } ?? 0
+            lowest = min(lowest, ours + residual.value(after: time))
+            time += 0.001
+        }
+        return lowest
+    }
+
+    func testACollapseRightAfterAnExpandNeverTakesTheCardBelowTheCapsule() {
+        let saved = BottomBarStyle.reduceMotion
+        defer { BottomBarStyle.reduceMotion = saved }
+        BottomBarStyle.reduceMotion = false
+
+        for afterDrag in [false, true] {
+            for elapsed in [0, 0.016, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5] {
+                XCTAssertGreaterThanOrEqual(
+                    lowestDrawn(afterDrag: afterDrag, interruptAt: elapsed, floored: true),
+                    -CollapseSpring.residualTolerance,
+                    "afterDrag \(afterDrag), expand interrupted at \(elapsed)s"
+                )
+            }
+        }
+    }
+
+    /// Đối chứng: không có sàn thì đúng là thẻ xuống dưới viên kính — test
+    /// trên không xanh vì kịch bản vô hại.
+    func testWithoutTheFloorTheSameCollapseWouldSquashTheCard() {
+        let saved = BottomBarStyle.reduceMotion
+        defer { BottomBarStyle.reduceMotion = saved }
+        BottomBarStyle.reduceMotion = false
+
+        let lowest = lowestDrawn(afterDrag: false, interruptAt: 0, floored: false)
+        XCTAssertLessThan(lowest, -0.03, "the unfloored tap collapse right after a tap open only reached \(lowest)")
+    }
+
+    /// Trường hợp thường — không cú nào đang bay — không đổi một bit.
+    func testWithNothingInFlightTheCollapseIsUntouched() {
+        let saved = BottomBarStyle.reduceMotion
+        defer { BottomBarStyle.reduceMotion = saved }
+        BottomBarStyle.reduceMotion = false
+
+        let curves = BottomBarStyle.collapse(initialVelocity: 2, afterDrag: true)
+        XCTAssertEqual(curves.flooring(span: 0.7, residuals: []).geometry, curves.geometry)
+        XCTAssertNil(curves.geometrySpring, "a collapse leaves no negative residual to record")
+        XCTAssertNotNil(BottomBarStyle.expandCurves.geometrySpring)
+        XCTAssertNotNil(BottomBarStyle.settleCurves(initialVelocity: 3).geometrySpring)
+        XCTAssertEqual(BottomBarStyle.expandCurves.geometry, BottomBarStyle.expand, "expand itself is unchanged")
+        XCTAssertEqual(BottomBarStyle.settleCurves(initialVelocity: 3).geometry,
+                       BottomBarStyle.settle(initialVelocity: 3))
+    }
+
     func testTheCurvesHandedToTheCardAreThoseSprings() {
         let saved = BottomBarStyle.reduceMotion
         defer { BottomBarStyle.reduceMotion = saved }
@@ -380,15 +443,37 @@ final class CollapseHandoffTests: XCTestCase {
         return expansion
     }
 
+    /// Hai mốc của một cú thu sau cú thả tay không vận tốc, tính bằng chính lò
+    /// xo ấy: lúc hình học chạm đích, và lúc cú đáp lắng — thẻ về nghỉ.
+    private func releaseMilestones() throws -> (crossing: Double, rest: Double) {
+        let spring = BottomBarStyle.collapseSpring(afterDrag: true)
+        let geometry = CollapseSpring(spring: spring, initialVelocity: 0, stopsAtTarget: true)
+        var time = 0.0
+        while geometry.fraction(at: time) != nil { time += 0.001 }
+        let rest = CollapseSpring(spring: spring, initialVelocity: 0, stopsAtTarget: false).settlingTime
+        XCTAssertGreaterThan(rest - time, 0.2, "the two milestones are too close to tell apart by waiting")
+        return (time, rest)
+    }
+
+    private func waitForRest(_ expansion: PlayerExpansion) {
+        let deadline = Date().addingTimeInterval(3)
+        while !expansion.isCardResting, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+    }
+
     /// Kéo accessory lên rồi thả: cú thả rơi về 0, `PlayerCard.handle` gọi
     /// `morph(to: 0…)`. Suốt lò xo **và** cú nảy, thẻ đang thu và accessory
     /// vẫn ẩn; chỉ khi cú nảy lắng thẻ mới về nghỉ.
     ///
-    /// 0,4s nằm giữa hai mốc với biên rộng cả hai phía: hình học chạm đích ở
-    /// ~0,26s, cú nảy lắng ở ~0,65s (`settle` 0.42, bounce 0.22). Bản trước
-    /// về nghỉ theo `completion` của hình học, tức đã nghỉ ở mốc này.
+    /// Mốc kiểm tra là **giữa** lúc hình học chạm đích (~0,26s) và lúc cú nảy
+    /// lắng (~0,6s), tính từ lò xo chứ không gõ tay — biên ~0,17s cả hai phía.
+    /// Đồng hồ của animation là đồng hồ thật, nên một máy chậm không kéo dài
+    /// nó; chỉ độ trễ của run loop ăn vào biên. Bản trước về nghỉ theo
+    /// `completion` của hình học, tức đã nghỉ ở mốc này.
     func testAReleaseThatFallsBackRestsOnlyAfterTheBounce() throws {
         let expansion = try mountRestingCard(reduceMotion: false)
+        let milestones = try releaseMilestones()
 
         expansion.accessoryDragChanged(translationHeight: -120)
         XCTAssertFalse(expansion.showsAccessoryContent)
@@ -402,17 +487,79 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertTrue(expansion.cardSurfaceIsGlass)
         XCTAssertFalse(expansion.showsAccessoryContent, "hidden under the translucent card")
 
-        RunLoop.main.run(until: released.addingTimeInterval(0.4))
+        RunLoop.main.run(until: released.addingTimeInterval((milestones.crossing + milestones.rest) / 2))
         XCTAssertFalse(expansion.isCardResting, "the geometry has arrived but the bounce is still running")
         XCTAssertFalse(expansion.showsAccessoryContent)
 
-        let deadline = Date().addingTimeInterval(3)
-        while !expansion.isCardResting, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
+        waitForRest(expansion)
         XCTAssertTrue(expansion.isCardResting)
         XCTAssertFalse(expansion.isCollapsing)
         XCTAssertTrue(expansion.showsAccessoryContent)
+    }
+
+    // MARK: - Một `completion` cũ không được về nghỉ giữa cú thu mới
+
+    /// Đường (a) của review: thu, rồi giữa cú nảy kéo accessory lên một chút
+    /// và thả — cú thu thứ hai. `completion` của cú thứ nhất vẫn nổ ở mốc lắng
+    /// **của nó**, lúc cú thứ hai còn đang bay.
+    ///
+    /// Mốc kiểm tra: `rest₁ + 0,175s`, giữa mốc lắng của cú thứ nhất (`rest`)
+    /// và của cú thứ hai (`0,35 + rest`).
+    ///
+    /// Đo được: trên simulator iOS 26 đường này **xanh cả khi tháo chốt** —
+    /// `completion` của cú thứ nhất không nổ giữa cú thứ hai ở đây. Đường (b)
+    /// ngay dưới thì đỏ khi tháo chốt. Giữ cả hai: chốt không dựa vào việc
+    /// SwiftUI gọi hay không gọi một `completion` bị cắt ngang lúc nào.
+    func testAStaleCompletionDoesNotRestTheCardDuringALaterCollapse() throws {
+        let expansion = try mountRestingCard(reduceMotion: false)
+        let milestones = try releaseMilestones()
+
+        expansion.accessoryDragChanged(translationHeight: -120)
+        expansion.accessoryDragEnded(predictedTranslationHeight: -120, verticalVelocity: 0)
+        let first = Date()
+
+        RunLoop.main.run(until: first.addingTimeInterval(0.25))
+        expansion.accessoryDragChanged(translationHeight: -70)
+        RunLoop.main.run(until: first.addingTimeInterval(0.35))
+        expansion.accessoryDragEnded(predictedTranslationHeight: -70, verticalVelocity: 0)
+
+        RunLoop.main.run(until: first.addingTimeInterval(milestones.rest + 0.175))
+        XCTAssertFalse(expansion.isCardResting,
+                       "the first collapse's completion rested the card in the middle of the second")
+        XCTAssertFalse(expansion.showsAccessoryContent)
+
+        waitForRest(expansion)
+        XCTAssertTrue(expansion.isCardResting, "and the second collapse still rests the card")
+    }
+
+    /// Đường (b) của review: thu, mở lại giữa cú nảy (chạm accessory), rồi thu
+    /// lần nữa bằng một cú kéo xuống. Hai `completion` cũ — của cú thu đầu và
+    /// của cú mở — đều nổ trong cú thu thứ hai, và với `settled == 0` lúc ấy,
+    /// một phép hỏi trạng thái hiện tại sẽ gật đầu với cả hai.
+    func testReopeningMidBounceAndCollapsingAgainRestsOnlyAtTheEnd() throws {
+        let expansion = try mountRestingCard(reduceMotion: false)
+        let milestones = try releaseMilestones()
+
+        expansion.accessoryDragChanged(translationHeight: -120)
+        expansion.accessoryDragEnded(predictedTranslationHeight: -120, verticalVelocity: 0)
+        let first = Date()
+
+        RunLoop.main.run(until: first.addingTimeInterval(0.3))
+        expansion.requestExpand()
+        RunLoop.main.run(until: first.addingTimeInterval(0.6))
+        XCTAssertEqual(expansion.progress, 1, "the tap reopened the card")
+        expansion.accessoryDragChanged(translationHeight: 700)
+        expansion.accessoryDragEnded(predictedTranslationHeight: 800, verticalVelocity: 0)
+
+        // Cú thu đầu lắng ở `rest`, cú mở ở ~0,3 + 0,36; cú thu thứ hai bắt đầu
+        // ở 0,6s và lắng ở 0,6 + rest. Kiểm ở giữa: sau cả hai `completion`
+        // cũ, trước `completion` thật.
+        RunLoop.main.run(until: first.addingTimeInterval(milestones.rest + 0.4))
+        XCTAssertFalse(expansion.isCardResting,
+                       "a stale completion rested the card in the middle of the last collapse")
+
+        waitForRest(expansion)
+        XCTAssertTrue(expansion.isCardResting)
     }
 
     /// Giảm chuyển động: nhánh ấy về nghỉ ngay, nên accessory hiện và thẻ ẩn

@@ -956,13 +956,21 @@ final class SwiftUIAnimationTransactionEvidenceTests: XCTestCase {
         }
 
         // Every curve `morph(to:curves:)` can be handed with the setting on:
-        // `expand()` and `collapse()` pass `BottomBarStyle.expand`, and the
-        // drag's release passes `settle(initialVelocity:)` — whose reduced
-        // branch drops the velocity, so the extremes are the same curve.
+        // `expand()` passes `BottomBarStyle.expandCurves`, `collapse()` passes
+        // `collapse(afterDrag: false)`, and the drag's release passes
+        // `settleCurves(initialVelocity:)` or `collapse(initialVelocity:afterDrag: true)`
+        // — whose reduced branches are `expand`'s and `settle`'s flat curves
+        // and drop the velocity, so the extremes are the same curve.
         for (name, animation) in [
             ("expand", BottomBarStyle.expand),
+            ("expandCurves", BottomBarStyle.expandCurves.geometry),
             ("settle(0)", BottomBarStyle.settle(initialVelocity: 0)),
             ("settle(max)", BottomBarStyle.settle(initialVelocity: BottomBarStyle.maxSettleVelocity)),
+            ("settleCurves(max)",
+             BottomBarStyle.settleCurves(initialVelocity: BottomBarStyle.maxSettleVelocity).geometry),
+            ("collapse(tap)", BottomBarStyle.collapse(afterDrag: false).geometry),
+            ("collapse(release, max)",
+             BottomBarStyle.collapse(initialVelocity: BottomBarStyle.maxSettleVelocity, afterDrag: true).geometry),
         ] {
             XCTAssertLessThanOrEqual(
                 peak(of: animation), 1.0001,
