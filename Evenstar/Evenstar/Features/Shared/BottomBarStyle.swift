@@ -430,14 +430,16 @@ enum BottomBarStyle {
 
     // MARK: - Cú thu về accessory
 
-    /// Hai đường cong của **một** cú morph: một cho hình học của thẻ, một cho
-    /// `PlayerCard.landing` — cú lún quá chỗ ở cuối cú thu.
+    /// Đường cong của **một** cú morph cho hình học của thẻ, kèm thứ cần để
+    /// dựng những gì đi theo nó: lò xo của cú thu (cho `LandingPlan` — cú phồng
+    /// và cú nảy cuối cú thu — và cho sàn phần dư), hay lò xo của hình học khi
+    /// nó là một lò xo thường (cho một cú thu tới sau).
     ///
-    /// Ở chiều mở, và ở mọi nhánh giảm chuyển động, hai đường là một — xem
-    /// `init(_:)`. Chỉ cú thu tách chúng ra; xem `collapse(initialVelocity:afterDrag:)`.
+    /// Vòng sửa 1–4 còn mang một đường thứ hai cho `PlayerCard.landing`, bản sao
+    /// không dừng ở đích của hình học. Vòng sửa 5 thay nó bằng `LandingPlan`
+    /// chạy trên một đồng hồ (`LandingClock`) — xem `PlayerCard.morph(to:curves:)`.
     struct MorphCurves {
         let geometry: Animation
-        let landing: Animation
         /// Hình học, viết lại thành một lò xo thả từ đứng yên với vận tốc ban
         /// đầu này — khi nó đúng là thế (`expandCurves`, `settleCurves`). Một
         /// cú thu tới sau dùng nó để biết trước phần dư cú này còn để lại; xem
@@ -448,9 +450,8 @@ enum BottomBarStyle {
         /// học kèm sàn. `nil` khi đây không phải cú thu ấy.
         let collapseSpring: Spring?
 
-        init(_ both: Animation, spring: Spring? = nil, initialVelocity: Double = 0) {
-            geometry = both
-            landing = both
+        init(_ geometry: Animation, spring: Spring? = nil, initialVelocity: Double = 0) {
+            self.geometry = geometry
             geometrySpring = spring
             self.initialVelocity = initialVelocity
             collapseSpring = nil
@@ -459,8 +460,6 @@ enum BottomBarStyle {
         init(collapse spring: Spring, initialVelocity: Double) {
             geometry = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
                                                 stopsAtTarget: true))
-            landing = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
-                                               stopsAtTarget: false))
             geometrySpring = nil
             self.initialVelocity = initialVelocity
             collapseSpring = spring
@@ -468,7 +467,6 @@ enum BottomBarStyle {
 
         private init(geometry: Animation, keeping other: MorphCurves) {
             self.geometry = geometry
-            landing = other.landing
             geometrySpring = other.geometrySpring
             initialVelocity = other.initialVelocity
             collapseSpring = other.collapseSpring
@@ -519,14 +517,12 @@ enum BottomBarStyle {
     /// thì phép nội suy ấy **ngoại suy**: chiều cao thẻ đi dưới 48 và mép dưới
     /// nhích **lên** — thẻ bẹp lại tại chỗ chứ không lún xuống. Đúng cái spec cấm.
     ///
-    /// Nên cùng **một** lò xo chạy hai lần, cùng lúc bắt đầu, cùng vận tốc ban
-    /// đầu, khác đúng một điều — xem `CollapseSpring.stopsAtTarget`:
-    ///
-    ///   - `geometry` **dừng ở lần đầu chạm đích**. Khung thẻ không bao giờ
-    ///     ngoại suy, nên không bao giờ nhỏ hơn viên kính.
-    ///   - `landing` chạy hết: vọt qua 0, nảy về. `PlayerCard.landing` đi theo
-    ///     nó, và phần **âm** của nó thành cú phồng của lớp kính (`CollapseGlass`
-    ///     trong `PlayerCard.swift`) — mọi mép chỉ đi ra; không đụng bố cục.
+    /// Nên hình học **dừng ở lần đầu chạm đích** (`CollapseSpring.stopsAtTarget`):
+    /// khung thẻ không bao giờ ngoại suy, nên không bao giờ nhỏ hơn viên kính.
+    /// Phần còn lại của lò xo — cú vọt qua — được đọc bằng phép tính, không qua
+    /// nội suy: `LandingPlan` (trong `PlayerCard.swift`) dựng từ chính lò xo ấy
+    /// lịch của cú chạm sàn — phồng, nảy như vật rơi, xẹp — chạy trên một đồng
+    /// hồ (`LandingClock`) bắt đầu cùng lượt với hình học.
     ///
     /// Không có thời lượng nào phải đoán: cú phồng bắt đầu **đúng** khung hình
     /// học chạm đích, vì đó là cùng một phép tính `Spring.value` trên cùng
@@ -582,16 +578,46 @@ enum BottomBarStyle {
     /// thẻ tới nơi nhanh cỡ nào và lún sâu cỡ nào.
     static let landingBounce: Double = 0.25
 
-    /// Hệ số cho **nhịp nảy ngược** của cú đáp — nửa chu kỳ thứ hai, khi lò xo
-    /// vọt về phía bên kia đích — trong `PlayerCard.landingGrowth`.
+    // MARK: Cú nảy như vật rơi (vòng sửa 5) — xem `LandingPlan` trong `PlayerCard.swift`
+
+    /// Đỉnh của nhịp nảy đầu, tính bằng điểm: cả tấm thẻ — cứng, như một vật
+    /// rơi chạm sàn — bật lên ~5pt khỏi chỗ nghỉ. Phán quyết vòng sửa 5 ("~5,
+    /// rồi ~2, rồi ~1"). Bị chặn bởi lề của cú phồng — xem `dropMargin`.
+    static let dropApex: CGFloat = 5
+
+    /// Mỗi nhịp sau cao bằng 0,4 nhịp trước: 5 → 2 → 0,8. Với vật nảy, tỉ lệ
+    /// chiều cao là bình phương hệ số hồi phục — 0,4 là hệ số ~0,63, cỡ một quả
+    /// bóng cao su trên sàn cứng.
+    static let dropRestitution: CGFloat = 0.4
+
+    /// Ba nhịp: nhịp thứ tư sẽ là 0,32pt — dưới một điểm ảnh @3x, không ai thấy,
+    /// chỉ thêm thời gian trước cú trao chỗ.
+    static let dropBounces = 3
+
+    /// Nhịp đầu kéo dài 0,18s, từ lúc rời sàn tới lúc chạm lại. **Trọng lực
+    /// được dẫn ra từ con số này** (`g = 8·đỉnh / T²` — một cung parabol), và
+    /// mọi nhịp sau dùng cùng trọng lực: thời gian mỗi nhịp tỉ lệ với căn bậc
+    /// hai chiều cao, nên nhịp 2pt dài 0,114s, nhịp 0,8pt 0,072s. Đó là thứ làm
+    /// cú nảy đọc ra như rơi: nhanh sát sàn, chậm lại ở đỉnh, và nhịp sau dồn
+    /// dập hơn nhịp trước.
     ///
-    /// Nhịp ấy nhỏ hơn nhịp đầu đúng một lần hệ số vọt qua (~2,8%): với cú thu
-    /// thường ngày nó là ~0,5pt — có trong đường cong mà mắt không thấy, nên
-    /// cú phồng đọc ra như một nhịp rồi đứng. Phán quyết vòng sửa 4: "phồng
-    /// lớn → lắng → phồng nhỏ → nghỉ". ×4 cho nhịp thứ hai ~2pt tổng (~1pt mỗi
-    /// mép), vẫn rõ ràng là nhỏ hơn nhịp đầu ~13pt. ×5 thì ~2,6pt, và cú trao
-    /// chỗ đẩy quá ~0,9s (xem `CollapseSpring.landingHandoffEpsilon`).
-    static let landingReboundGain: CGFloat = 4
+    /// Không lấy trọng lực thật: ở cỡ điểm của iPhone 12 (~0,17mm/pt), g thật
+    /// là ~59.000pt/s² — nhịp 5pt chỉ còn 26ms, gọn trong hai khung, không ai
+    /// kịp thấy. 0,18s là cỡ một vật cầm tay rơi trên mặt bàn nhìn từ xa.
+    static let dropFirstBounceDuration: Double = 0.18
+
+    /// Lề an toàn: trong lúc thẻ bật lên `u`, đáy thẻ — đã phồng xuống `E` —
+    /// phải còn dưới đáy viên kính hệ thống ít nhất chừng này: `E − u ≥ 0,5`.
+    /// Không thì viên kính lộ ra dưới thẻ thành viền thứ hai, đúng cái QA
+    /// IMG_2559 bắt được. Đỉnh mỗi nhịp bị chặn bởi lề này, không phải ngược lại.
+    static let dropMargin: CGFloat = 0.5
+
+    /// Nhịp nào thấp hơn chừng này thì bỏ — và bỏ luôn các nhịp sau.
+    static let dropMinimumApex: CGFloat = 0.3
+
+    /// Cú phồng xẹp xuống trong 0,15s **sau** nhịp nảy cuối, chứ không theo nhịp
+    /// của lò xo nữa: nó phải giữ nguyên làm lề suốt các nhịp nảy.
+    static let dropSwellDeflate: Double = 0.15
 
     /// Thẻ trao chỗ cho accessory, **sau** cú nảy: thẻ mờ đi trong khi hàng mini
     /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
@@ -996,22 +1022,15 @@ struct CollapseSpring: CustomAnimation {
     /// vì trộn, cú thu **biết trước** `R(t)` — cú bung là một lò xo đã biết
     /// tham số, giờ bắt đầu và quãng đi — và giữ `k ≤ 1 + R(t)/span`: thẻ không
     /// bao giờ nhỏ hơn viên kính, rồi kết thúc khi đã chạm đích **và** `R` đã
-    /// về 0. Phần thẻ "lẽ ra" còn đi tiếp xuống thì `landing` vẫn mang — không
-    /// có sàn — nên nó thành cú lún, như mọi cú lún khác.
+    /// về 0.
     ///
     /// Chỉ ghi những cú có `MorphCurves.geometrySpring` (bung và thả tay để
     /// mở). Phần dư của một cú thu trước luôn ≥ 0 (`k ≤ 1`), không bao giờ kéo
     /// thẻ xuống dưới viên kính, nên bỏ qua nó chỉ làm sàn chặt hơn.
     let residuals: [Residual]
-    /// Lúc đường cong kết thúc hẳn — xem `settleEpsilon` (hình học) và
-    /// `landingRemovalEpsilon` (cú đáp). Tính một lần ở đây, không mỗi khung.
-    /// Với hình học có phần dư, là lúc muộn nhất trong số ấy.
+    /// Lúc đường cong kết thúc hẳn — xem `settleEpsilon`. Tính một lần ở đây,
+    /// không mỗi khung. Với hình học có phần dư, là lúc muộn nhất trong số ấy.
     let settlingTime: TimeInterval
-    /// Lúc đường cong báo **xong về mặt logic** (`AnimationContext.isLogicallyComplete`)
-    /// — tức lúc `completion` mặc định của `withAnimation` nổ và thẻ trao chỗ.
-    /// Với hình học, trùng `settlingTime`. Với cú đáp, sớm hơn: xem
-    /// `landingHandoffEpsilon`.
-    let logicalCompletionTime: TimeInterval
 
     /// Một cú morph trước, đang chạy: lò xo thả từ đứng yên, đi `delta`, đã
     /// chạy được `elapsed` lúc cú thu bắt đầu.
@@ -1048,17 +1067,8 @@ struct CollapseSpring: CustomAnimation {
         self.stopsAtTarget = stopsAtTarget
         self.span = span
         self.residuals = stopsAtTarget ? residuals.filter(\.isRunning) : []
-        if stopsAtTarget {
-            let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
-            self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
-            self.logicalCompletionTime = settlingTime
-        } else {
-            self.settlingTime = Self.lastExcursion(of: spring, initialVelocity: initialVelocity,
-                                                   epsilon: Self.landingRemovalEpsilon)
-            self.logicalCompletionTime = min(settlingTime,
-                                             Self.lastExcursion(of: spring, initialVelocity: initialVelocity,
-                                                                epsilon: Self.landingHandoffEpsilon))
-        }
+        let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
+        self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
     }
 
     /// Tổng phần dư của các cú trước, `time` giây sau khi cú thu bắt đầu.
@@ -1106,7 +1116,6 @@ struct CollapseSpring: CustomAnimation {
     func animate<V: VectorArithmetic>(value: V, time: TimeInterval,
                                       context: inout AnimationContext<V>) -> V? {
         guard let fraction = fraction(at: time) else { return nil }
-        if time >= logicalCompletionTime { context.isLogicallyComplete = true }
         return value.scaled(by: fraction)
     }
 
@@ -1123,27 +1132,22 @@ struct CollapseSpring: CustomAnimation {
     /// tay lộ ra thành một cú nhích.
     static let settleEpsilon: Double = 0.0005
 
-    /// Cú đáp **báo xong** — và thẻ bắt đầu mờ đi trao chỗ — khi phần còn lại
-    /// của cú nảy vẽ ra dưới ~1pt, kể cả qua hệ số `landingReboundGain` của
-    /// nhịp nảy ngược, trên trọn quãng ~710pt. Nó **vẫn chạy** sau mốc ấy, dưới
-    /// cú mờ, tới `landingRemovalEpsilon`: chút phồng còn lại tan cùng tấm thẻ
-    /// chứ không bị cắt phụt ở đầu cú mờ.
-    ///
-    /// Vì sao không đợi lắng hẳn rồi mới mờ: nhịp nảy ngược kéo dài tới ~0,86s
-    /// với cú thả tay; đợi nó tắt hẳn (0,35pt) là ~0,79s + 0,15s mờ = ~0,94s,
-    /// quá mức ~0,9s của phán quyết vòng sửa 4. Ở 1pt: cú thả tay thường ngày
-    /// ~0,72s + 0,15s; tệ nhất — thả không vận tốc từ thẻ mở hẳn — ~0,75s + 0,15s.
-    static var landingHandoffEpsilon: Double {
-        1 / (Double(BottomBarStyle.landingReboundGain) * referenceTravel)
-    }
+}
 
-    /// Cú đáp thôi chạy hẳn khi phần còn lại vẽ ra dưới ~0,35pt — cùng mức mà
-    /// `settleEpsilon` từng chọn — kể cả qua `landingReboundGain`.
-    static var landingRemovalEpsilon: Double {
-        0.35 / (Double(BottomBarStyle.landingReboundGain) * referenceTravel)
-    }
+/// Một đồng hồ: đi đều từ 0 tới 1 trong đúng `duration` giây rồi dừng.
+///
+/// Cú phồng và cú nảy cuối cú thu không phải một giá trị nội suy giữa hai đầu
+/// mà một **lịch** — `LandingPlan` — đọc theo thời gian. Thứ duy nhất SwiftUI
+/// cần nội suy là thời gian ấy: `PlayerCard.landingClock` chạy trên đồng hồ
+/// này, bắt đầu cùng lượt với hình học, và mỗi khung các modifier đọc
+/// `clock × duration` rồi hỏi lịch. `completion` của nó — `logicallyComplete`
+/// là lúc nó trả `nil` — là lúc lịch xong, tức lúc thẻ trao chỗ.
+struct LandingClock: CustomAnimation {
+    let duration: TimeInterval
 
-    /// Quãng kéo của iPhone 12, để đổi các mức tính bằng điểm ở trên ra phần
-    /// quãng đường. Thẻ ngắn hơn thì phần còn lại vẽ ra còn nhỏ hơn.
-    static let referenceTravel: Double = 710
+    func animate<V: VectorArithmetic>(value: V, time: TimeInterval,
+                                      context: inout AnimationContext<V>) -> V? {
+        guard time < duration, duration > 0 else { return nil }
+        return value.scaled(by: time / duration)
+    }
 }

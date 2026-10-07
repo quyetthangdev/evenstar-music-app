@@ -270,24 +270,28 @@ struct PlayerCard: View {
     /// không để lại tấm thẻ vô hình — đích của nó vốn đã là 1.
     @State private var cardOpacity: Double = 1
 
-    /// Bản sao của `progress` chạy trên đường cong **không dừng ở đích** — chỉ
-    /// để `CollapseGlass` đọc phần âm của nó thành cú phồng cuối cú thu.
+    /// Lịch của cú phồng và cú nảy cuối cú thu đang chạy, dựng một lần lúc cú
+    /// thu bắt đầu — xem `LandingPlan`. `nil` ngoài cú thu: mọi cú morph khác
+    /// xoá nó (không animation), nên một cú mở giữa chừng cú nảy dừng cú nảy.
     ///
-    /// Hình học của thẻ không được vọt qua 0: SwiftUI nội suy khung thẻ, và vọt
-    /// qua là ngoại suy — thẻ bẹp lại. Nên cú thu chạy cùng một lò xo hai lần
-    /// (`BottomBarStyle.collapse(initialVelocity:afterDrag:)`): hình học dừng ở
-    /// lần đầu chạm 0, còn giá trị này đi tiếp xuống dưới 0 rồi nảy về.
+    /// Một giá trị thường, không nội suy: thứ nội suy là `landingClock`.
+    @State private var landingPlan: LandingPlan?
+
+    /// Đồng hồ của `landingPlan`: 0 lúc cú thu bắt đầu, 1 khi lịch xong, chạy
+    /// đều trên `LandingClock` — bắt đầu cùng lượt với hình học, nên thời gian
+    /// nó đọc ra là đúng thời gian của lò xo hình học.
     ///
-    /// Mỗi cú morph — cả chiều mở — đặt nó về đúng `progress` (không
-    /// animation) rồi animate tới cùng đích với hình học. Hai việc ấy giữ nó
-    /// đi đúng nhịp với hình học: cùng chỗ xuất phát, cùng lúc bắt đầu, và vì
-    /// SwiftUI cộng dồn animation chứ không huỷ, một cú morph cắt ngang cú
-    /// trước cũng mang theo đúng phần dư như hình học mang. Không ghi gì mỗi
-    /// khung kéo — chỉ hai lần ghi mỗi cú morph.
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO MỘT ĐỒNG HỒ, KHÔNG CÒN BẢN SAO KHÔNG DỪNG CỦA `progress` (vòng 5)
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Vòng sửa 1–4 đọc cú phồng từ độ vọt qua của một bản sao lò xo. Cú nảy
+    /// như vật rơi thì không phải là lò xo: là những cung parabol rời rạc, mỗi
+    /// cung một chiều cao, giữ cú phồng làm lề suốt đó rồi mới xẹp. Thứ ấy là
+    /// một hàm của **thời gian** — nên SwiftUI chỉ cần nội suy thời gian, và
+    /// `LandingPlan` trả lời phần còn lại, mỗi khung, bằng phép tính thuần.
     ///
-    /// `completion` của nó — không phải của hình học — là lúc thẻ về nghỉ:
-    /// hình học tới 0 ngay trước cú phồng, còn thẻ chỉ được nhường chỗ sau cú nảy.
-    @State private var landing: Double = 0
+    /// `completion` của nó là lúc thẻ về nghỉ — sau nhịp nảy cuối và cú xẹp.
+    @State private var landingClock: Double = 1
 
     /// Những cú morph có hình học là một lò xo thường, còn đang chạy — để một
     /// cú thu tới sau biết trước phần dư của chúng. Xem
@@ -1159,7 +1163,8 @@ struct PlayerCard: View {
         // thẻ trong cú nảy cuối cú thu, mà không đụng bố cục — xem `CollapseGlass`.
         .modifier(CollapseGlass(progress: progress,
                                 glassGate: expansion.cardSurfaceIsGlass ? 1 : 0,
-                                landing: landing, anchor: anchor))
+                                clock: landingClock, plan: landingPlan,
+                                active: expansion.cardSurfaceIsGlass, anchor: anchor))
         // Positions the card horizontally. It cannot be centred in the frame
         // below any more: with the accessory's two side margins unequal —
         // which is exactly the landscape case — centring
@@ -2576,7 +2581,7 @@ struct PlayerCard: View {
     ///
     /// Nhánh thường giữ nguyên si cú `withAnimation` cũ, kể cả việc đường cong
     /// của hình học phải tới cả `settled` lẫn `expansion` — xem ghi chú ở
-    /// `onEnded`. Cú thu thêm một đường thứ hai cho `landing` — xem đoạn cuối.
+    /// `onEnded`. Cú thu thêm một lịch chạm sàn (`LandingPlan`) — xem đoạn cuối.
     ///
     /// Nhánh giảm chuyển động **không phải một đường cong khác**. Đổi curve
     /// thôi thì thẻ vẫn phóng từ viên thuốc ra toàn màn hình, chỉ là phóng theo
@@ -2688,16 +2693,16 @@ struct PlayerCard: View {
     /// ─────────────────────────────────────────────────────────────────────
     /// CÚ THU: HAI ĐƯỜNG CONG, MỘT ĐỒNG HỒ (sửa 2026-10-06 sau QA trên máy)
     /// ─────────────────────────────────────────────────────────────────────
-    /// Ở nhánh thường, cú thu nhận **hai** đường từ
-    /// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`: hình học dừng ở
-    /// lần đầu chạm 0, còn `landing` đi tiếp xuống dưới 0 rồi nảy về —
-    /// `CollapseGlass` đọc phần âm ấy thành cú phồng đối xứng: mép trên lên
-    /// ~5pt, đáy xuống ~5pt, hai bên nở ~1,3pt. Ở đoạn cuối, khi
-    /// thẻ còn lớn hơn viên kính một chút, mặt thẻ chuyển sang kính
-    /// (`CardSurface`, `collapseGlass`). Chiều mở thì hai đường là một, và
+    /// Ở nhánh thường, hình học của cú thu dừng ở lần đầu chạm 0
+    /// (`BottomBarStyle.collapse(initialVelocity:afterDrag:)`), và cùng lượt ấy
+    /// một `LandingPlan` được dựng từ chính lò xo đó, chạy trên `landingClock`:
+    /// thẻ chạm sàn, phồng đối xứng (~6,5pt mỗi mép), bật lên như vật rơi
+    /// 5 → 2 → 0,8pt trong khi cú phồng giữ làm lề, rồi xẹp — `CollapseGlass`.
+    /// Ở đoạn cuối, khi thẻ còn lớn hơn viên kính một chút, mặt thẻ chuyển sang
+    /// kính (`CardSurface`, `collapseGlass`). Chiều mở không có lịch nào, và
     /// không có gì trong ấy đổi so với trước.
     ///
-    /// Thẻ về nghỉ trong `completion` của `landing`, tức **sau** cú nảy, và về
+    /// Thẻ về nghỉ trong `completion` của `landingClock`, tức **sau** cú nảy, và về
     /// bên trong `BottomBarStyle.collapseHandoff`: thẻ kính mờ đi trên viên
     /// kính của hệ thống, nơi hàng mini của accessory vừa hiện ra đúng chỗ ấy.
     /// Kính nhường cho kính, nên không có cú đổi màu nào; cái duy nhất thật sự
@@ -2724,24 +2729,39 @@ struct PlayerCard: View {
             let now = CACurrentMediaTime()
             let curves = requested.flooring(span: progress, residuals: flights.residuals(at: now))
             flights.record(curves, delta: target - progress, at: now)
-            // Hai lượt ghi cho `landing`, và thứ tự là cả ý nghĩa — xem doc
-            // của nó. Lượt đầu không animation: bắt kịp `progress` ở đúng chỗ
-            // thẻ đang đứng, kể cả phần ngón tay đã kéo.
-            withTransaction(Transaction(animation: nil)) { landing = progress }
-            withAnimation(curves.landing) {
-                landing = target
-            } completion: {
-                // Cú này đã bị một chuyển động mới hơn thay thế: không phải việc
-                // của nó nữa. Xem `PlayerExpansion.motion`.
-                guard expansion.motion == generation else { return }
-                // Một cú mờ: thẻ là thứ duy nhất đọc `isCardResting` mà vẽ ra
-                // thứ nội suy được; accessory tự từ chối animation. Cú mờ không
-                // có bước "xong" nào phải chốt: `arriveAtRest()` chạy ngay ở
-                // đầu nó, và một chuyển động mới giữa chừng gọi `leaveRest()`,
-                // thứ dựng thẻ lại ngay ngoài mọi animation.
-                withAnimation(BottomBarStyle.collapseHandoff) {
-                    arriveAtRestIfCollapsed()
+            if let spring = curves.collapseSpring {
+                // Lịch của cú chạm sàn, dựng một lần từ chính lò xo của hình
+                // học, quãng còn lại và quãng kéo — cùng khung neo `card()` đặt
+                // thẻ (khung đo được, hoặc khung dự phòng).
+                let anchorFrame = PlayerAnchor.resolve(measured: expansion.anchorFrame,
+                                                       screen: expansion.screenSize)
+                let plan = LandingPlan(spring: spring, initialVelocity: curves.initialVelocity,
+                                       span: progress, travel: PlayerAnchor.dragTravel(for: anchorFrame))
+                // Đặt lịch và quay đồng hồ về 0 không animation, rồi cho đồng
+                // hồ chạy — cùng lượt với hình học bên dưới, nên cùng mốc 0.
+                withTransaction(Transaction(animation: nil)) {
+                    landingPlan = plan
+                    landingClock = 0
                 }
+                withAnimation(Animation(LandingClock(duration: plan.duration))) {
+                    landingClock = 1
+                } completion: {
+                    // Cú này đã bị một chuyển động mới hơn thay thế: không phải
+                    // việc của nó nữa. Xem `PlayerExpansion.motion`.
+                    guard expansion.motion == generation else { return }
+                    // Một cú mờ: thẻ là thứ duy nhất đọc `isCardResting` mà vẽ
+                    // ra thứ nội suy được; accessory tự từ chối animation. Cú
+                    // mờ không có bước "xong" nào phải chốt: `arriveAtRest()`
+                    // chạy ngay ở đầu nó, và một chuyển động mới giữa chừng gọi
+                    // `leaveRest()`, thứ dựng thẻ lại ngay ngoài mọi animation.
+                    withAnimation(BottomBarStyle.collapseHandoff) {
+                        arriveAtRestIfCollapsed()
+                    }
+                }
+            } else {
+                // Không phải cú thu có nảy: không có lịch nào chạy. Một cú mở
+                // giữa chừng cú nảy dừng nó tại chỗ — xem `landingPlan`.
+                withTransaction(Transaction(animation: nil)) { landingPlan = nil }
             }
             withAnimation(curves.geometry) {
                 if target == 0 { expansion.commitCollapse() }
@@ -2772,7 +2792,7 @@ struct PlayerCard: View {
         withTransaction(Transaction(animation: nil)) {
             settled = target
             dragDelta = 0
-            landing = target
+            landingPlan = nil
             expansion.set(progress: target, animation: nil)
             if needsFade { cardOpacity = 0 }
         }
@@ -2957,26 +2977,22 @@ struct PlayerCard: View {
     static let collapseGlassStartRatio: Double = 2
     static let collapseGlassEndRatio: Double = 1.25
 
-    /// Tổng chiều cao thẻ phồng thêm, tính bằng điểm, cho một độ lệch
-    /// `overshoot` (đơn vị `progress`) giữa hình học và cú đáp. Chia cho hai
-    /// mép ở `landingSwell(growth:)`.
+    /// Tổng chiều cao thẻ phồng thêm, tính bằng điểm, khi cú thu đã vọt qua
+    /// đích một đoạn `overshoot` (đơn vị `progress`, dương) — lúc thẻ chạm sàn.
+    /// Âm thì 0: không mép nào đi vào trong. Chia cho hai mép ở
+    /// `landingSwell(growth:)`; `LandingPlan` dùng nó cho nhịp chạm sàn rồi giữ
+    /// đỉnh của nó làm lề suốt các nhịp nảy.
     ///
-    ///   - **Dương** — cú đáp đã vọt qua 0, hình học thì dừng ở 0: nhịp phồng
-    ///     lớn. Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng
-    ///     mép trên thẻ đi trên mỗi đơn vị `progress` — nên tổng ấy lớn lên đúng
-    ///     nhịp đà của cú thu: độ dốc ở 0 là 1.
-    ///   - **Âm** — nhịp nảy ngược, lò xo vọt về phía bên kia đích. Vòng sửa 1–3
-    ///     bỏ phần này (`max(overshoot, 0)`), và cú phồng đọc ra như một nhịp rồi
-    ///     đứng. Giờ nó cũng thành một cú phồng **ra ngoài** — không bao giờ vào
-    ///     trong, nên viên kính hệ thống vẫn luôn nằm trọn — nhân
-    ///     `BottomBarStyle.landingReboundGain` vì tự nó chỉ ~0,5pt.
-    ///   - **0** — lúc tiếp cận, khi hình học và cú đáp là cùng một đường cong.
+    /// Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng mép
+    /// trên thẻ đi trên mỗi đơn vị `progress` — nên tổng ấy lớn lên đúng nhịp
+    /// đà của cú thu: độ dốc ở 0 là 1. Rồi trần mềm `tanh`: cú thu thường ngày
+    /// chỉ bị chạm nhẹ (~18pt thô ra ~13pt), cú búng mạnh nhất không phồng quá
+    /// `landingCap`.
     ///
-    /// Rồi trần mềm `tanh`: cú thu thường ngày chỉ bị chạm nhẹ (~18pt thô ra
-    /// ~13pt), cú búng mạnh nhất không phồng quá `landingCap`.
+    /// (Vòng sửa 4 còn đổi nhịp nảy ngược của lò xo thành một cú phồng thứ hai
+    /// ×4; vòng sửa 5 thay nó bằng cú nảy cứng của cả tấm thẻ — `LandingPlan`.)
     static func landingGrowth(overshoot: Double, travel: CGFloat) -> CGFloat {
-        let swing = overshoot >= 0 ? CGFloat(overshoot) : -CGFloat(overshoot) * BottomBarStyle.landingReboundGain
-        return landingCap * tanh(swing * travel / landingCap)
+        landingCap * tanh(CGFloat(max(overshoot, 0)) * travel / landingCap)
     }
 
     /// Trần của cú phồng, tổng hai mép — tức 8pt mỗi mép. Không trần, cú búng
@@ -3307,15 +3323,27 @@ private struct PresentedOpacity: ViewModifier, Animatable {
 /// điều kiện nữa phải nhớ khi chỉnh một con số. Và mắt đọc ra đúng ý: hai đầu
 /// viên thuốc giữ dáng, phần thân phồng lên, như thạch.
 ///
-/// **Hai kiểu `Animatable`, không phải một — đo được.** Bản đầu gộp `progress`,
-/// cổng kính và `landing` vào một `AnimatablePair`. Ba giá trị đổi trong cùng
+/// **Hai kiểu `Animatable`, không phải một — đo được.** Bản đầu của vòng sửa 2
+/// gộp `progress`, cổng kính và `landing` (bản sao lò xo của vòng 1–4) vào một
+/// `AnimatablePair`. Ba giá trị đổi trong cùng
 /// một lượt cập nhật nhưng dưới hai `withAnimation` khác nhau (hình học dừng ở
 /// đích, `landing` thì không), và SwiftUI nội suy cả cặp bằng **một** đường
 /// cong: `landing` đi theo đường của hình học, không bao giờ vọt qua 0 — không
 /// có cú giãn nào — và `completion` của nó không bao giờ nổ, nên thẻ không bao
 /// giờ về nghỉ. Mỗi giá trị chạy trên đường của riêng nó thì phải nằm ở một
-/// `animatableData` riêng: lượng kính ở `CollapseGlassLayer`, cú giãn ở
-/// `LandingStretch` bọc quanh nó.
+/// `animatableData` riêng: lượng kính ở `CollapseGlassLayer` (đường của hình
+/// học), cú phồng ở `LandingSwellPadding` và cú nảy ở `LandingLift` (cả hai
+/// trên `landingClock`).
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// CÚ NẢY NHƯ VẬT RƠI (vòng sửa 5)
+/// ─────────────────────────────────────────────────────────────────────────
+/// "Đàn hồi phải tự nhiên, như một vật rơi xuống nảy lên — không phải phồng."
+/// Cú phồng giữ nguyên; thêm `LandingLift`: một phép dời dọc của **cả** tấm
+/// thẻ — mặt kính, mặt thẻ, hàng mini — theo những cung parabol của
+/// `LandingPlan`. Đặt sau nền kính, nên kính đi cùng; một `.offset`, nên không
+/// bố cục lại gì mỗi khung. Viên kính hệ thống vẫn nằm trọn: lịch giữ cú phồng
+/// ở đỉnh suốt các nhịp nảy và chặn mỗi nhịp dưới nó — xem `LandingPlan`.
 ///
 /// Lớp kính chỉ có mặt khi lượng kính > 0 — không có lớp kính toàn màn hình
 /// nào suốt cú bung — và ở lại lúc nghỉ, dưới một tấm thẻ ở độ mờ 0 (cổng là
@@ -3323,14 +3351,21 @@ private struct PresentedOpacity: ViewModifier, Animatable {
 private struct CollapseGlass: ViewModifier {
     let progress: Double
     let glassGate: Double
-    let landing: Double
+    let clock: Double
+    let plan: LandingPlan?
+    /// `PlayerExpansion.cardSurfaceIsGlass`, không nội suy: một cú kéo hay một
+    /// cú mở bắt đầu là cú phồng và cú nảy dừng ngay, như lớp kính.
+    let active: Bool
     let anchor: PlayerAnchor
 
     func body(content: Content) -> some View {
-        content.background(alignment: .top) {
-            CollapseGlassLayer(progress: progress, glassGate: glassGate, landing: landing, anchor: anchor)
-                .allowsHitTesting(false)
-        }
+        content
+            .background(alignment: .top) {
+                CollapseGlassLayer(progress: progress, glassGate: glassGate, clock: clock,
+                                   plan: active ? plan : nil, anchor: anchor)
+                    .allowsHitTesting(false)
+            }
+            .modifier(LandingLift(clock: clock, plan: active ? plan : nil))
     }
 }
 
@@ -3338,17 +3373,15 @@ private struct CollapseGlass: ViewModifier {
 /// `animatableData` với lớp đặc trong `CardSurface`, nên hai lớp hoà vào nhau
 /// khớp từng khung.
 ///
-/// Cú phồng được áp **ở đây**, không ở `CollapseGlass`: `LandingStretch` cần
-/// hình học đang vẽ — `progress` của kiểu này, mỗi khung — để biết đâu là
-/// nhịp nảy ngược (vòng sửa 4). `landing` đi qua kiểu này như một giá trị
-/// thường, không nằm trong `animatableData`; chính `LandingStretch` nội suy nó
-/// trên đường cong của riêng nó. Modifier ấy nằm **ngoài** nhánh `if`, để nó có
-/// mặt từ đầu cú thu: một view chèn vào giữa chừng không nhận animation đang
-/// chạy, và cú phồng sẽ không bao giờ hiện.
+/// Cú phồng (`LandingSwellPadding`) được áp **ở đây**, ngoài nhánh `if`, để nó
+/// có mặt từ đầu cú thu: một view chèn vào giữa chừng không nhận animation đang
+/// chạy. `clock` đi qua kiểu này như một giá trị thường, không nằm trong
+/// `animatableData`; chính `LandingSwellPadding` nội suy nó.
 private struct CollapseGlassLayer: View, Animatable {
     var progress: Double
     var glassGate: Double
-    let landing: Double
+    let clock: Double
+    let plan: LandingPlan?
     let anchor: PlayerAnchor
 
     var animatableData: AnimatablePair<Double, Double> {
@@ -3377,38 +3410,189 @@ private struct CollapseGlassLayer: View, Animatable {
                 )
             }
         }
-        .modifier(LandingStretch(progress: landing, geometry: progress, travel: anchor.dragTravel))
+        .modifier(LandingSwellPadding(clock: clock, plan: plan))
     }
 }
 
-/// Cú phồng: đọc độ lệch giữa hình học đang vẽ (`geometry`) và `PlayerCard.landing`
-/// đang vẽ, cho lớp kính tràn ra bốn phía theo `PlayerCard.landingSwell`.
-///
-/// Độ lệch, không phải phần âm của `landing`: lúc tiếp cận hai thứ là cùng một
-/// đường cong nên độ lệch là 0, dù `landing` còn dương và lớn; sau khi hình học
-/// dừng ở 0, độ lệch là chính cú vọt qua — dương ở nhịp đầu, âm ở nhịp nảy
-/// ngược. `geometry` là giá trị thường: `CollapseGlassLayer` dựng lại modifier
-/// này mỗi khung với hình học của khung ấy.
+/// Cú phồng: đọc `landingClock` ở giá trị đang vẽ, hỏi `LandingPlan` thẻ đang
+/// phồng bao nhiêu, cho lớp kính tràn ra bốn phía theo
+/// `PlayerCard.landingSwell`.
 ///
 /// Phải là `Animatable` vì cùng lẽ với `CardSurface`: dưới `withAnimation`, một
-/// `padding(f(landing))` trần được tính một lần ở đích (`landing` 0 → 0) — không
-/// có cú phồng nào. Ngoài cú thu, `landing` ≥ 0 và đây là `padding(0)`.
-private struct LandingStretch: ViewModifier, Animatable {
-    var progress: Double
-    let geometry: Double
-    let travel: CGFloat
+/// `padding(f(clock))` trần được tính một lần ở đích (`clock` 1 → lịch đã xong
+/// → 0) — không có cú phồng nào. Ngoài cú thu không có lịch, và đây là
+/// `padding(0)`.
+private struct LandingSwellPadding: ViewModifier, Animatable {
+    var clock: Double
+    let plan: LandingPlan?
 
     var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
+        get { clock }
+        set { clock = newValue }
     }
 
     func body(content: Content) -> some View {
-        let swell = PlayerCard.landingSwell(
-            growth: PlayerCard.landingGrowth(overshoot: geometry - progress, travel: travel)
-        )
+        let swell = plan.map { $0.swell(at: clock * $0.duration) }
+            ?? PlayerCard.LandingSwell(top: 0, bottom: 0, side: 0)
         content.padding(EdgeInsets(top: -swell.top, leading: -swell.side,
                                    bottom: -swell.bottom, trailing: -swell.side))
+    }
+}
+
+/// Cú nảy: dời **cả** tấm thẻ lên theo `LandingPlan.lift(at:)`, đọc
+/// `landingClock` đang vẽ. Một `.offset` — hiệu ứng hình học, không bố cục —
+/// nên không có lượt bố cục nào mỗi khung, và vùng bố cục của thẻ không đổi.
+private struct LandingLift: ViewModifier, Animatable {
+    var clock: Double
+    let plan: LandingPlan?
+
+    var animatableData: Double {
+        get { clock }
+        set { clock = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.offset(y: -(plan.map { $0.lift(at: clock * $0.duration) } ?? 0))
+    }
+}
+
+/// Lịch của cú chạm sàn cuối cú thu (vòng sửa 5): thẻ chạm sàn, **phồng**, bật
+/// lên như một vật rơi — những cung parabol thấp dần — trong khi cú phồng giữ
+/// làm lề, rồi xẹp. Mọi thứ là hàm thuần của thời gian kể từ lúc cú thu bắt
+/// đầu, dẫn ra từ chính lò xo của hình học và các hằng số `drop…` trong
+/// `BottomBarStyle` — không có thời lượng nào đoán.
+///
+///     t = 0          cú thu bắt đầu (cùng lượt với hình học)
+///     impact         hình học chạm 0 — lần đầu lò xo chạm đích
+///     impact→launch  chạm sàn: cú phồng lớn lên theo độ vọt qua của lò xo,
+///                    như vòng sửa 3–4, tới đỉnh của nó (~6,5pt mỗi mép)
+///     launch→…       các nhịp nảy: thẻ bật lên 5 → 2 → 0,8pt, cung parabol,
+///                    cú phồng **giữ nguyên ở đỉnh** — thẻ cứng, không biến dạng
+///     deflateStart   nhịp cuối chạm sàn; cú phồng xẹp trong 0,15s
+///     duration       xong — thẻ trao chỗ cho accessory
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// LỀ: VIÊN KÍNH HỆ THỐNG LUÔN NẰM TRỌN
+/// ─────────────────────────────────────────────────────────────────────────
+/// Thẻ bật lên `u`, đáy nó — đã phồng xuống `E` mỗi mép — nằm ở
+/// `đáy viên kính + E − u`. Viên kính không lộ ra dưới thẻ khi `E − u ≥ 0`;
+/// lịch giữ `E − u ≥ dropMargin` (0,5pt) suốt mọi nhịp, bằng hai điều: `E` giữ
+/// nguyên ở đỉnh phồng `P` suốt các nhịp, và đỉnh nhịp `k` bị chặn ở
+/// `(P − dropMargin)·0,4^(k−1)` — cú phồng nhỏ (cú thu ngắn) thì nhịp thấp
+/// theo, nhịp dưới `dropMinimumApex` thì bỏ. Mép trên đi lên cùng thẻ, nên
+/// không bao giờ xuống dưới mép trên viên kính; hai bên chỉ nở ra.
+///
+/// Vì sao giữ cú phồng thay vì để nó theo lò xo: thẻ đang bay mà cú phồng đổi
+/// thì đáy và đỉnh đi hai tốc độ khác nhau — đọc ra là co giãn, không phải nảy.
+/// Giữ nguyên thì trong không trung thẻ là một vật cứng.
+///
+/// Vì sao bật lên ở đỉnh phồng chứ không ngay lúc chạm: lúc chạm cú phồng là 0
+/// mà một cung parabol rời sàn với vận tốc lớn nhất — không có lề nào cho nó.
+/// Vật thật cũng thế: nó bẹp xuống trước, rồi mới bật lên.
+struct LandingPlan: Equatable, Sendable {
+    struct Bounce: Equatable, Sendable {
+        let start: Double
+        let duration: Double
+        let apex: CGFloat
+    }
+
+    let spring: Spring
+    let initialVelocity: Double
+    /// Quãng `progress` cú thu đi — để đổi độ vọt qua của lò xo ra điểm.
+    let span: Double
+    let travel: CGFloat
+    let impact: Double
+    let launch: Double
+    /// Tổng chiều cao phồng thêm ở đỉnh — giữ nguyên suốt các nhịp nảy.
+    let peakGrowth: CGFloat
+    let bounces: [Bounce]
+    let deflateStart: Double
+    let duration: Double
+    /// `g` dẫn ra từ `BottomBarStyle.dropApex` và `dropFirstBounceDuration`.
+    let gravity: CGFloat
+
+    @MainActor
+    init(spring: Spring, initialVelocity: Double, span: Double, travel: CGFloat) {
+        self.spring = spring
+        self.initialVelocity = initialVelocity
+        self.span = span
+        self.travel = travel
+
+        // Chạm sàn: lần đầu lò xo chạm đích. Đỉnh phồng: chỗ vọt qua sâu nhất
+        // của nhịp ấy.
+        var impact: Double?
+        var deepest = 1.0
+        var deepestAt = 0.0
+        var time = 0.0
+        while time < 2 {
+            let f = spring.value(target: 1.0, initialVelocity: initialVelocity, time: time)
+            if let impact {
+                if f > deepest { deepest = f; deepestAt = time }
+                if f < 1, time > impact { break }
+            } else if f >= 1 {
+                impact = time
+                deepest = f
+                deepestAt = time
+            }
+            time += 0.001
+        }
+        let hit = impact ?? time
+        self.impact = hit
+        self.launch = max(deepestAt, hit)
+        let peak = PlayerCard.landingGrowth(overshoot: span * (deepest - 1), travel: travel)
+        self.peakGrowth = peak
+
+        let firstApex = BottomBarStyle.dropApex
+        let firstDuration = BottomBarStyle.dropFirstBounceDuration
+        let gravity = 8 * firstApex / CGFloat(firstDuration * firstDuration)
+        self.gravity = gravity
+        let perEdge = PlayerCard.landingSwell(growth: peak).bottom
+        var bounces: [Bounce] = []
+        var start = launch
+        for k in 0..<BottomBarStyle.dropBounces {
+            let decay = pow(BottomBarStyle.dropRestitution, CGFloat(k))
+            let apex = min(firstApex, perEdge - BottomBarStyle.dropMargin) * decay
+            guard apex >= BottomBarStyle.dropMinimumApex else { break }
+            let duration = 2 * Double((2 * apex / gravity).squareRoot())
+            bounces.append(Bounce(start: start, duration: duration, apex: apex))
+            start += duration
+        }
+        self.bounces = bounces
+        self.deflateStart = start
+        self.duration = start + BottomBarStyle.dropSwellDeflate
+    }
+
+    /// Tổng chiều cao phồng thêm, `time` giây sau khi cú thu bắt đầu.
+    @MainActor
+    func growth(at time: Double) -> CGFloat {
+        if time < impact { return 0 }
+        if time < launch {
+            let f = spring.value(target: 1.0, initialVelocity: initialVelocity, time: time)
+            return PlayerCard.landingGrowth(overshoot: span * (f - 1), travel: travel)
+        }
+        if time < deflateStart { return peakGrowth }
+        if time < duration {
+            let x = (time - deflateStart) / BottomBarStyle.dropSwellDeflate
+            let eased = x * x * (3 - 2 * x)
+            return peakGrowth * CGFloat(1 - eased)
+        }
+        return 0
+    }
+
+    @MainActor
+    func swell(at time: Double) -> PlayerCard.LandingSwell {
+        PlayerCard.landingSwell(growth: growth(at: time))
+    }
+
+    /// Thẻ đang ở cao bao nhiêu điểm trên chỗ nghỉ: một cung parabol mỗi nhịp,
+    /// `u = v·s − g·s²/2` với `v = g·T/2` — nhanh nhất sát sàn, dừng ở đỉnh.
+    func lift(at time: Double) -> CGFloat {
+        for bounce in bounces where time >= bounce.start && time < bounce.start + bounce.duration {
+            let s = CGFloat(time - bounce.start)
+            let launchSpeed = gravity * CGFloat(bounce.duration) / 2
+            return max(0, launchSpeed * s - gravity * s * s / 2)
+        }
+        return 0
     }
 }
 
