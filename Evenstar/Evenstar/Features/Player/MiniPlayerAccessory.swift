@@ -35,6 +35,8 @@ struct MiniPlayerAccessory: View {
     /// lệch phần **vẽ**: `offset` không đổi khung của ai, nên khung báo lên
     /// `PlayerExpansion`, neo viên kính và `AccessoryTextStyle` không biết gì.
     @State private var swipeTravel: CGFloat = 0
+    /// Cú trượt vào của bài mới — xem `TrackSwipe.Entry`.
+    @State private var swipeEntry = TrackSwipe.Entry()
     /// Bề rộng vùng thông tin bài — ngưỡng 30% và quãng trượt ra quy theo nó.
     @State private var infoWidth: CGFloat = 0
     /// Đáy cú mờ chéo của Giảm chuyển động.
@@ -123,7 +125,8 @@ struct MiniPlayerAccessory: View {
                              size: MiniPlayerMetrics.artworkSide)
             MiniPlayerTitle(playback: playback)
         }
-        .offset(x: TrackSwipe.slide(travel: swipeTravel, reduceMotion: BottomBarStyle.reduceMotion))
+        .modifier(TrackSwipeSlide(travel: swipeTravel, entry: swipeEntry,
+                                  reduceMotion: BottomBarStyle.reduceMotion))
         .opacity(swipeDimmed ? TrackSwipe.dimmedOpacity : TrackSwipe.opacity(travel: swipeTravel, width: infoWidth))
         .padding(.leading, MiniPlayerMetrics.artworkLeadingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -229,16 +232,58 @@ struct MiniPlayerAccessory: View {
                 return
             }
             swipeCommits += 1
-            // Nhảy sang phía đối diện, ngoài mọi animation — đang khuất sau
-            // mép cắt nên không ai thấy cú nhảy.
-            var jump = Transaction(animation: nil)
-            jump.disablesAnimations = true
-            withTransaction(jump) { swipeTravel = -exit }
-            // Lượt sau, khi cú nhảy đã được vẽ. Cùng lượt thì SwiftUI chỉ thấy
-            // `exit → 0` và bài mới trượt vào từ phía bài cũ vừa ra.
-            DispatchQueue.main.async {
-                withAnimation(BottomBarStyle.settle) { swipeTravel = 0 } completion: { swipeLanding = false }
+            // Bài mới vào từ phía đối diện, trong **một** lần ghi có
+            // animation — không nhảy rồi hẹn lượt sau. Xem `TrackSwipe.Entry`.
+            withAnimation(BottomBarStyle.settle) {
+                swipeTravel = 0
+                swipeEntry.begin(after: exit)
+            } completion: {
+                swipeLanding = false
             }
         }
+    }
+}
+
+/// Độ lệch của bìa + tên bài: quãng theo ngón tay cộng cú trượt vào của bài
+/// mới (`TrackSwipe.Entry`), nội suy **chung một nhịp** — một `Animatable`
+/// với cả hai giá trị, nên hai phần không thể lệch đồng hồ với nhau.
+///
+/// Chỉ lệch phần vẽ, như `offset` trước nó: khung báo lên `PlayerExpansion`,
+/// neo viên kính và `AccessoryTextStyle` không biết gì.
+///
+/// **Một `GeometryEffect`, không phải `ViewModifier` bọc `.offset`, và điều
+/// đó là load-bearing.** Ở lượt ghi có animation, giá trị đầu đã nội suy là
+/// `travel` = `exit` cộng trọn `-2·exit` của cú trượt vào — độ lệch đổi phắt
+/// từ `exit` sang `-exit`, đúng cú nhảy cần có. Một `.offset` bên trong thì
+/// tự animate chính cú nhảy ấy theo transaction, cộng dồn lên các giá trị
+/// từng khung: đo được ở `TrackSwipeEntryTests`, khối vẽ ra đúng **đối xứng**
+/// với con số `body` tính (−287 tính, +287 vẽ) — bài mới vào từ phía bài cũ
+/// vừa ra, đúng lỗi cần sửa. `animation(nil) { $0.offset(…) }` không chặn
+/// được. Ở đây không có con nào để animate: `effectValue` chỉ vẽ con số của
+/// khung đang vẽ, và mọi chuyển động đi qua `animatableData`.
+struct TrackSwipeSlide: GeometryEffect {
+    var travel: CGFloat
+    var phase: Double
+    let entry: TrackSwipe.Entry
+    let reduceMotion: Bool
+
+    init(travel: CGFloat, entry: TrackSwipe.Entry, reduceMotion: Bool) {
+        self.travel = travel
+        self.phase = Double(entry.count)
+        self.entry = entry
+        self.reduceMotion = reduceMotion
+    }
+
+    var animatableData: AnimatablePair<CGFloat, Double> {
+        get { AnimatablePair(travel, phase) }
+        set {
+            travel = newValue.first
+            phase = newValue.second
+        }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let x = TrackSwipe.slide(travel: travel, entry: entry.offset(phase: phase), reduceMotion: reduceMotion)
+        return ProjectionTransform(CGAffineTransform(translationX: x, y: 0))
     }
 }
