@@ -105,7 +105,10 @@ struct RootView: View {
                 Tab(LibraryTab.account.label, systemImage: LibraryTab.account.symbol, value: LibraryTab.account) {
                     AccountView()
                 }
-                Tab(value: LibraryTab.search, role: .search) {
+                // Có nhãn, như bốn tab kia: không nhãn thì hệ thống tự đặt
+                // "Search" theo ngôn ngữ máy, không theo ngôn ngữ trong app.
+                Tab(LibraryTab.search.label, systemImage: LibraryTab.search.symbol,
+                    value: LibraryTab.search, role: .search) {
                     SearchView(query: $query)
                 }
             }

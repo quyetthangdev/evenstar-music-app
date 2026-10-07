@@ -155,7 +155,8 @@ enum ReorderTuning {
     /// Quãng đường thì giữ. Hàng nhường chỗ *là* lời giải thích cho việc sắp
     /// xảy ra — bỏ nó đi thì thứ tự mới hiện ra bằng một cú nhảy không ai đọc
     /// được — nên đây là chỗ đổi curve, không phải chỗ bỏ dịch chuyển. Cùng
-    /// ranh giới `BottomBarStyle.selection` áp cho vệt tab.
+    /// ranh giới `BottomBarStyle.selection` từng áp cho vệt tab của thanh tab
+    /// tự vẽ (đã xoá cùng thanh ấy).
     ///
     /// 0.14 lấy theo đúng cách bảng trong `BottomBarStyle.swift` lấy bảy con số
     /// của nó: thời điểm chính lò xo ấy **lần đầu vượt 98%**, lấy mẫu 1ms bằng

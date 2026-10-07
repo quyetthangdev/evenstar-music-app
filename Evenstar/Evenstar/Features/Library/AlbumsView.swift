@@ -50,7 +50,7 @@ struct AlbumsView: View {
                 // change: without it the grid renders empty once and the empty
                 // state flashes on every launch.
                 .onChange(of: store.tracks, initial: true) { _, updated in
-                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: updated))
+                    albums = LibraryGrouping.albums(from: updated)
                 }
                 // A second trigger, because `store.tracks` cannot report the
                 // first one. Editing a track's album changes no element of that
@@ -58,7 +58,7 @@ struct AlbumsView: View {
                 // fires and this screen would keep showing the album the track
                 // used to be in. See `LibraryService.metadataRevision`.
                 .onChange(of: library.metadataRevision) { _, _ in
-                    albums = paddedForScrollTesting(LibraryGrouping.albums(from: store.tracks))
+                    albums = LibraryGrouping.albums(from: store.tracks)
                 }
                 .navigationTitle("Album")
                 // Hoisted above the empty/non-empty branch in `content` so it
@@ -93,48 +93,8 @@ struct AlbumsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
             }
-            // On the `ScrollView` itself rather than on the branch above it,
-            // so what the modifier observes is unambiguous.
         }
     }
-
-    // MARK: - Scroll-testing scaffold
-    //
-    // TEMPORARY. Delete this section and the call in `content` once the bottom
-    // bar's scroll-minimising has been checked on a tab other than the first,
-    // which is the only thing it exists for. It is not a feature, and it puts
-    // albums that do not exist in front of anyone running a debug build.
-    //
-    // Debug-only and behind a flag, so a release build cannot show it and
-    // flipping one boolean gets the real library — and its empty state — back.
-
-    #if DEBUG
-    /// Set to `false` to see the real library, including its empty state.
-    private static let padAlbumsForScrollTesting = true
-    /// Enough cells to overflow a phone screen twice over, so there is real
-    /// travel to scroll rather than a few points of rubber band.
-    private static let scrollTestAlbumCount = 24
-
-    private func paddedForScrollTesting(_ albums: [AlbumGroup]) -> [AlbumGroup] {
-        guard Self.padAlbumsForScrollTesting,
-              albums.count < Self.scrollTestAlbumCount else { return albums }
-
-        let filler = (albums.count..<Self.scrollTestAlbumCount).map { index in
-            // No cover, and no album behind the title either: tapping one
-            // opens a detail screen with no rows, because nothing in the
-            // library matches this title and artist. That is honest.
-            AlbumGroup(
-                id: "scroll-test-\(index)",
-                title: "Album thử \(index + 1)",
-                artist: "Nghệ sĩ thử",
-                artworkRelativePath: nil
-            )
-        }
-        return albums + filler
-    }
-    #else
-    private func paddedForScrollTesting(_ albums: [AlbumGroup]) -> [AlbumGroup] { albums }
-    #endif
 }
 
 private struct AlbumCell: View {

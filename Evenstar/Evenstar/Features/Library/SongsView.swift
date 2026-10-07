@@ -369,8 +369,6 @@ struct SongsView: View {
                     }
             }
             .listStyle(.plain)
-            // On the scrollable container itself rather than on the branch
-            // above it, so what the modifier observes is unambiguous.
         }
     }
 

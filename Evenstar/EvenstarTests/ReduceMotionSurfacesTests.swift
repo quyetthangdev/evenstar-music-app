@@ -133,9 +133,6 @@ final class TransportSymbolSwapTests: XCTestCase {
 
     private enum Harness {
         @MainActor static var flip: (() -> Void)?
-        /// Lifts the finger. See `tap(reduceMotion:)` for why the anchor needs
-        /// this and never worked without it.
-        @MainActor static var release: (() -> Void)?
     }
 
     /// The label as the transport row writes it: a bare glyph through
@@ -152,7 +149,6 @@ final class TransportSymbolSwapTests: XCTestCase {
                 .background(Color.white)
                 .onAppear {
                     Harness.flip = { playing.toggle() }
-                    Harness.release = {}
                 }
         }
     }
@@ -172,7 +168,6 @@ final class TransportSymbolSwapTests: XCTestCase {
         window = nil
         host = nil
         Harness.flip = nil
-        Harness.release = nil
         try await super.tearDown()
     }
 
@@ -205,7 +200,6 @@ final class TransportSymbolSwapTests: XCTestCase {
         window?.isHidden = true
         BottomBarStyle.reduceMotion = reduceMotion
         Harness.flip = nil
-        Harness.release = nil
         let (window, host) = LivePixels.host(Probe())
         self.window = window
         self.host = host
@@ -221,28 +215,12 @@ final class TransportSymbolSwapTests: XCTestCase {
             spans.append(try shape().span)
         }
 
-        // **The finger comes off before `after` is read, and the anchor below
-        // is worthless without it.**
-        //
-        // `flip()` does two things, because a real tap does two things: it
-        // swaps the symbol *and* holds the button down. Holding it down is what
-        // the span measurement above needs — the scale it is watching for
-        // happens under the finger.
-        //
-        // But `after` was being read with the finger still down, and in the
-        // reduced mode a held press is `pressedOpacity` = 0.45 over the whole
-        // glyph. That dim alone moves ink by far more than the 5% the anchor
-        // asks for, so the anchor answered "yes, it changed" whether or not any
-        // symbol had swapped. Proven, not suspected: deleting `playing.toggle()`
-        // from the harness — so no swap happens anywhere — left the reduced test
-        // **green**. The guard written to catch a harness that had stopped
-        // flipping anything was the one thing in the class that could not catch
-        // it.
-        //
-        // Released and settled, both readings are the same button in the same
-        // resting state, and the only thing left that can move ink is which
-        // glyph is drawn.
-        try XCTUnwrap(Harness.release)()
+        // Settled before `after` is read, so both readings are the same glyph
+        // at rest and the only thing left that can move ink is which glyph is
+        // drawn. (This used to lift a held press first: the old button style
+        // dimmed a held glyph to 0.45 under Reduce Motion, which moved ink by
+        // more than the anchor's 5% whether or not anything swapped. The probe
+        // has no button style any more, so there is no press to lift.)
         LivePixels.pump(0.6)
         let after = try shape()
 
@@ -465,32 +443,30 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 /// future iOS lets the surrounding transaction drive the effect, this fails and
 /// those two stop being true on the same day.
 ///
-/// **Two claims, and an earlier version of this file only had the first — then
-/// stated it as if it were both.** The curve cannot reach the effect; the
-/// off-switch can. Writing "no ancestor reaches it" was wrong, and it was wrong
-/// in the direction that mattered, because `disablesAnimations` reaching it is
-/// what makes the scale closable at all.
+/// The curve cannot reach the effect. (An earlier version also measured the
+/// other half — that `disablesAnimations` and `.contentTransition(.opacity)`
+/// *do* stop the collapse — with two more drives, `disabled` and
+/// `opacityTransition`. The test that ran them was deleted in 6d6cd4b with the
+/// hand-written button styles, and the two cases sat unused until 2026-10-07;
+/// the reduced branch of `symbolReplace()` is pinned by
+/// `TransportSymbolSwapTests` instead.)
 ///
-/// Five runs of one swap. The measurement is the glyph's row span, which the
+/// Three runs of one swap. The measurement is the glyph's row span, which the
 /// effect collapses to about half and restores — 15 rows at rest, 7 at the
 /// trough, on frame 20-21 of a 10ms sampling:
 ///
 ///   - `bare` — nothing around it.
 ///   - `withAnimation` — a 1.2s `withAnimation` around the state change.
 ///   - `ancestorTransaction` — a 1.2s `.transaction` above the image.
-///   - `disabled` — `.transaction { $0.disablesAnimations = true }` above it.
-///   - `opacityTransition` — `.contentTransition(.opacity)`, which is the
-///     branch `symbolReplace()` takes when motion is reduced.
 ///
-/// The first three have to agree: a 1.2s retiming would put the trough past
-/// frame 60. The last two have to *not* collapse at all — span 15 throughout —
-/// which is the half that says the fix has something to act on.
+/// All three have to agree: a 1.2s retiming would put the trough past
+/// frame 60.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
 /// THE ±3 FRAME BUDGET IS KNOWN-TIGHT. READ THIS BEFORE TRUSTING A GREEN RUN.
 /// ─────────────────────────────────────────────────────────────────────────
 /// The comparison is index-based: it asks which *sample* the trough landed on,
-/// and allows the five runs to differ by ±3. That budget is **one sample above
+/// and allows the three runs to differ by ±3. That budget is **one sample above
 /// the drift this harness shows on its own** — trough index moves by as much as
 /// 2 across same-configuration runs on the same machine, with nothing changed
 /// between them. So ±3 leaves roughly one sample of headroom, which at 10ms
@@ -514,7 +490,7 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 @MainActor
 final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
 
-    enum Drive { case bare, withAnimation, ancestorTransaction, disabled, opacityTransition }
+    enum Drive { case bare, withAnimation, ancestorTransaction }
 
     private enum Harness {
         @MainActor static var flip: (() -> Void)?
@@ -530,9 +506,7 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
         var body: some View {
             Image(systemName: playing ? "pause.fill" : "play.fill")
                 .font(.title3)
-                .contentTransition(
-                    drive == .opacityTransition ? .opacity : .symbolEffect(.replace)
-                )
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 32, height: 32)
                 .modifier(Ancestor(drive: drive))
                 .frame(width: 60, height: 60)
@@ -560,8 +534,6 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
             switch drive {
             case .ancestorTransaction:
                 content.transaction { $0.animation = .easeInOut(duration: 1.2) }
-            case .disabled:
-                content.transaction { $0.disablesAnimations = true }
             default:
                 content
             }

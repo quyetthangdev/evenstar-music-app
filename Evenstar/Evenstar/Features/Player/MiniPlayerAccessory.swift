@@ -32,7 +32,7 @@ struct MiniPlayerAccessory: View {
     @State private var route: AccessoryDragRoute?
 
     /// Bìa + tên bài đã đi bao xa theo cú vuốt ngang (đã qua rubber band). Chỉ
-    /// lệch phần **vẽ**: `offset` không đổi khung của ai, nên khung báo lên
+    /// lệch phần **vẽ** (`TrackSwipeSlide`): không đổi khung của ai, nên khung báo lên
     /// `PlayerExpansion`, neo viên kính và `AccessoryTextStyle` không biết gì.
     @State private var swipeTravel: CGFloat = 0
     /// Cú trượt vào của bài mới — xem `TrackSwipe.Entry`.

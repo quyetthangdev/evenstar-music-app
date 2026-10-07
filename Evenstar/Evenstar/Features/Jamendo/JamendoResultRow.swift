@@ -54,7 +54,7 @@ struct JamendoResultRow: View {
             // Buttons is a hit region of at least 44×44pt, and a `.frame`
             // only draws — it does not hit-test — so a tighter frame here
             // would tap-test just the glyph's ink. This app has shipped that
-            // exact bug once already, in `FloatingTabBar`.
+            // exact bug once already, in its old hand-drawn tab bar.
             //
             // Circled and tinted, the shape every system list uses for
             // add-to-library. Three things a bare `plus` got wrong:

@@ -143,6 +143,13 @@ enum BottomBarStyle {
     // and spends the difference overshooting. Both are honest results of
     // dropping the overshoot, not rounding accidents.
     //
+    // **`morph`, `selection` and `content` no longer exist** (deleted
+    // 2026-10-07): they were the hand-drawn tab bar's, which the system's
+    // replaced, and nothing read them. Their rows stay in the table above
+    // because the paragraphs about troughs and overshoot are measurements of
+    // those springs, and `SpringSettlingEvidenceTests` still re-derives every
+    // row from literals.
+    //
     // Five constants below — `control`, `queueContentIn`,
     // `queueContentOut`, `queueTitleOut`, `queueTitleIn` — are already duration
     // curves driving a fade or a 5pt swell, with no displacement to take out,
@@ -153,74 +160,15 @@ enum BottomBarStyle {
     // What actually disappears for those six is the scale and the offset at
     // their call sites, which is B3/B4's job, not this file's.
 
-    /// A surface changing shape. Written for the hand-drawn tab bar, which the
-    /// system's has replaced; nothing in the app reads it now, and the suite
-    /// still pins its values.
-    ///
-    /// Written as `duration`/`bounce` rather than `response`/`dampingFraction`.
-    /// The two describe the same family of springs, but this pair names what it
-    /// does — `bounce` 0 stops on arrival, higher springs past and returns —
-    /// where the older pair inverts that axis, since higher damping means less
-    /// bounce.
-    ///
-    /// The two are not independent: `bounce` is a *proportion* of the duration,
-    /// so shortening the spring flattens the same bounce value. Past about 0.4
-    /// it wobbles rather than settles, and well before that it starts arriving
-    /// hard — a high bounce over a short duration snaps back from its overshoot
-    /// instead of easing into place.
-    ///
-    /// Reduced: 0.20s `easeInOut`, the point at which the spring above is
-    /// visually done. The shape-change itself stays — a surface changing shape
-    /// is the surface telling the user what it now is, and removing it would
-    /// leave two indistinguishable states rather than a calmer transition. What
-    /// goes is the overshoot: the surface no longer arrives past its own edge
-    /// and swings back.
-    @MainActor static var morph: Animation { reduceMotion ? morphFlat : morphFull }
-    private static let morphFull = Animation.spring(duration: 0.36, bounce: 0.24)
-    private static let morphFlat = Animation.easeInOut(duration: 0.20)
-
-    /// The selected tab's wash travelling to the tab just tapped.
-    ///
-    /// Deliberately bouncier than `morph`. That one is scenery rearranging
-    /// itself and should get out of the way; this is direct feedback for a tap
-    /// the user just made, and can afford to be more alive. The extra bounce is
-    /// what makes it read as liquid — arriving past the new tab and settling
-    /// back — where a calmer curve reads as merely sliding.
-    ///
-    /// Reduced: 0.18s `easeInOut`. This is the constant that loses the most,
-    /// and losing it is the point — "arriving past the new tab and settling
-    /// back" is a description of exactly what makes someone motion-sensitive
-    /// look away. The wash still travels, because it is what says which tab is
-    /// selected; it simply stops being liquid. Note it comes out marginally
-    /// shorter than `morph` rather than longer: see the table above.
-    @MainActor static var selection: Animation { reduceMotion ? selectionFlat : selectionFull }
-    private static let selectionFull = Animation.spring(duration: 0.38, bounce: 0.34)
-    private static let selectionFlat = Animation.easeInOut(duration: 0.18)
-
-    /// Content inside a surface as that surface changes shape: icons and labels
-    /// shrinking and fading as the pill closes over them.
-    ///
-    /// Quicker and calmer than `morph` on purpose. The surface closing around
-    /// them is the gesture; the glyphs should feel carried by it rather than
-    /// staging a second performance inside it.
-    ///
-    /// Reduced: 0.20s `easeInOut`, the same figure `morph` lands on. That
-    /// collision is correct rather than sloppy — "quicker and calmer" above was
-    /// a statement about bounce, and with the bounce gone the two are the same
-    /// pace. Being carried by the surface is if anything more true flat than it
-    /// was sprung.
-    @MainActor static var content: Animation { reduceMotion ? contentFlat : contentFull }
-    private static let contentFull = Animation.spring(duration: 0.34, bounce: 0.20)
-    private static let contentFlat = Animation.easeInOut(duration: 0.20)
-
     /// A surface settling after the user let go of it, or moving to an end
     /// state they asked for: the player card released mid-drag, collapsing when
     /// the queue empties, expanding on a tap.
     ///
-    /// Longer and much calmer than `morph`. That one is a surface rearranging
-    /// itself while the user watches; this one finishes a gesture the user was
-    /// steering, and overshoot there fights the hand that just let go rather
-    /// than decorating it.
+    /// Longer and much calmer than the old `morph` (0.36 / 0.24, the
+    /// hand-drawn tab bar's surface rearranging itself while the user
+    /// watched); this one finishes a gesture the user was steering, and
+    /// overshoot there fights the hand that just let go rather than
+    /// decorating it.
     ///
     /// This replaced two springs that claimed to be different and were not:
     /// `response: 0.42, dampingFraction: 0.86` for the settle and

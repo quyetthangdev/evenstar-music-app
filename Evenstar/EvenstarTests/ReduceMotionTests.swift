@@ -53,9 +53,6 @@ final class ReduceMotionTests: XCTestCase {
     func testEverySpringConstantFlattens() {
         BottomBarStyle.reduceMotion = false
 
-        XCTAssertEqual(BottomBarStyle.morph, .spring(duration: 0.36, bounce: 0.24))
-        XCTAssertEqual(BottomBarStyle.selection, .spring(duration: 0.38, bounce: 0.34))
-        XCTAssertEqual(BottomBarStyle.content, .spring(duration: 0.34, bounce: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .spring(duration: 0.42, bounce: 0.14))
         XCTAssertEqual(BottomBarStyle.expand, .spring(duration: 0.36, bounce: 0.12))
         XCTAssertEqual(BottomBarStyle.queue, .spring(Spring(duration: 0.31, bounce: 0)))
@@ -66,9 +63,6 @@ final class ReduceMotionTests: XCTestCase {
 
         BottomBarStyle.reduceMotion = true
 
-        XCTAssertEqual(BottomBarStyle.morph, .easeInOut(duration: 0.20))
-        XCTAssertEqual(BottomBarStyle.selection, .easeInOut(duration: 0.18))
-        XCTAssertEqual(BottomBarStyle.content, .easeInOut(duration: 0.20))
         XCTAssertEqual(BottomBarStyle.settle, .easeInOut(duration: 0.29))
         XCTAssertEqual(BottomBarStyle.expand, .easeInOut(duration: 0.26))
         XCTAssertEqual(BottomBarStyle.queue, .easeInOut(duration: 0.29))
@@ -81,9 +75,6 @@ final class ReduceMotionTests: XCTestCase {
     func testTheFlatBranchIsNeverTheSpring() {
         BottomBarStyle.reduceMotion = false
         let sprung = [
-            BottomBarStyle.morph,
-            BottomBarStyle.selection,
-            BottomBarStyle.content,
             BottomBarStyle.settle,
             BottomBarStyle.expand,
             BottomBarStyle.queue,
@@ -92,9 +83,6 @@ final class ReduceMotionTests: XCTestCase {
 
         BottomBarStyle.reduceMotion = true
         let flat = [
-            BottomBarStyle.morph,
-            BottomBarStyle.selection,
-            BottomBarStyle.content,
             BottomBarStyle.settle,
             BottomBarStyle.expand,
             BottomBarStyle.queue,

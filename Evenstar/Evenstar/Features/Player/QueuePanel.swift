@@ -86,7 +86,7 @@ struct QueuePanel: View {
     ///
     /// Giảm chuyển động: **0**, không trượt một điểm nào. Đây là một *quãng
     /// đường*, không phải một đường cong, nên nó đi theo đúng đường
-    /// `BottomBarStyle.recedeScale` và `pressedScale` đã đi: cái phải bỏ là
+    /// `BottomBarStyle.recedeScale` đã đi: cái phải bỏ là
     /// khoảng cách, và không có curve nào bỏ được khoảng cách.
     ///
     /// Hai khối vẫn **hiện ra**, vì `reveal` không đổi: `queueContentIn` là một

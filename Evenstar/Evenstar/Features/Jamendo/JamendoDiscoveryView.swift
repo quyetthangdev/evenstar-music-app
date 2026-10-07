@@ -3,9 +3,8 @@ import SwiftUI
 /// Search, trending and genres, in one pushed screen.
 ///
 /// Reached from the Jamendo chip's toolbar, the same shape the `+` uses to open
-/// the file importer. It is not a tab: adding a fifth pill would re-divide
-/// `FloatingTabBar`, whose 44pt hit targets and collapse morph are all computed
-/// from the number of slots.
+/// the file importer. It is not a tab: it is one source among the library's,
+/// and the system tab bar already holds the app's five destinations.
 struct JamendoDiscoveryView: View {
     @Environment(JamendoLibraryService.self) private var jamendo
     @Environment(PlaybackService.self) private var playback
@@ -418,8 +417,7 @@ private struct GenreChip: View {
                 // `Color.primary`, not the accent colour. The accent is white
                 // now (design Part 2 item 5), and a white fill is invisible
                 // against this screen's light backgrounds regardless of what
-                // colour the label is — the same failure `ProminentActionButtonStyle`
-                // was rewritten to avoid. `Color.primary` inverts with the page
+                // colour the label is. `Color.primary` inverts with the page
                 // in both appearances instead, so the selected chip stays
                 // visible independent of the accent.
                 .background(isSelected ? Color.primary : Color(.tertiarySystemFill),

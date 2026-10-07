@@ -14,11 +14,11 @@ import UIKit
 struct SystemVolumeSlider: UIViewRepresentable {
 
     /// Called once per touch-down on the slider, so a caller wanting a
-    /// haptic can drive its own `.sensoryFeedback` from it — the same
-    /// contract `TransportButtonStyle`/`QueueToggleStyle` use, and for the
-    /// same reason given there: SwiftUI owns the generator's lifetime and
-    /// respects the system's haptics settings, where a raw
-    /// `UIImpactFeedbackGenerator` inside this representable would not.
+    /// haptic can drive its own `.sensoryFeedback` from it — the same way the
+    /// player's buttons count their taps into a `.sensoryFeedback` trigger:
+    /// SwiftUI owns the generator's lifetime and respects the system's
+    /// haptics settings, where a raw `UIImpactFeedbackGenerator` inside this
+    /// representable would not.
     var onTouchDown: () -> Void = {}
 
     /// Ngón tay đặt xuống hay nhấc lên.
