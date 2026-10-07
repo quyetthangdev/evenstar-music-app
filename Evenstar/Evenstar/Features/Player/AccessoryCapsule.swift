@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import OSLog
 
 /// Ẩn tạm **viên kính của hệ thống** — view chứa cả kính lẫn nội dung của
 /// `tabViewBottomAccessory` — trong lúc thẻ hạ cánh, để thẻ nảy được qua chỗ
@@ -42,17 +43,62 @@ final class AccessoryCapsule {
     /// lần `PlayerExpansion` được giải phóng — test host sập hàng loạt.
     private final class Hidden: @unchecked Sendable {
         weak var view: UIView?
+        weak var blocker: UIView?
         var alpha: CGFloat = 1
         var observers: [NSObjectProtocol] = []
 
-        /// Chỉ gọi trên main thread.
+        /// Lớp này không thừa hưởng `@MainActor` của lớp ngoài (cô lập mặc
+        /// định của target là `nonisolated`), nên phải nói thẳng ra ở đây.
+        @MainActor
         func putBack() {
+            removeBlocker()
             guard let view else { return }
-            view.layer.removeAllAnimations()
+            // Chỉ cú mờ của chính mình — không gỡ những animation vị trí, khung
+            // mà hệ thống đang chạy trên view ấy (thanh tab đang thu nhỏ…).
+            view.layer.removeAnimation(forKey: "opacity")
             view.alpha = alpha
             self.view = nil
         }
+
+        @MainActor
+        func removeBlocker() {
+            blocker?.removeFromSuperview()
+            blocker = nil
+        }
     }
+
+    /// Thay viên kính nhận chạm trong lúc nó ẩn.
+    ///
+    /// Một view ở `alpha` 0 thì UIKit bỏ qua khi tìm view nhận chạm, còn thẻ ở
+    /// `progress` 0 không nhận chạm (và không được nhận: vùng chạm của thẻ là
+    /// cả màn hình). Không có lớp này, một cú chạm vào viên thuốc giữa cú hạ
+    /// cánh rơi xuống hàng thư viện bên dưới — **phát một bài khác**. Trước
+    /// vòng 9, cùng cú chạm ấy mở lại thẻ; lớp này giữ đúng điều ấy.
+    ///
+    /// Trong suốt, `alpha` 1, ẩn với VoiceOver, đặt ngay trên viên kính trong
+    /// cùng view cha, ở khung của viên kính **lúc ẩn**. Khung ấy không bám theo
+    /// nếu hệ thống dời viên kính trong lúc ẩn — chấp nhận: lâu nhất ~0,8s,
+    /// và thẻ khi ấy đang nằm đúng ở khung cũ.
+    final class Blocker: UIView {
+        var onTap: (@MainActor () -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isAccessibilityElement = false
+            accessibilityElementsHidden = true
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap)))
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        @objc func handleTap() { onTap?() }
+    }
+
+    /// Chạm vào viên thuốc trong lúc viên kính ẩn — `PlayerExpansion` nối nó
+    /// với `requestExpand()`.
+    var onTap: (@MainActor () -> Void)?
 
     private let hidden = Hidden()
 
@@ -81,6 +127,7 @@ final class AccessoryCapsule {
     deinit {
         let hidden = hidden
         hidden.observers.forEach(NotificationCenter.default.removeObserver)
+        guard hidden.view != nil || hidden.blocker != nil else { return }
         Task { @MainActor in hidden.putBack() }
     }
 
@@ -99,6 +146,12 @@ final class AccessoryCapsule {
         }
         hidden.alpha = container.alpha
         hidden.view = container
+        if let parent = container.superview {
+            let blocker = Blocker(frame: container.frame)
+            blocker.onTap = { [weak self] in self?.onTap?() }
+            parent.insertSubview(blocker, aboveSubview: container)
+            hidden.blocker = blocker
+        }
         // Mờ đi chứ không tắt phụt: bóng đổ của viên kính nằm ngoài thẻ, và một
         // cú thu bắt đầu khi thẻ đã nhỏ thì không phủ hết bóng ấy.
         UIView.animate(withDuration: Self.fadeOut, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
@@ -133,6 +186,8 @@ final class AccessoryCapsule {
         }
         let alpha = hidden.alpha
         hidden.view = nil
+        // Viên kính nhận chạm lại ngay — giá trị mô hình của nó đã là 1.
+        hidden.removeBlocker()
         isHidden = false
         UIView.animate(withDuration: duration, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
             view.alpha = alpha
@@ -168,12 +223,12 @@ final class AccessoryCapsule {
 
     private static var reportedMissing = false
 
+    /// Một lần mỗi lần chạy, cả bản Release: trên một bản iOS mới mà hình học
+    /// đã khác, đây là dấu vết duy nhất cho biết vì sao thẻ không còn nảy.
     private static func reportMissingOnce() {
-        #if DEBUG
         guard !reportedMissing else { return }
         reportedMissing = true
-        print("[AccessoryCapsule] no container with the accessory row's frame — collapsing without the landing bounce")
-        #endif
+        AppLog.player.notice("No view with the accessory row's frame was found; collapsing without the landing bounce")
     }
 }
 

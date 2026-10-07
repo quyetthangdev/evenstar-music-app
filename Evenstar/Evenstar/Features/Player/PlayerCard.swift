@@ -287,6 +287,12 @@ struct PlayerCard: View {
     /// state thì luôn đúng.
     @State private var landingClock: Double = 0
     @State private var landingStart: Double = 0
+    /// Lúc cú hạ cánh gần nhất bắt đầu (`CACurrentMediaTime`), để một cú morph
+    /// cắt ngang nó biết thẻ đang lún bao sâu.
+    @State private var landingBegan: CFTimeInterval = 0
+    /// Độ lún còn lại của một cú hạ cánh bị cắt ngang, tan dần về 0 — xem
+    /// `morph(to:curves:)`. 0 ở mọi lúc khác.
+    @State private var landingResidue: Double = 0
 
     /// Chế độ sáng/tối **của hệ thống**, đọc ở đây — ngoài cây con tấm bìa,
     /// nơi `\.colorScheme` bị ép tối (xem cuối `artworkView`). Chỉ để hai lớp
@@ -1201,6 +1207,10 @@ struct PlayerCard: View {
         // Cú hạ cánh: cả thẻ lún cứng, không đổi khung nào — xem
         // `LandingBounce`. Không có cú hạ cánh thì là `.offset(y: 0)`.
         .modifier(LandingOffset(clock: landingClock, start: landingStart, bounce: landing))
+        // Một `.offset` trần là đủ ở đây: nó tuyến tính theo giá trị, nên nội
+        // suy giữa hai đầu là đúng — khác `LandingOffset`, vốn là một hàm của
+        // đồng hồ. Và tách hẳn khỏi nó, vì hai giá trị đi theo hai transaction.
+        .offset(y: landingResidue)
     }
 
     // MARK: - Pieces
@@ -2757,9 +2767,18 @@ struct PlayerCard: View {
                 ? requested : BottomBarStyle.landingCollapse(initialVelocity: requested.initialVelocity)
             let curves = chosen.flooring(span: progress, residuals: residuals)
             flights.record(curves, delta: target - progress, at: now)
+            // Cắt ngang một cú hạ cánh đang lún (mở lại, thu lần nữa): độ lún
+            // hiện tại không được biến mất trong một khung — tới 8–12pt — mà
+            // tan dần trong lúc chuyển động mới bắt đầu.
+            let sink = landing.map { $0.offset(at: now - landingBegan) } ?? 0
             withTransaction(Transaction(animation: nil)) {
                 landing = bounce
                 landingStart = landingClock
+                landingBegan = now
+                landingResidue = sink
+            }
+            if sink > 0 {
+                withAnimation(BottomBarStyle.landingInterrupted) { landingResidue = 0 }
             }
             withAnimation(curves.geometry) {
                 if target == 0 { expansion.commitCollapse() }
@@ -2821,6 +2840,9 @@ struct PlayerCard: View {
             dragDelta = 0
             expansion.set(progress: target, animation: nil)
             if needsFade { cardOpacity = 0 }
+            // Giảm chuyển động bật giữa một cú hạ cánh: không lún tiếp.
+            landing = nil
+            landingResidue = 0
         }
 
         if needsFade {

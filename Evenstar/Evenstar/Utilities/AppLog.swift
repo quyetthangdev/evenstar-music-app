@@ -70,4 +70,7 @@ enum AppLog {
 
     /// Audio session and transport.
     static let playback = Logger(subsystem: subsystem, category: "playback")
+
+    /// The player card and the system accessory it lands on.
+    static let player = Logger(subsystem: subsystem, category: "player")
 }

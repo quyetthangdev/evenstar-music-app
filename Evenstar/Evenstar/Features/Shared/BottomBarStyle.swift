@@ -591,6 +591,10 @@ enum BottomBarStyle {
     /// của thẻ phủ lên nó.
     static let capsuleReturnDuration: TimeInterval = 0.08
 
+    /// Độ lún còn lại khi một cú hạ cánh bị cắt ngang tan về 0 trong chừng này
+    /// — ngắn, để thẻ theo kịp chuyển động mới, nhưng không là một cú nhảy.
+    static let landingInterrupted = Animation.easeOut(duration: 0.15)
+
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.
     ///

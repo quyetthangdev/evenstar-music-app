@@ -154,6 +154,64 @@ final class AccessoryCapsuleTests: XCTestCase {
         capsule.restore()
     }
 
+    // MARK: - Chạm trong lúc ẩn
+
+    private func blocker(in tree: Tree) -> AccessoryCapsule.Blocker? {
+        tree.strip.subviews.compactMap { $0 as? AccessoryCapsule.Blocker }.first
+    }
+
+    private var pillCentre: CGPoint { CGPoint(x: pill.midX, y: pill.midY) }
+
+    /// Viên kính ở `alpha` 0 thì UIKit không cho nó nhận chạm; một lớp trong
+    /// suốt nhận thay, và cú chạm mở lại thẻ — không rơi xuống hàng thư viện.
+    func testWhileHiddenATapOnThePillStillReachesTheCapsule() throws {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        var taps = 0
+        capsule.onTap = { taps += 1 }
+        capsule.attach(tree.anchor)
+        XCTAssertTrue(tree.window.hitTest(pillCentre, with: nil)?.isDescendant(of: tree.container) == true)
+        capsule.hide()
+        let cover = try XCTUnwrap(blocker(in: tree), "no stand-in for the hidden capsule")
+        XCTAssertTrue(tree.window.hitTest(pillCentre, with: nil) === cover,
+                      "a tap on the hidden pill would fall through to whatever is underneath")
+        XCTAssertEqual(cover.frame, tree.container.frame)
+        XCTAssertEqual(cover.alpha, 1)
+        XCTAssertTrue(cover.accessibilityElementsHidden)
+        XCTAssertFalse(cover.isAccessibilityElement)
+        XCTAssertTrue(cover.gestureRecognizers?.contains { $0 is UITapGestureRecognizer } == true)
+        cover.handleTap()
+        XCTAssertEqual(taps, 1)
+
+        capsule.restore()
+        XCTAssertNil(blocker(in: tree))
+        XCTAssertTrue(tree.window.hitTest(pillCentre, with: nil)?.isDescendant(of: tree.container) == true,
+                      "after restoring, the capsule takes its taps again")
+    }
+
+    /// `PlayerExpansion` nối cú chạm ấy với `requestExpand()`.
+    func testATapWhileHiddenAsksTheCardToExpand() throws {
+        let expansion = PlayerExpansion()
+        let tree = hiddenCapsule(in: expansion)
+        try XCTUnwrap(blocker(in: tree)).handleTap()
+        XCTAssertEqual(expansion.intent?.kind, .expand)
+    }
+
+    /// Hiện lại chỉ gỡ cú mờ của chính nó, không gỡ animation khác của hệ
+    /// thống trên viên kính (thanh tab đang thu nhỏ…).
+    func testRestoringLeavesTheSystemsOtherAnimationsAlone() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        let move = CABasicAnimation(keyPath: "position.y")
+        move.duration = 10
+        tree.container.layer.add(move, forKey: "position")
+        capsule.hide()
+        capsule.restore()
+        XCTAssertNotNil(tree.container.layer.animation(forKey: "position"))
+        XCTAssertNil(tree.container.layer.animation(forKey: "opacity"))
+    }
+
     // MARK: - Mọi lối ra đều hiện lại
 
     private func hiddenCapsule(in expansion: PlayerExpansion) -> Tree {
@@ -172,6 +230,7 @@ final class AccessoryCapsuleTests: XCTestCase {
         expansion.arriveAtRest()
         XCTAssertFalse(expansion.capsule.isHidden)
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
     }
 
     /// Một chuyển động mới — chạm hay kéo accessory giữa cú hạ cánh, mở lại.
@@ -182,11 +241,13 @@ final class AccessoryCapsuleTests: XCTestCase {
         let tree = hiddenCapsule(in: expansion)
         expansion.leaveRest()
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
 
         expansion.commitCollapse()
         XCTAssertTrue(expansion.capsule.hide())
         expansion.accessoryDragChanged(translationHeight: -80)
         XCTAssertEqual(tree.container.alpha, 1, "a drag on the accessory")
+        XCTAssertNil(blocker(in: tree))
     }
 
     func testLeavingTheForegroundRestoresIt() {
@@ -194,9 +255,11 @@ final class AccessoryCapsuleTests: XCTestCase {
         let tree = hiddenCapsule(in: expansion)
         NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
         XCTAssertTrue(expansion.capsule.hide())
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
     }
 
     func testDeallocationRestoresIt() {
@@ -212,6 +275,7 @@ final class AccessoryCapsuleTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
     }
 
     /// Giải phóng `PlayerExpansion` — test nào cũng làm, hàng trăm lần — không
@@ -239,6 +303,7 @@ final class AccessoryCapsuleTests: XCTestCase {
         }
         XCTAssertFalse(capsule.isHidden)
         XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
     }
 
     /// Hiện lại dần cho cú trao tay: `completion` chạy khi đã hiện hẳn — và chạy
@@ -250,6 +315,7 @@ final class AccessoryCapsuleTests: XCTestCase {
         capsule.hide()
         var done = false
         capsule.restore(fadingIn: 0.05) { done = true }
+        XCTAssertNil(blocker(in: tree), "the capsule takes its taps back as it starts fading in")
         XCTAssertFalse(capsule.isHidden)
         XCTAssertEqual(tree.container.alpha, 1, "the model value is already back")
         let deadline = Date().addingTimeInterval(1)

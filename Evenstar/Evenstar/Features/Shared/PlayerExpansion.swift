@@ -106,6 +106,12 @@ final class PlayerExpansion {
     /// lại: `leaveRest()` và `arriveAtRest()`.
     @ObservationIgnored let capsule = AccessoryCapsule()
 
+    init() {
+        // Viên kính đang ẩn thì một lớp trong suốt nhận chạm thay nó — chạm
+        // vào viên thuốc giữa cú hạ cánh vẫn mở lại thẻ, như trước.
+        capsule.onTap = { [weak self] in self?.requestExpand() }
+    }
+
     /// Một cú thu đã được quyết (`PlayerCard.morph(to: 0…)`) và thẻ chưa về
     /// nghỉ — tức đang ở giữa lò xo, hoặc trong cú mờ trao tay.
     ///
