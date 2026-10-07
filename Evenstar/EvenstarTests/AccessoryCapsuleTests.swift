@@ -21,7 +21,8 @@ final class AccessoryCapsuleTests: XCTestCase {
     }
 
     /// cửa sổ → thanh tab (cả màn) → dải dưới (0, 705, 390, 139) → viên kính
-    /// (khung hàng) → vật chủ (khung hàng) → neo (khung hàng).
+    /// (khung hàng) → vật chủ nội dung SwiftUI (khung hàng, `HostingBoundary`)
+    /// → neo (khung hàng).
     private struct Tree {
         let window: UIWindow
         let strip: UIView
@@ -30,12 +31,21 @@ final class AccessoryCapsuleTests: XCTestCase {
         let anchor: UIView
     }
 
+    /// Vật chủ nội dung SwiftUI: chuỗi responder của nó không đi lên view cha
+    /// mà rẽ sang một responder của SwiftUI — đo được trên iOS 26:
+    /// `UIKitTabBarBottomAccessory.next` là `UIKitKeyPressResponder`, không
+    /// phải `_UITabAccessoryContainer`. Ranh giới mà `container(of:)` dựa vào.
+    final class HostingBoundary: UIView {
+        private let hosting = UIResponder()
+        override var next: UIResponder? { hosting }
+    }
+
     private func makeTree(inWindow: Bool = true) -> Tree {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let tabBar = UIView(frame: window.bounds)
         let strip = UIView(frame: CGRect(x: 0, y: 705, width: 390, height: 139))
         let container = UIView(frame: CGRect(x: 21, y: 0, width: 348, height: 48))
-        let host = UIView(frame: container.bounds)
+        let host = HostingBoundary(frame: container.bounds)
         let anchor = UIView(frame: host.bounds)
         host.addSubview(anchor)
         container.addSubview(host)
@@ -99,6 +109,30 @@ final class AccessoryCapsuleTests: XCTestCase {
         host.addSubview(anchor)
         window.addSubview(host)
         XCTAssertNil(AccessoryCapsule.container(of: anchor))
+    }
+
+    /// Một bản iOS sau cho view chứa viên kính khung **lớn hơn** hàng: tổ tiên
+    /// cao nhất còn đúng khung hàng khi ấy là vật chủ nội dung của chính ta.
+    /// Ẩn nó là ẩn chữ, để viên kính đứng yên lộ ra suốt cú lún — nên không
+    /// tìm thấy gì, và thẻ co mềm.
+    func testWhenTheGlassContainerOutgrowsTheRowOnlyOurOwnContentMatchesSoNothingIsFound() {
+        let tree = makeTree()
+        tree.container.frame = CGRect(x: 17, y: -4, width: 356, height: 56)
+        tree.host.frame.origin = CGPoint(x: 4, y: 4)
+        XCTAssertEqual(tree.anchor.convert(tree.anchor.bounds, to: nil), pill)
+        XCTAssertNil(AccessoryCapsule.container(of: tree.anchor))
+    }
+
+    /// Không thấy ranh giới vật chủ nào dưới view tìm được thì không biết nó
+    /// có phải của hệ thống không: không ẩn.
+    func testWithoutAHostingBoundaryBelowItNothingIsFound() {
+        let tree = makeTree()
+        let plainHost = UIView(frame: tree.host.frame)
+        tree.host.removeFromSuperview()
+        tree.anchor.removeFromSuperview()
+        plainHost.addSubview(tree.anchor)
+        tree.container.addSubview(plainHost)
+        XCTAssertNil(AccessoryCapsule.container(of: tree.anchor))
     }
 
     func testAnEmptyAnchorFindsNothing() {
@@ -207,9 +241,59 @@ final class AccessoryCapsuleTests: XCTestCase {
         move.duration = 10
         tree.container.layer.add(move, forKey: "position")
         capsule.hide()
+        XCTAssertNotNil(tree.container.layer.animation(forKey: AccessoryCapsule.fadeKey), "our own fade")
         capsule.restore()
         XCTAssertNotNil(tree.container.layer.animation(forKey: "position"))
-        XCTAssertNil(tree.container.layer.animation(forKey: "opacity"))
+        XCTAssertNil(tree.container.layer.animation(forKey: AccessoryCapsule.fadeKey))
+    }
+
+    /// `"opacity"` là khoá UIKit đặt cho **mọi** animation `alpha`, của hệ
+    /// thống cũng vậy (accessory đang được dỡ đi…). Hiện lại chỉ gỡ cú mờ của
+    /// chính ta, theo khoá riêng.
+    func testRestoringLeavesTheSystemsOwnOpacityAnimationAlone() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        let system = CABasicAnimation(keyPath: "opacity")
+        system.duration = 10
+        tree.container.layer.add(system, forKey: "opacity")
+        capsule.restore()
+        XCTAssertNotNil(tree.container.layer.animation(forKey: "opacity"))
+        XCTAssertEqual(tree.container.alpha, 1)
+    }
+
+    /// Hệ thống đã đổi `alpha` trong lúc ẩn — đó không còn là số ta đặt, nên
+    /// không ép nó về.
+    func testRestoringLeavesAnAlphaTheSystemChangedAlone() throws {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        tree.container.alpha = 0.4
+        capsule.restore()
+        XCTAssertFalse(capsule.isHidden)
+        XCTAssertEqual(tree.container.alpha, 0.4, accuracy: 1e-6)
+        XCTAssertNil(blocker(in: tree), "the stand-in goes regardless")
+
+        capsule.hide()
+        tree.container.alpha = 0.4
+        var done = false
+        capsule.restore(fadingIn: 0.05) { done = true }
+        XCTAssertTrue(done, "nothing of ours to fade in: call back at once")
+        XCTAssertEqual(tree.container.alpha, 0.4, accuracy: 1e-6)
+    }
+
+    /// Viên kính đã rời cửa sổ (hệ thống dỡ accessory): để yên nó.
+    func testRestoringLeavesAViewThatLeftTheWindowAlone() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        tree.container.removeFromSuperview()
+        capsule.restore()
+        XCTAssertFalse(capsule.isHidden)
+        XCTAssertEqual(tree.container.alpha, 0)
     }
 
     // MARK: - Mọi lối ra đều hiện lại

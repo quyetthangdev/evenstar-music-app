@@ -2440,6 +2440,10 @@ struct PlayerCard: View {
                 ) / travel
             }
             .onEnded { value in
+                // Cú kéo này đã được đáp rồi — bởi nhánh huỷ
+                // (`onChange(of: dragIsLive)`), nếu lượt reset `@GestureState`
+                // tới trước — thì không đáp lần hai.
+                guard isDragging else { return }
                 // Cleared outside the `withAnimation` below: the hit region
                 // is not an animatable property, and the settle should hand
                 // the screen back as soon as the finger lifts.
@@ -2854,7 +2858,18 @@ struct PlayerCard: View {
 
     /// Cú hạ cánh cho cú thu sắp chạy, và ẩn viên kính của hệ thống cho nó —
     /// hoặc `nil`, khi ấy không ẩn gì. Xem `LandingBounce` và `AccessoryCapsule`.
+    ///
+    /// **Không có bài thì không hạ cánh.** Bài về `nil` lúc thẻ mở (bài cuối
+    /// hết khi tắt repeat, hay "Dừng phát") thu thẻ từ
+    /// `onChange(of: playback.currentTrack?.id)` — đúng lượt cập nhật mà
+    /// `MiniPlayerAccessoryModifier` đổi accessory sang `EmptyView` và hệ
+    /// thống dỡ viên kính. Thứ tự giữa `onDisappear` của accessory và
+    /// `onChange` ấy không định trước, nên ẩn ở đây có thể đặt `alpha` 0 và
+    /// một lớp nhận chạm lên một view đang bị dỡ — lớp ấy nuốt chạm ~0,6s.
+    /// Không có viên thuốc nào để đáp xuống cả: thẻ chỉ mờ đi như trước
+    /// (`.opacity(playback.currentTrack == nil ? 0 : 1)`).
     private func planLanding(initialVelocity: Double) -> LandingBounce? {
+        guard playback.currentTrack != nil else { return nil }
         let screen = expansion.screenSize
         let anchor = PlayerAnchor(
             frame: expansion.anchorFrame == .zero ? PlayerAnchor.fallbackFrame(screen: screen)

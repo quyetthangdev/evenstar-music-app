@@ -692,6 +692,27 @@ final class CollapseFrameTests: XCTestCase {
         XCTAssertTrue(rig.expansion.isCardResting)
     }
 
+    /// Bài cuối hết khi thẻ đang mở (tắt repeat): hàng đợi rỗng, thẻ thu — và
+    /// cùng lượt ấy hệ thống dỡ accessory. Không có cú hạ cánh nào: viên kính
+    /// của hệ thống không bao giờ bị ẩn (ẩn nó là đặt `alpha` 0 và một lớp
+    /// nhận chạm lên một view đang bị dỡ). Thẻ chỉ mờ đi như trước.
+    func testWhenTheTrackGoesAwayWhileOpenTheCapsuleIsNeverHidden() throws {
+        let rig = try mountShell()
+        rig.playback.play(rig.track, in: [rig.track])
+        RunLoop.main.run(until: Date().addingTimeInterval(0.9))
+        XCTAssertEqual(rig.expansion.progress, 1)
+        rig.playback.stop()
+        XCTAssertNil(rig.playback.currentTrack)
+        let deadline = Date().addingTimeInterval(1)
+        var everHidden = false
+        while Date() < deadline {
+            everHidden = everHidden || rig.expansion.capsule.isHidden
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTAssertFalse(everHidden, "the system capsule was hidden for a collapse with no track")
+        XCTAssertEqual(rig.expansion.progress, 0)
+    }
+
     // MARK: - Cú bung
 
     /// Chiều mở không đổi: đặc ngay từ khung đầu, không có kính.

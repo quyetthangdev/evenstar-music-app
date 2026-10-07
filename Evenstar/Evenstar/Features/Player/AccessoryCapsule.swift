@@ -15,9 +15,11 @@ import OSLog
 /// hàng** — cha kế tiếp đã là thanh tab, hay cả màn hình. Không tên lớp, không
 /// API riêng: hôm nay view ấy là một lớp riêng của UIKit chứa cả kính lẫn nội
 /// dung (spike `docs/prototypes/NativeAccessoryHandoff`, `UIKitZoom.pillView`),
-/// nhưng code này không biết và không cần biết điều đó. Không tìm thấy — hình
-/// học không như thế nữa — thì `hide()` trả `false` và thẻ không nảy: cú co mềm
-/// như cũ. Kiểm lại mỗi bản iOS lớn.
+/// nhưng code này không biết và không cần biết điều đó. Nó chỉ đòi thêm một
+/// điều: view ấy nằm trên vật chủ SwiftUI của nội dung ta — xem
+/// `container(of:)`. Không tìm thấy — hình học không như thế nữa — thì
+/// `hide()` trả `false` và thẻ không nảy: cú co mềm như cũ. Kiểm lại mỗi bản
+/// iOS lớn.
 ///
 /// Tìm lại **mỗi cú thu**: hệ thống có thể dựng lại view ấy (thanh tab thu nhỏ
 /// rồi bung ra), và một tham chiếu cũ sẽ ẩn nhầm một view đã rời màn hình.
@@ -52,12 +54,29 @@ final class AccessoryCapsule {
         @MainActor
         func putBack() {
             removeBlocker()
-            guard let view else { return }
-            // Chỉ cú mờ của chính mình — không gỡ những animation vị trí, khung
-            // mà hệ thống đang chạy trên view ấy (thanh tab đang thu nhỏ…).
-            view.layer.removeAnimation(forKey: "opacity")
+            guard let view = take() else { return }
+            // Chỉ cú mờ của chính mình, theo khoá riêng. `"opacity"` là khoá
+            // UIKit đặt cho **mọi** animation `alpha` — của hệ thống cũng vậy
+            // (accessory đang được dỡ đi…) — nên gỡ theo khoá ấy là gỡ cả của
+            // người khác. Animation vị trí, khung (thanh tab đang thu nhỏ…)
+            // cũng để yên.
+            view.layer.removeAnimation(forKey: AccessoryCapsule.fadeKey)
             view.alpha = alpha
-            self.view = nil
+        }
+
+        /// View còn đúng như ta để lại — trong cửa sổ, `alpha` đúng số 0 ta
+        /// đặt — thì trả nó ra để hiện lại; không thì `nil`. Cả hai trường hợp
+        /// đều buông nó ra.
+        ///
+        /// Không hiện lại mù quáng: rời cửa sổ là hệ thống đã dỡ accessory (đo
+        /// trên iOS 26: bài về `nil` gỡ view ấy khỏi cây ngay, và lần sau dựng
+        /// một view mới), còn một `alpha` khác 0 là hệ thống đã tự đặt lại. Ép
+        /// về số cũ ở đó có thể để lại một viên kính rỗng trên màn hình.
+        @MainActor
+        func take() -> UIView? {
+            defer { view = nil }
+            guard let view, view.window != nil, view.alpha == 0 else { return nil }
+            return view
         }
 
         @MainActor
@@ -113,6 +132,9 @@ final class AccessoryCapsule {
     /// (~0,3s sau đầu cú thu).
     static let fadeOut: TimeInterval = 0.1
 
+    /// Khoá riêng cho cú mờ của chính ta.
+    static let fadeKey = "evenstar.accessoryCapsule.fade"
+
     init() {
         let center = NotificationCenter.default
         for name in [UIApplication.willResignActiveNotification, UIApplication.didEnterBackgroundNotification] {
@@ -154,9 +176,7 @@ final class AccessoryCapsule {
         }
         // Mờ đi chứ không tắt phụt: bóng đổ của viên kính nằm ngoài thẻ, và một
         // cú thu bắt đầu khi thẻ đã nhỏ thì không phủ hết bóng ấy.
-        UIView.animate(withDuration: Self.fadeOut, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
-            container.alpha = 0
-        }
+        Self.fade(container, to: 0, duration: Self.fadeOut)
         isHidden = true
         hideCount &+= 1
         let ticket = hideCount
@@ -179,27 +199,69 @@ final class AccessoryCapsule {
     /// `BottomBarStyle.capsuleReturnDuration`. `completion` chạy khi viên kính
     /// đã hiện hẳn; không có gì để hiện thì chạy ngay.
     func restore(fadingIn duration: TimeInterval, completion: @escaping @MainActor () -> Void) {
-        guard isHidden, let view = hidden.view else {
-            restore()
+        guard isHidden else {
             completion()
             return
         }
-        let alpha = hidden.alpha
-        hidden.view = nil
         // Viên kính nhận chạm lại ngay — giá trị mô hình của nó đã là 1.
         hidden.removeBlocker()
         isHidden = false
-        UIView.animate(withDuration: duration, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
-            view.alpha = alpha
-        } completion: { _ in
+        // Không còn như ta để lại (xem `Hidden.take()`): không có gì của ta để
+        // hiện — trao tay ngay.
+        guard let view = hidden.take() else {
             completion()
+            return
         }
+        Self.fade(view, to: hidden.alpha, duration: duration, completion: completion)
+    }
+
+    /// Đổi `alpha` của `view` thành `alpha` bằng một animation **mang khoá
+    /// riêng** (`fadeKey`), không qua `UIView.animate`: khoá UIKit đặt cho cú
+    /// mờ ấy là `"opacity"`, chung với mọi animation `alpha` của hệ thống, và
+    /// lúc hiện lại thì chỉ được gỡ cú của chính ta. Bắt đầu từ độ mờ **đang
+    /// vẽ**, như `.beginFromCurrentState`.
+    private static func fade(_ view: UIView, to alpha: CGFloat, duration: TimeInterval,
+                             completion: (@MainActor () -> Void)? = nil) {
+        let layer = view.layer
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = layer.presentation()?.opacity ?? layer.opacity
+        animation.toValue = Float(alpha)
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        CATransaction.begin()
+        if let completion {
+            CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+        }
+        view.alpha = alpha
+        layer.add(animation, forKey: fadeKey)
+        CATransaction.commit()
     }
 
     /// Tổ tiên cao nhất của `anchor` mà khung (toạ độ cửa sổ) còn trùng khung
     /// của `anchor`, sai số `tolerance` điểm — hoặc `nil` nếu không có tổ tiên
-    /// nào như thế, hay nếu đi tới tận gốc mà khung vẫn trùng (khi ấy thứ tìm
-    /// được không phải một viên kính nằm trong thanh tab).
+    /// nào như thế, nếu đi tới tận gốc mà khung vẫn trùng (khi ấy thứ tìm
+    /// được không phải một viên kính nằm trong thanh tab), hay nếu thứ tìm
+    /// được vẫn còn là nội dung của chính ta.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO PHẢI VƯỢT QUA RANH GIỚI VẬT CHỦ
+    /// ─────────────────────────────────────────────────────────────────────
+    /// Nếu một bản iOS sau cho view chứa viên kính khung **lớn hơn** hàng, tổ
+    /// tiên cao nhất còn đúng khung hàng sẽ là view SwiftUI đang chứa nội
+    /// dung accessory của ta. Ẩn nó là ẩn chữ: `hide()` vẫn trả `true`, và
+    /// thẻ lún qua một viên kính đứng yên — đúng thứ cú ẩn tồn tại để tránh.
+    ///
+    /// "Chứa thứ gì ngoài chuỗi tổ tiên của neo" không phân biệt được hai
+    /// trường hợp ấy: đo trên iOS 26, view chứa nội dung của ta có sẵn những
+    /// view con ngoài chuỗi (bìa, chữ, nút — `PortalGroupMarkerView`,
+    /// `_UIInheritedView`…), còn kính của view hệ thống thì **không** là một
+    /// view con nào cả. Thứ phân biệt được là **chuỗi responder**: view gốc của
+    /// một vật chủ SwiftUI (hay của một view controller) không trao `next` cho
+    /// view cha mà cho responder của vật chủ — `UIKitTabBarBottomAccessory.next`
+    /// là `UIKitKeyPressResponder`, không phải `_UITabAccessoryContainer`. Mọi
+    /// view bên dưới ranh giới ấy là của ta. Nên view tìm được phải nằm **trên**
+    /// ít nhất một ranh giới như thế; không thì không ẩn gì, và thẻ co mềm.
+    /// Chỉ dùng `UIResponder.next`, API công khai, không tên lớp nào.
     static func container(of anchor: UIView, tolerance: CGFloat = 1) -> UIView? {
         let row = anchor.convert(anchor.bounds, to: nil)
         guard row.width > 0, row.height > 0 else { return nil }
@@ -208,16 +270,21 @@ final class AccessoryCapsule {
             return abs(frame.minX - row.minX) <= tolerance && abs(frame.minY - row.minY) <= tolerance
                 && abs(frame.width - row.width) <= tolerance && abs(frame.height - row.height) <= tolerance
         }
+        func isHostingBoundary(_ view: UIView) -> Bool { view.next !== view.superview }
         var best: UIView?
+        var bestIsAboveAHost = false
+        var crossedAHost = isHostingBoundary(anchor)
         var current = anchor.superview
         while let view = current, !(view is UIWindow), matches(view) {
             best = view
+            bestIsAboveAHost = crossedAHost
+            if isHostingBoundary(view) { crossedAHost = true }
             current = view.superview
         }
         // Chuỗi phải dừng ở một cha **lớn hơn** hàng. Hết chuỗi (một view
         // không cha), hay một cửa sổ cỡ đúng bằng hàng: không có thanh tab nào
         // bao quanh, nên không dám ẩn gì.
-        guard let best, let stop = current, !matches(stop) else { return nil }
+        guard let best, let stop = current, !matches(stop), bestIsAboveAHost else { return nil }
         return best
     }
 

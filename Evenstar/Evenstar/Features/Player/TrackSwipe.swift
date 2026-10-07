@@ -18,6 +18,9 @@ enum TrackSwipe {
 
     static func outcome(translation: CGFloat, predictedTranslation: CGFloat, width: CGFloat,
                         canGoNext: Bool, canGoPrevious: Bool) -> Outcome {
+        // Vùng thông tin bài chưa được đo (`infoWidth` bắt đầu ở 0): ngưỡng
+        // của 0 là 0, và một cú nhích cũng thành đổi bài.
+        guard width > 0 else { return .cancel }
         let threshold = width * commitFraction
         let reach = abs(predictedTranslation) > abs(translation) ? predictedTranslation : translation
         if reach <= -threshold { return canGoNext ? .next : .cancel }

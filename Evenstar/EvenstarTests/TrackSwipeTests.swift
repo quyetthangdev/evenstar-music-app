@@ -32,6 +32,15 @@ final class TrackSwipeTests: XCTestCase {
                                           canGoNext: false, canGoPrevious: true), .cancel)
     }
 
+    /// Vùng thông tin bài chưa được đo (`infoWidth` bắt đầu ở 0): ngưỡng 30%
+    /// của 0 là 0, và chỉ một cú nhích cũng đổi bài. Chưa đo thì không đổi.
+    func testBeforeTheWidthIsMeasuredNothingCommits() {
+        XCTAssertEqual(TrackSwipe.outcome(translation: -12, predictedTranslation: -12, width: 0,
+                                          canGoNext: true, canGoPrevious: true), .cancel)
+        XCTAssertEqual(TrackSwipe.outcome(translation: 12, predictedTranslation: 300, width: 0,
+                                          canGoNext: true, canGoPrevious: true), .cancel)
+    }
+
     func testNoPreviousNeverCommitsPrevious() {
         XCTAssertEqual(TrackSwipe.outcome(translation: 200, predictedTranslation: 400, width: width,
                                           canGoNext: true, canGoPrevious: false), .cancel)
