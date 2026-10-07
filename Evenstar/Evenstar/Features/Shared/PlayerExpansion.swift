@@ -81,11 +81,21 @@ final class PlayerExpansion {
     @ObservationIgnored private(set) var accessoryIsInline = false
 
     /// Cỡ màn hình vật lý, do `PlayerCard` ghi từ `GeometryReader` của nó.
-    @ObservationIgnored var screenSize: CGSize = .zero
+    ///
+    /// Đổi trong lúc thẻ không nghỉ — xoay máy khi player đang mở — thì neo
+    /// phải đi theo: xem `reanchor()`.
+    @ObservationIgnored var screenSize: CGSize = .zero {
+        didSet {
+            guard screenSize != oldValue, !isCardResting else { return }
+            reanchor()
+        }
+    }
 
     /// Khung thẻ bung ra từ đó, chụp **lúc thẻ rời trạng thái nghỉ** và giữ
-    /// nguyên tới khi thẻ về nghỉ. Không đọc thẳng `accessoryFrame` trong lúc
-    /// bung, vì nội dung phía sau lùi lại làm khung đo được co theo.
+    /// nguyên tới khi thẻ về nghỉ — trừ khi màn hình xoay trong lúc ấy, xem
+    /// `reanchor()`. Không đọc thẳng `accessoryFrame` trong lúc bung: khung
+    /// đo được lúc thẻ mở không phải khung của chỗ nghỉ (thời còn
+    /// `recedeScale` < 1, nội dung lùi lại làm nó co theo).
     private(set) var anchorFrame: CGRect = .zero
     /// Accessory có đang ở `.inline` lúc thẻ rời nghỉ không. Hàng mini player
     /// trong thẻ đọc nó để ẩn ⏭ giống hệt accessory ở khung đầu.
@@ -179,14 +189,67 @@ final class PlayerExpansion {
     /// một cú thả bình thường. Không quan sát: không view nào vẽ theo nó.
     @ObservationIgnored private var releasePending = false
 
+    /// Bản chụp lúc rời nghỉ: cỡ màn, khung và vị trí inline. Xoay đi rồi xoay
+    /// về đúng cỡ này thì neo về lại đúng bản chụp.
+    @ObservationIgnored private var anchorScreen: CGSize = .zero
+    @ObservationIgnored private var capturedAnchor = (frame: CGRect.zero, isInline: false)
+    /// Lần báo khung gần nhất **từ lúc rời nghỉ**. Không dùng khi cỡ màn còn
+    /// là cỡ lúc chụp; chỉ để `reanchor()` lấy khi màn hình xoay.
+    @ObservationIgnored private var awayReport: (frame: CGRect, isInline: Bool)?
+
     func reportAccessoryTextStyle(_ style: AccessoryTextStyle) {
         accessoryTextStyle = style
     }
 
     func reportAccessoryFrame(_ frame: CGRect, isInline: Bool) {
-        guard isCardResting else { return }
+        guard isCardResting else {
+            // Lúc thẻ mở, khung báo lên chỉ có nghĩa khi màn hình đã xoay khỏi
+            // cỡ lúc chụp. Giữ lại cả khi chưa: accessory và `PlayerCard` báo
+            // cỡ mới theo thứ tự không định trước, nên khung mới có thể tới
+            // ngay **trước** cỡ màn mới.
+            awayReport = (frame, isInline)
+            if screenSize != anchorScreen { reanchor() }
+            return
+        }
         accessoryFrame = frame
         accessoryIsInline = isInline
+    }
+
+    /// Đặt lại neo cho cỡ màn **hiện tại**, khi màn hình xoay lúc thẻ mở.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────
+    /// VÌ SAO — CÚ THU ĐÁP NGOÀI MÀN HÌNH
+    /// ─────────────────────────────────────────────────────────────────────
+    /// `PlayerCard` ghép neo với cỡ màn mỗi lần dựng. Neo chụp lúc dọc (y 735)
+    /// ghép với cỡ màn ngang (cao 402) cho viên thuốc ở y 735 — cú thu bay ra
+    /// ngoài mép dưới, rồi thẻ trao chỗ cho một accessory ở chỗ khác hẳn.
+    ///
+    /// Thứ tự ưu tiên:
+    ///   1. Về đúng cỡ lúc chụp: bản chụp ấy, y nguyên.
+    ///   2. Một khung accessory đã báo từ lúc rời nghỉ và nằm trong màn mới:
+    ///      chính chỗ accessory đang đứng. `recedeScale` giờ là 1, nên khung
+    ///      đo lúc thẻ mở không còn bị co.
+    ///   3. Không thì khung dự phòng của màn mới — ít nhất viên thuốc ở trong
+    ///      màn hình, và lần báo khung kế tiếp sẽ sửa nó.
+    ///
+    /// Quãng kéo đi theo neo — cả hai cú kéo đều chia cho
+    /// `PlayerAnchor.dragTravel(for: anchorFrame)` — nên không có gì phải
+    /// đổi thêm ở đó. Cỡ chữ: lấy lại cái accessory đang báo.
+    private func reanchor() {
+        let next: (frame: CGRect, isInline: Bool)
+        if screenSize == anchorScreen {
+            next = capturedAnchor
+        } else if let report = awayReport,
+                  PlayerAnchor.resolve(measured: report.frame, screen: screenSize) == report.frame {
+            next = report
+        } else {
+            next = (PlayerAnchor.fallbackFrame(screen: screenSize), false)
+        }
+        // Có điều kiện: mỗi lần ghi một thuộc tính quan sát là một lần mời các
+        // view đọc nó dựng lại.
+        if anchorFrame != next.frame { anchorFrame = next.frame }
+        if anchorIsInline != next.isInline { anchorIsInline = next.isInline }
+        if anchorTextStyle != accessoryTextStyle { anchorTextStyle = accessoryTextStyle }
     }
 
     /// Số thứ tự của chuyển động **mới nhất** của thẻ: mỗi cú morph, mỗi lần rời
@@ -230,6 +293,9 @@ final class PlayerExpansion {
         anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
         anchorIsInline = accessoryIsInline
         if anchorTextStyle != accessoryTextStyle { anchorTextStyle = accessoryTextStyle }
+        anchorScreen = screenSize
+        capturedAnchor = (anchorFrame, anchorIsInline)
+        awayReport = nil
         isCardResting = false
     }
 

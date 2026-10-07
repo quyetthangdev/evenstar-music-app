@@ -189,6 +189,93 @@ final class PlayerExpansionTests: XCTestCase {
         XCTAssertNotEqual(e.intent, before)
     }
 
+    // MARK: - Xoay màn hình lúc thẻ mở
+
+    /// iPhone 17 nằm ngang, và khung accessory hệ thống đặt ở đó.
+    private let landscape = CGSize(width: 874, height: 402)
+    private let landscapeAccessory = CGRect(x: 120, y: 330, width: 634, height: 48)
+
+    /// Khung chụp lúc rời nghỉ là khung **dọc** (y 735). Ghép nó với cỡ màn
+    /// ngang thì viên thuốc ở y 735 trên một màn cao 402 — cú thu đáp ra ngoài
+    /// màn hình. Chưa có khung mới nào thì dùng khung dự phòng của màn mới.
+    func testRotatingWhileOpenReanchorsOnTheNewScreen() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.leaveRest()
+        e.screenSize = landscape
+        XCTAssertEqual(e.anchorFrame, PlayerAnchor.fallbackFrame(screen: landscape))
+        XCTAssertTrue(CGRect(origin: .zero, size: landscape).contains(e.anchorFrame),
+                      "the pill would land off-screen at \(e.anchorFrame)")
+    }
+
+    /// Accessory báo khung mới **sau** khi cỡ màn đổi: lấy nó, cả vị trí inline.
+    func testAFrameReportedAfterTheRotationBecomesTheAnchor() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.leaveRest()
+        e.screenSize = landscape
+        e.reportAccessoryFrame(landscapeAccessory, isInline: true)
+        XCTAssertEqual(e.anchorFrame, landscapeAccessory)
+        XCTAssertTrue(e.anchorIsInline)
+    }
+
+    /// …hoặc **trước**: thứ tự hai lần báo không được định trước.
+    func testAFrameReportedJustBeforeTheRotationIsUsedOnceTheScreenChanges() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.leaveRest()
+        e.reportAccessoryFrame(landscapeAccessory, isInline: false)
+        XCTAssertEqual(e.anchorFrame, expanded, "same screen: still the frame captured at rest")
+        e.screenSize = landscape
+        XCTAssertEqual(e.anchorFrame, landscapeAccessory)
+    }
+
+    /// Xoay về: neo về đúng khung chụp lúc rời nghỉ, kể cả khi accessory báo
+    /// khung dọc trước lúc cỡ màn kịp đổi.
+    func testRotatingBackRestoresTheAnchorCapturedAtRest() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.leaveRest()
+        e.screenSize = landscape
+        e.reportAccessoryFrame(landscapeAccessory, isInline: true)
+        e.reportAccessoryFrame(expanded, isInline: false)
+        XCTAssertTrue(CGRect(origin: .zero, size: landscape).contains(e.anchorFrame),
+                      "a portrait frame on a landscape screen")
+        e.screenSize = screen
+        XCTAssertEqual(e.anchorFrame, expanded)
+        XCTAssertFalse(e.anchorIsInline)
+        e.screenSize = landscape
+        XCTAssertTrue(CGRect(origin: .zero, size: landscape).contains(e.anchorFrame))
+        e.reportAccessoryFrame(landscapeAccessory, isInline: true)
+        XCTAssertEqual(e.anchorFrame, landscapeAccessory)
+    }
+
+    /// Quãng kéo đi theo neo mới: cú kéo trên accessory chia cho mép trên của
+    /// viên thuốc trên màn **hiện tại**.
+    func testTheDragTravelFollowsTheNewAnchor() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.accessoryDragChanged(translationHeight: -100)
+        e.screenSize = landscape
+        e.reportAccessoryFrame(landscapeAccessory, isInline: false)
+        e.accessoryDragChanged(translationHeight: -100)
+        let expected = Double((100 - AccessoryDragAxis.lockDistance) / landscapeAccessory.minY)
+        XCTAssertEqual(e.accessoryDragDelta, expected, accuracy: 0.0001)
+    }
+
+    /// Lúc nghỉ, xoay màn không đụng tới neo: lần rời nghỉ sau chụp lại.
+    func testRotatingAtRestChangesNothingUntilTheNextLeave() {
+        let e = make()
+        e.reportAccessoryFrame(expanded, isInline: false)
+        e.leaveRest()
+        e.arriveAtRest()
+        e.screenSize = landscape
+        XCTAssertEqual(e.anchorFrame, expanded)
+        e.reportAccessoryFrame(landscapeAccessory, isInline: false)
+        e.leaveRest()
+        XCTAssertEqual(e.anchorFrame, landscapeAccessory)
+    }
+
     /// `onChange` chỉ nổ khi giá trị đổi; hai lần chạm liền nhau phải là hai
     /// ý định khác nhau.
     func testTwoExpandRequestsAreTwoDistinctIntents() {
