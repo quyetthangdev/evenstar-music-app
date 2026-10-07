@@ -269,39 +269,40 @@ final class CollapseLandingFrameTests: XCTestCase {
             ?? frames.endIndex
         let measured: [Landed] = frames[..<fading]
             .compactMap { s in s.landedCover.map { (ms: s.ms, cover: $0, column: s.column, across: s.across) } }
-        // Vòng sửa 5: cú phồng lớn lên ngay khi chạm và giữ suốt các nhịp nảy,
-        // nên có cuộn phim không còn khung nào cao đúng bằng viên kính trước
-        // lúc xẹp — mốc "tới đích" là thẻ đã vào vùng phồng: cao không quá
-        // viên kính + trần phồng (`landingCap`) + 4pt.
-        let landingZone = Int(rest.height + PlayerCard.landingCap) + 4
+        // Cú nén bắt đầu ngay khi chạm, nên có cuộn phim không có khung nào cao
+        // đúng bằng viên kính trước khi cú nảy xong — mốc "tới đích" là thẻ đã
+        // vào vùng chạm sàn: cao không quá viên kính + trần nén
+        // (`squashCap`) + 4pt.
+        let landingZone = Int(rest.height + BottomBarStyle.squashCap) + 4
         guard let arrival = measured.firstIndex(where: { $0.cover.count <= landingZone }) else { return [] }
         return Array(measured[arrival...])
     }
 
-    /// Nhịp nảy đầu trong một cuộn phim: từ khung đáy sâu nhất (lúc rời sàn —
-    /// cú phồng ở đỉnh, chưa nhấc) tới khung mép trên cao nhất trong ~0,22s sau
-    /// đó (đỉnh nhịp 0,18s). Trả mép trên và mép dưới đi lên bao nhiêu điểm.
-    private func firstBounce(_ run: [Landed]) -> (top: Int, bottom: Int)? {
-        // "Sâu nhất" trong 1pt: lúc rời sàn và mỗi lần chạm lại, đáy ở cùng một
-        // chỗ (cú phồng giữ nguyên), và chỉ lần đầu là lúc rời sàn. Lấy đúng
-        // giá trị lớn nhất thì một hàng pha trộn ở một lần chạm sau có thể
-        // thắng, và cửa sổ nhịp đầu rơi vào cuối cuộn phim.
-        guard let deepest = run.map(\.cover.upperBound).max(),
-              let launch = run.firstIndex(where: { $0.cover.upperBound >= deepest - 1 }) else { return nil }
-        let window = run[launch...].filter { $0.ms <= run[launch].ms + 220 }
-        guard let apex = window.min(by: { $0.cover.lowerBound < $1.cover.lowerBound }) else { return nil }
-        return (run[launch].cover.lowerBound - apex.cover.lowerBound,
-                run[launch].cover.upperBound - apex.cover.upperBound)
+    /// Cú nén và cú giãn trong một cuộn phim, đo so với khung đã về chỗ: đáy
+    /// võng sâu nhất (và lúc ấy), mép trên vươn cao nhất (và lúc ấy), cùng mép
+    /// trên ở khung võng sâu nhất và đáy ở khung vươn cao nhất.
+    private struct Bounce {
+        var sag: Int, sagAt: Double, topAtSag: Int
+        var rise: Int, riseAt: Double, bottomAtRise: Int
     }
 
-    func testTheCardLandsSwellsAndBouncesLikeADroppedObjectAroundTheCapsule() throws {
+    private func bounce(_ run: [Landed], settled: Landed) -> Bounce? {
+        guard let deepest = run.max(by: { $0.cover.upperBound < $1.cover.upperBound }),
+              let highest = run.min(by: { $0.cover.lowerBound < $1.cover.lowerBound }) else { return nil }
+        return Bounce(sag: deepest.cover.upperBound - settled.cover.upperBound, sagAt: deepest.ms,
+                      topAtSag: deepest.cover.lowerBound - settled.cover.lowerBound,
+                      rise: settled.cover.lowerBound - highest.cover.lowerBound, riseAt: highest.ms,
+                      bottomAtRise: highest.cover.upperBound - settled.cover.upperBound)
+    }
+
+    func testTheCardSquashesThenStretchesOnceAroundTheCapsule() throws {
         let rig = try mountRestingCard()
         openFully(rig)
 
         let start = 0.9
         let velocity: CGFloat = 1900
         dragDownAndRelease(rig, to: start, velocity: velocity)
-        let frames = film(rig, for: 1.3)
+        let frames = film(rig, for: 1.0)
 
         // Lịch mà thẻ chạy, để đặt cạnh thứ đo được.
         let travel = PlayerAnchor.dragTravel(for: rig.rest)
@@ -311,13 +312,11 @@ final class CollapseLandingFrameTests: XCTestCase {
                                                        from: start, to: 0),
             span: start, travel: travel
         )
-        let perEdge = PlayerCard.landingSwell(growth: plan.peakGrowth).bottom
 
         let restTop = Int(rig.rest.minY), restBottom = Int(rig.rest.maxY) - 1
         print("[landing] snapshot shift \(rig.shift)pt, rest rows \(restTop)–\(restBottom), column \(rig.column),"
-              + " plan: swell \(String(format: "%.1f", perEdge))pt/edge, bounces"
-              + " \(plan.bounces.map { String(format: "%.1f", $0.apex) }) from"
-              + " \(String(format: "%.0f", plan.launch * 1000))ms, done \(String(format: "%.0f", plan.duration * 1000))ms,"
+              + " plan: impact \(String(format: "%.0f", plan.impact * 1000))ms, squash"
+              + " \(String(format: "%.1f", plan.squashPeak))pt, done \(String(format: "%.0f", plan.duration * 1000))ms,"
               + " \(frames.count) frames")
         for sample in frames {
             let tint = surfaceTint(sample).map { String(format: "%5.1f", $0) } ?? "    —"
@@ -335,14 +334,14 @@ final class CollapseLandingFrameTests: XCTestCase {
         let measured = frames[..<fading]
             .compactMap { s in s.landedCover.map { (ms: s.ms, cover: $0, column: s.column, across: s.across) } }
         let landed = landedFrames(frames, rest: rig.rest)
-        // Từ lúc chạm sàn tới lúc trao chỗ ~0,6s; một `drawHierarchy` tốn
-        // ~30ms nên thường bắt được ~18 khung. Bốn là đủ cho các phép kiểm dưới.
+        // Từ lúc chạm sàn tới lúc trao chỗ ~0,33s; một `drawHierarchy` tốn
+        // ~30ms nên thường bắt được ~10 khung. Bốn là đủ cho các phép kiểm dưới.
         XCTAssertGreaterThanOrEqual(landed.count, 4, "too few frames caught the card at the capsule")
 
-        // 1. Viên kính hệ thống luôn nằm trọn trong thẻ — suốt cú phồng **và**
-        // suốt các nhịp nảy: mép trên không bao giờ xuống dưới mép trên viên
-        // kính, mép dưới không bao giờ lên trên mép dưới, hai bên không bao giờ
-        // lọt vào trong. Từng điểm ảnh là 1pt: "≤ 0,5pt" là "không qua hàng".
+        // 1. Viên kính hệ thống luôn nằm trọn trong thẻ — suốt cú nén **và** cú
+        // giãn: mép trên không bao giờ xuống dưới mép trên viên kính, đáy không
+        // bao giờ lên trên đáy, hai bên không bao giờ lọt vào trong. Từng điểm
+        // ảnh là 1pt: "≤ 0,5pt" là "không qua hàng".
         let restLeft = Int(rig.rest.minX), restRight = Int(rig.rest.maxX) - 1
         for frame in landed {
             XCTAssertLessThanOrEqual(frame.cover.lowerBound, restTop,
@@ -355,8 +354,8 @@ final class CollapseLandingFrameTests: XCTestCase {
                                         "right edge inside the capsule at t=\(frame.ms)ms")
         }
 
-        // 2. Khung cuối trước cú mờ là viên kính: đã xẹp hẳn, đã đứng yên. Mép
-        // trên cho phép 2pt viền kính phía trên (đo được: 703 cho mép 705).
+        // 2. Khung cuối trước cú mờ là viên kính. Mép trên cho phép 2pt viền
+        // kính phía trên (đo được: 703 cho mép 705).
         let settled = try XCTUnwrap(landed.last)
         let settledAcross = try XCTUnwrap(settled.across)
         XCTAssertTrue((restTop - 3)...restTop ~= settled.cover.lowerBound, "settled top \(settled.cover.lowerBound)")
@@ -364,34 +363,34 @@ final class CollapseLandingFrameTests: XCTestCase {
         XCTAssertEqual(settledAcross.lowerBound, restLeft, accuracy: 1, "settled left")
         XCTAssertEqual(settledAcross.upperBound, restRight, accuracy: 1, "settled right")
 
-        // 3. Nhịp nảy đầu: **cả** mép trên lẫn mép dưới đi lên cùng nhau — thẻ
-        // cứng bật khỏi sàn, không phải co giãn — ≥3pt (đỉnh 5pt theo lịch).
+        // 3. Nén **rồi** giãn: đáy võng sâu nhất đến trước mép trên vươn cao
+        // nhất; lúc võng mép trên ở yên, lúc vươn đáy ở yên.
         //
-        // Hai cuộn phim giống hệt nhau, giữ cuộn có nhịp đo rõ hơn: một
-        // `drawHierarchy` tốn ~30ms, có khung ~60ms, nên một cuộn có thể rơi
-        // hai bên đỉnh hay hai bên lúc rời sàn.
+        // Hai cuộn phim giống hệt nhau, giữ cuộn đo rõ hơn: mỗi nửa chu kỳ chỉ
+        // 80ms và một `drawHierarchy` tốn ~30ms, có khung ~60ms, nên một cuộn
+        // có thể rơi hai bên đỉnh.
         openFully(rig)
         dragDownAndRelease(rig, to: start, velocity: velocity)
         let again = landedFrames(film(rig, for: 1.0), rest: rig.rest)
-        let bounces = [firstBounce(landed), firstBounce(again)].compactMap { $0 }
-        let bounce = try XCTUnwrap(bounces.max(by: { min($0.top, $0.bottom) < min($1.top, $1.bottom) }))
-        let sag = (landed + again).map(\.cover.upperBound).max().map { $0 - settled.cover.upperBound } ?? 0
-        print("[landing] first bounce: top rose \(bounce.top)pt, bottom rose \(bounce.bottom)pt"
-              + " (runs: \(bounces.map { "\($0.top)/\($0.bottom)" })); swell at launch: bottom \(sag)pt below rest;"
-              + " handoff fade from \(fading < frames.count ? String(format: "%.0f", frames[fading].ms) : "—")ms")
-        XCTAssertGreaterThanOrEqual(bounce.top, 3, "the top edge only rose \(bounce.top)pt on the first bounce")
-        XCTAssertGreaterThanOrEqual(bounce.bottom, 3, "the bottom edge only rose \(bounce.bottom)pt on the first bounce")
-        XCTAssertLessThanOrEqual(abs(bounce.top - bounce.bottom), 2, "the edges moved apart — a stretch, not a bounce")
-        // …và cú phồng vẫn mang dáng cũ ở lúc rời sàn.
-        XCTAssertGreaterThanOrEqual(sag, 4, "the bottom only swelled \(sag)pt")
-        XCTAssertLessThanOrEqual(sag, 9, "the bottom swelled \(sag)pt, past the 8pt cap")
+        let runs = [bounce(landed, settled: settled), again.last.flatMap { bounce(again, settled: $0) }]
+            .compactMap { $0 }
+        let best = try XCTUnwrap(runs.max(by: { min($0.sag, $0.rise) < min($1.sag, $1.rise) }))
+        print("[landing] squash \(best.sag)pt at \(String(format: "%.0f", best.sagAt))ms (top moved \(best.topAtSag)pt),"
+              + " stretch \(best.rise)pt at \(String(format: "%.0f", best.riseAt))ms (bottom moved \(best.bottomAtRise)pt);"
+              + " runs \(runs.map { "\($0.sag)/\($0.rise)" }); handoff fade from"
+              + " \(fading < frames.count ? String(format: "%.0f", frames[fading].ms) : "—")ms")
+        XCTAssertGreaterThanOrEqual(best.sag, 3, "the bottom only sagged \(best.sag)pt")
+        XCTAssertGreaterThanOrEqual(best.rise, 3, "the top only rose \(best.rise)pt")
+        XCTAssertLessThan(best.sagAt, best.riseAt, "the stretch came before the squash")
+        XCTAssertLessThanOrEqual(abs(best.topAtSag), 1, "the top moved during the squash")
+        XCTAssertLessThanOrEqual(abs(best.bottomAtRise), 1, "the bottom moved during the stretch")
+        XCTAssertLessThanOrEqual(best.sag, Int(BottomBarStyle.squashCap) + 1)
 
         // 4. Không bao giờ nhỏ hơn viên kính.
         let smallest = try XCTUnwrap(measured.map(\.cover.count).min())
         XCTAssertGreaterThanOrEqual(smallest, Int(rig.rest.height) - 1, "the card shrank to \(smallest)pt")
 
-        // 5. Kính ở cuối: màu của nền lọt qua mặt thẻ — mọi khung từ lúc tới
-        // đích, kể cả đỉnh các nhịp.
+        // 5. Kính ở cuối: màu của nền lọt qua mặt thẻ — mọi khung từ lúc tới đích.
         for frame in landed {
             let rows = (frame.cover.lowerBound + 6)...(frame.cover.upperBound - 6)
             XCTAssertGreaterThan(frame.column.tint(rows), 20,
@@ -407,8 +406,7 @@ final class CollapseLandingFrameTests: XCTestCase {
         }
 
         // 7. Từ lúc thẻ đã nhỏ tới hết cú mờ trao tay: không có mảng tối nào
-        // quanh viên kính — kính dưới `.opacity` của cả thẻ vẫn là kính. Vùng
-        // đo rộng thêm cho đỉnh nhịp nảy.
+        // quanh viên kính — kính dưới `.opacity` của cả thẻ vẫn là kính.
         let firstLanded = try XCTUnwrap(frames.firstIndex { $0.landedCover != nil })
         for frame in frames[firstLanded...] {
             let darkest = ((restTop - 4)...(restBottom + 20)).map { frame.column.sum($0) }.min() ?? 0

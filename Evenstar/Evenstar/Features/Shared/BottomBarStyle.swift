@@ -458,8 +458,7 @@ enum BottomBarStyle {
         }
 
         init(collapse spring: Spring, initialVelocity: Double) {
-            geometry = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity,
-                                                stopsAtTarget: true))
+            geometry = Animation(CollapseSpring(spring: spring, initialVelocity: initialVelocity))
             geometrySpring = nil
             self.initialVelocity = initialVelocity
             collapseSpring = spring
@@ -480,7 +479,7 @@ enum BottomBarStyle {
             guard let collapseSpring, !residuals.isEmpty else { return self }
             return MorphCurves(
                 geometry: Animation(CollapseSpring(spring: collapseSpring, initialVelocity: initialVelocity,
-                                                   stopsAtTarget: true, span: span, residuals: residuals)),
+                                                   span: span, residuals: residuals)),
                 keeping: self
             )
         }
@@ -517,20 +516,19 @@ enum BottomBarStyle {
     /// thì phép nội suy ấy **ngoại suy**: chiều cao thẻ đi dưới 48 và mép dưới
     /// nhích **lên** — thẻ bẹp lại tại chỗ chứ không lún xuống. Đúng cái spec cấm.
     ///
-    /// Nên hình học **dừng ở lần đầu chạm đích** (`CollapseSpring.stopsAtTarget`):
+    /// Nên hình học **dừng ở lần đầu chạm đích** (`CollapseSpring`):
     /// khung thẻ không bao giờ ngoại suy, nên không bao giờ nhỏ hơn viên kính.
     /// Phần còn lại của lò xo — cú vọt qua — được đọc bằng phép tính, không qua
     /// nội suy: `LandingPlan` (trong `PlayerCard.swift`) dựng từ chính lò xo ấy
-    /// lịch của cú chạm sàn — phồng, nảy như vật rơi, xẹp — chạy trên một đồng
-    /// hồ (`LandingClock`) bắt đầu cùng lượt với hình học.
+    /// cú chạm sàn — nén rồi giãn, một dao động — chạy trên một đồng hồ
+    /// (`LandingClock`) bắt đầu cùng lượt với hình học.
     ///
-    /// Không có thời lượng nào phải đoán: cú phồng bắt đầu **đúng** khung hình
+    /// Không có thời lượng nào phải đoán: cú nén bắt đầu **đúng** khung hình
     /// học chạm đích, vì đó là cùng một phép tính `Spring.value` trên cùng
-    /// một đồng hồ. Đà của cú thu đi vào cú phồng: ngay trước khi chạm, mép
-    /// trên thẻ đi `dragTravel × dp/dt`; ngay sau, chiều cao thẻ lớn lên đúng
-    /// tốc độ ấy (độ dốc của `PlayerCard.landingGrowth` ở 0 là 1), chia đôi cho
-    /// hai mép. Một cú búng mạnh phồng hơn — vận tốc ngón tay đi vào cả hai —
-    /// và `landingGrowth` chặn trần nó.
+    /// một đồng hồ. Đà của cú thu đi vào cú nén: ngay trước khi chạm, mép trên
+    /// thẻ đi `dragTravel × dp/dt`; ngay sau, đáy thẻ võng xuống đúng tốc độ ấy.
+    /// Một cú búng mạnh nén hơn — vận tốc ngón tay đi vào cả hai — và
+    /// `squashCap` chặn trần nó.
     ///
     /// ─────────────────────────────────────────────────────────────────────
     /// THỜI LƯỢNG VÀ ĐỘ NẢY
@@ -554,70 +552,58 @@ enum BottomBarStyle {
         Spring(duration: afterDrag ? settleDuration : expandDuration, bounce: landingBounce)
     }
 
-    /// Độ nảy của lò xo thu — **chọn, có tính**, cho cú lún ~10pt.
+    /// Độ nảy của lò xo thu. **Từ vòng sửa 6 nó chỉ còn quyết thẻ chạm sàn
+    /// mạnh cỡ nào**: hình học dừng ở đích, nên cú vọt qua của lò xo không bao
+    /// giờ hiện ra; thứ duy nhất của nó còn tới mắt là **vận tốc lúc chạm**, thứ
+    /// nạp cho cú nén (`LandingPlan`). Đo bằng `Spring.velocity` lúc chạm, mép
+    /// trên thẻ trên iPhone 12:
     ///
-    /// Lò xo thả từ đứng yên vọt qua đích một phần `e^(−πζ/√(1−ζ²))` quãng
-    /// đường, `ζ = 1 − bounce`. Cú lún tính bằng điểm là phần ấy nhân quãng
-    /// đường còn lại (`progress` lúc thả × `dragTravel`, ~710pt trên iPhone
-    /// 12), rồi qua trần mềm của `PlayerCard.landingGrowth` — tổng hai mép:
+    ///     bounce   thu thường ngày (0,9; 1900pt/s)   chạm (trọn quãng)
+    ///     0.22     453pt/s, chạm ở 248ms              572pt/s, 226ms
+    ///     0.25     630pt/s, 229ms                     796pt/s, 210ms
     ///
-    ///     bounce   vọt qua   thu trọn quãng   kéo tới 0.9, búng 1900pt/s
-    ///     0.14     0.5%       3,5pt            3,2pt    (`settle` cũ)
-    ///     0.20     1.5%       9,4pt            8,8pt
-    ///     0.22     2.0%       11,3pt           10,7pt   (vòng sửa 1–3)
-    ///     0.25     2.8%       13,6pt           13,1pt
-    ///
-    /// **0.25, nâng từ 0.22 ở vòng sửa 4**: người dùng thấy cú phồng "có mà
-    /// thiếu đàn hồi". Phán quyết: phồng tổng ~12–14pt, tức ~6–7pt mỗi mép, vẫn
-    /// dưới trần 16pt — 0.25 cho 13,1pt với cú thu thường ngày, 13,6pt với cú
-    /// chạm. 0.28 đã là 14,6/15,0pt, sát trần đến mức trần mềm `tanh` nuốt mất
-    /// khác biệt giữa búng nhẹ và búng mạnh. `CollapseHandoffTests` tính lại
-    /// bảng này bằng chính `CollapseSpring`, không tin con số ở đây.
-    ///
-    /// Không ảnh hưởng gì khác: hình học dừng ở đích, nên độ nảy chỉ còn quyết
-    /// thẻ tới nơi nhanh cỡ nào và lún sâu cỡ nào.
-    static let landingBounce: Double = 0.25
+    /// 0.22 (hạ lại từ 0.25 của vòng 4–5): với nửa chu kỳ nén 0,08s, 453pt/s
+    /// cho cú nén ~5,9pt — giữa khoảng 5–7pt của phán quyết, và còn chỗ dưới
+    /// trần cho cú búng mạnh hơn. 0.25 đã cho ~7,7pt ngay với cú thường ngày.
+    static let landingBounce: Double = 0.22
 
-    // MARK: Cú nảy như vật rơi (vòng sửa 5) — xem `LandingPlan` trong `PlayerCard.swift`
+    // MARK: Nén & giãn (vòng sửa 6) — xem `LandingPlan` trong `PlayerCard.swift`
 
-    /// Đỉnh của nhịp nảy đầu, tính bằng điểm: cả tấm thẻ — cứng, như một vật
-    /// rơi chạm sàn — bật lên ~5pt khỏi chỗ nghỉ. Phán quyết vòng sửa 5 ("~5,
-    /// rồi ~2, rồi ~1"). Bị chặn bởi lề của cú phồng — xem `dropMargin`.
-    static let dropApex: CGFloat = 5
+    /// Nửa chu kỳ của dao động chạm sàn: cú nén kéo dài chừng ấy, cú giãn cũng
+    /// chừng ấy — một dao động tắt dần, hai nửa bằng nhau. 0,08s: đủ dài để mắt
+    /// đọc ra hai nhịp riêng (nén rồi bật), đủ ngắn để cả cú nảy — ~0,16s sau
+    /// lúc chạm — không đọc ra như một vật mềm nhũn.
+    static let squashHalfCycle: Double = 0.08
 
-    /// Mỗi nhịp sau cao bằng 0,4 nhịp trước: 5 → 2 → 0,8. Với vật nảy, tỉ lệ
-    /// chiều cao là bình phương hệ số hồi phục — 0,4 là hệ số ~0,63, cỡ một quả
-    /// bóng cao su trên sàn cứng.
-    static let dropRestitution: CGFloat = 0.4
+    /// Hệ số tắt dần ζ của dao động ấy. Mỗi nửa chu kỳ nhỏ đi một tỉ lệ
+    /// `r = e^(−πζ/√(1−ζ²))` — 0,205 ở 0.45. Đúng **một** cú nảy thấy được:
+    /// nửa chu kỳ thứ ba (một cú nén nữa) là `r²` ≈ 4% cú nén đầu, dưới 0,4pt
+    /// kể cả ở trần (`squashCap` 9pt). ζ thấp hơn thì nhịp thứ ba lộ ra; cao
+    /// hơn thì cú giãn phải khuếch đại nhiều hơn nữa (`stretchToSquash / r`).
+    static let squashDamping: Double = 0.45
 
-    /// Ba nhịp: nhịp thứ tư sẽ là 0,32pt — dưới một điểm ảnh @3x, không ai thấy,
-    /// chỉ thêm thời gian trước cú trao chỗ.
-    static let dropBounces = 3
+    /// Cú giãn cao bằng 0,9 cú nén. Trong dao động, nửa chu kỳ thứ hai chỉ còn
+    /// `r` ≈ 0,2 nửa đầu — một vật mềm thật thì bật lên mạnh hơn thế, vì cú nén
+    /// không chỉ là dao động mà là năng lượng dồn lại. Nên nửa âm của **cùng một
+    /// đường cong** được nhân `stretchToSquash / r` khi đổi ra mép trên. Không
+    /// có đường cong thứ hai, không có chỗ nối: hai nửa gặp nhau ở 0.
+    static let stretchToSquash: CGFloat = 0.9
 
-    /// Nhịp đầu kéo dài 0,18s, từ lúc rời sàn tới lúc chạm lại. **Trọng lực
-    /// được dẫn ra từ con số này** (`g = 8·đỉnh / T²` — một cung parabol), và
-    /// mọi nhịp sau dùng cùng trọng lực: thời gian mỗi nhịp tỉ lệ với căn bậc
-    /// hai chiều cao, nên nhịp 2pt dài 0,114s, nhịp 0,8pt 0,072s. Đó là thứ làm
-    /// cú nảy đọc ra như rơi: nhanh sát sàn, chậm lại ở đỉnh, và nhịp sau dồn
-    /// dập hơn nhịp trước.
-    ///
-    /// Không lấy trọng lực thật: ở cỡ điểm của iPhone 12 (~0,17mm/pt), g thật
-    /// là ~59.000pt/s² — nhịp 5pt chỉ còn 26ms, gọn trong hai khung, không ai
-    /// kịp thấy. 0,18s là cỡ một vật cầm tay rơi trên mặt bàn nhìn từ xa.
-    static let dropFirstBounceDuration: Double = 0.18
+    /// Cú nén theo đúng vận tốc chạm tới `squashKnee`, rồi mềm dần về trần
+    /// `squashCap`: cú thu thường ngày liền mạch vận tốc, cú búng mạnh nhất
+    /// không nén quá ~9pt — và vì cả dao động được thu theo, nửa chu kỳ thứ ba
+    /// vẫn dưới 0,4pt.
+    static let squashKnee: CGFloat = 6
+    static let squashCap: CGFloat = 9
 
-    /// Lề an toàn: trong lúc thẻ bật lên `u`, đáy thẻ — đã phồng xuống `E` —
-    /// phải còn dưới đáy viên kính hệ thống ít nhất chừng này: `E − u ≥ 0,5`.
-    /// Không thì viên kính lộ ra dưới thẻ thành viền thứ hai, đúng cái QA
-    /// IMG_2559 bắt được. Đỉnh mỗi nhịp bị chặn bởi lề này, không phải ngược lại.
-    static let dropMargin: CGFloat = 0.5
+    /// Trong lúc nén, hai bên nở 0,3 phần đáy võng: ~1,8pt mỗi bên ở cú nén
+    /// thường ngày — một khối bị ép xuống thì phình ra. Lúc giãn hai bên về
+    /// đúng bề ngang viên kính, không bao giờ vào trong.
+    static let squashSideRatio: CGFloat = 0.3
 
-    /// Nhịp nào thấp hơn chừng này thì bỏ — và bỏ luôn các nhịp sau.
-    static let dropMinimumApex: CGFloat = 0.3
-
-    /// Cú phồng xẹp xuống trong 0,15s **sau** nhịp nảy cuối, chứ không theo nhịp
-    /// của lò xo nữa: nó phải giữ nguyên làm lề suốt các nhịp nảy.
-    static let dropSwellDeflate: Double = 0.15
+    /// Dao động coi như xong — thẻ trao chỗ — khi phần còn lại vẽ ra dưới chừng
+    /// này ở mọi mép.
+    static let squashSettle: CGFloat = 0.1
 
     /// Thẻ trao chỗ cho accessory, **sau** cú nảy: thẻ mờ đi trong khi hàng mini
     /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
@@ -984,11 +970,10 @@ extension View {
     }
 }
 
-/// Lò xo của cú thu, ở một trong hai dạng chạy cùng một đồng hồ — xem
-/// `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
+/// Lò xo hình học của cú thu — xem `BottomBarStyle.collapse(initialVelocity:afterDrag:)`.
 ///
 /// Một `CustomAnimation` chứ không phải `.interpolatingSpring` vì đúng một
-/// việc: dạng `stopsAtTarget` phải **dừng** ở lần đầu chạm đích, và không đường
+/// việc: nó phải **dừng** ở lần đầu chạm đích, và không đường
 /// cong dựng sẵn nào làm thế. Phần còn lại là `Spring.value`, tức chính phép
 /// tính `.interpolatingSpring(duration:bounce:initialVelocity:)` chạy — vận tốc
 /// ban đầu tính theo **quãng còn lại** mỗi giây, như ở
@@ -999,9 +984,6 @@ extension View {
 struct CollapseSpring: CustomAnimation {
     let spring: Spring
     let initialVelocity: Double
-    /// `true` cho hình học: kết thúc ngay khi chạm đích lần đầu. `false` cho
-    /// cú đáp: chạy hết cú vọt qua và cú nảy về, tới khi lắng.
-    let stopsAtTarget: Bool
     /// Quãng `progress` cú thu này đi, từ chỗ thẻ đang đứng (trong mô hình)
     /// về 0. Chỉ dùng cho sàn — xem `residuals`.
     let span: Double
@@ -1060,13 +1042,11 @@ struct CollapseSpring: CustomAnimation {
         var isRunning: Bool { elapsed < settlingTime }
     }
 
-    init(spring: Spring, initialVelocity: Double, stopsAtTarget: Bool,
-         span: Double = 1, residuals: [Residual] = []) {
+    init(spring: Spring, initialVelocity: Double, span: Double = 1, residuals: [Residual] = []) {
         self.spring = spring
         self.initialVelocity = initialVelocity
-        self.stopsAtTarget = stopsAtTarget
         self.span = span
-        self.residuals = stopsAtTarget ? residuals.filter(\.isRunning) : []
+        self.residuals = residuals.filter(\.isRunning)
         let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
         self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
     }
@@ -1098,12 +1078,11 @@ struct CollapseSpring: CustomAnimation {
         return min(bound, time + step)
     }
 
-    /// Phần quãng đường đã đi ở thời điểm `time`: 0 lúc bắt đầu, 1 ở đích, quá
-    /// 1 khi vọt qua. `nil` khi đường cong đã xong.
+    /// Phần quãng đường đã đi ở thời điểm `time`: 0 lúc bắt đầu, dưới 1 tới khi
+    /// chạm đích. `nil` khi đã chạm đích (hoặc đã hết phần dư — xem `residuals`).
     func fraction(at time: TimeInterval) -> Double? {
         guard time < settlingTime else { return nil }
         let fraction = spring.value(target: 1.0, initialVelocity: initialVelocity, time: time)
-        guard stopsAtTarget else { return fraction }
         let residual = residual(at: time)
         if fraction >= 1, residual >= -Self.residualTolerance { return nil }
         guard !residuals.isEmpty, span > 0 else { return fraction }

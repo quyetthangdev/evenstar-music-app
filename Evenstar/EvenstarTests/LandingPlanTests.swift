@@ -2,9 +2,8 @@ import XCTest
 import SwiftUI
 @testable import Evenstar
 
-/// **Cú chạm sàn cuối cú thu, như một vật rơi** (vòng sửa 5): thẻ chạm sàn,
-/// phồng, bật lên những cung parabol thấp dần trong khi cú phồng giữ làm lề,
-/// rồi xẹp — `LandingPlan`. Mọi thứ ở đây là phép tính thuần trên đúng lịch mà
+/// **Cú chạm sàn cuối cú thu: nén rồi giãn, một dao động, một cú nảy** (vòng
+/// sửa 6) — `LandingPlan`. Mọi thứ ở đây là phép tính thuần trên đúng lịch mà
 /// thẻ chạy; ảnh dựng thật ở `CollapseLandingFrameTests`.
 @MainActor
 final class LandingPlanTests: XCTestCase {
@@ -17,187 +16,204 @@ final class LandingPlanTests: XCTestCase {
                     initialVelocity: velocity, span: span, travel: travel)
     }
 
-    /// Cú thu thường ngày (kéo thẻ mở xuống tới 0,9 rồi buông 1900pt/s) và cú chạm.
+    /// Cú thu thường ngày (kéo thẻ mở xuống tới 0,9 rồi buông 1900pt/s).
     private var everyday: LandingPlan {
         plan(afterDrag: true,
              velocity: PlayerCard.settleVelocity(verticalVelocity: 1900, travel: travel, from: 0.9, to: 0),
              span: 0.9)
     }
-    private var tap: LandingPlan { plan(afterDrag: false, velocity: 0, span: 1) }
 
     private var scenarios: [(String, LandingPlan)] {
-        [("everyday", everyday), ("tap", tap),
+        [("everyday", everyday),
+         ("tap", plan(afterDrag: false, velocity: 0, span: 1)),
          ("release from open, still", plan(afterDrag: true, velocity: 0, span: 1)),
          ("hard flick", plan(afterDrag: true, velocity: BottomBarStyle.maxSettleVelocity, span: 1)),
          ("short", plan(afterDrag: true, velocity: 0, span: 0.15)),
          ("tiny", plan(afterDrag: true, velocity: 0, span: 0.02))]
     }
 
-    // MARK: - Nhịp nảy
-
-    /// "~5, rồi ~2, rồi ~1": mỗi nhịp 0,4 nhịp trước.
-    func testTheBouncesAreFiveTwoAndUnderOnePointForAnEverydayCollapse() {
-        let apexes = everyday.bounces.map(\.apex)
-        XCTAssertEqual(apexes.count, 3)
-        XCTAssertEqual(apexes[0], 5, accuracy: 0.001)
-        XCTAssertEqual(apexes[1], 2, accuracy: 0.001)
-        XCTAssertEqual(apexes[2], 0.8, accuracy: 0.001)
-    }
-
-    func testEveryBounceIsLowerThanTheOneBefore() {
-        for (name, plan) in scenarios {
-            for (earlier, later) in zip(plan.bounces, plan.bounces.dropFirst()) {
-                XCTAssertLessThan(later.apex, earlier.apex, name)
-                XCTAssertEqual(later.start, earlier.start + earlier.duration, accuracy: 1e-9,
-                               "bounces follow each other with no gap, \(name)")
+    /// Các nửa chu kỳ của dao động sau lúc chạm — không cắt ở `duration`, để
+    /// đếm cả những nửa đã tắt: (lúc đỉnh, độ lệch đỉnh có dấu).
+    private func halfCycles(_ plan: LandingPlan) -> [(time: Double, swing: Double)] {
+        var lobes: [(time: Double, swing: Double)] = []
+        var time = plan.impact + 0.0002
+        while time < plan.impact + 1.5 {
+            let s = plan.swingIgnoringEnd(at: time)
+            if s != 0 {
+                if let last = lobes.last, (last.swing > 0) == (s > 0) {
+                    if abs(s) > abs(last.swing) { lobes[lobes.count - 1] = (time, s) }
+                } else {
+                    lobes.append((time, s))
+                }
             }
+            time += 0.0002
         }
+        return lobes
     }
 
-    /// Trọng lực: mỗi cung là một parabol — đi được 3/4 chiều cao trong 1/4 đầu
-    /// thời gian (nhanh sát sàn), đỉnh ở giữa (chậm lại ở đỉnh) — và cùng một
-    /// trọng lực cho mọi nhịp, nên thời gian tỉ lệ với căn bậc hai chiều cao.
-    func testEachBounceIsAGravityArc() {
-        let plan = everyday
-        for bounce in plan.bounces {
-            let quarter = plan.lift(at: bounce.start + bounce.duration / 4)
-            let middle = plan.lift(at: bounce.start + bounce.duration / 2)
-            XCTAssertEqual(quarter / bounce.apex, 0.75, accuracy: 0.01)
-            XCTAssertEqual(middle, bounce.apex, accuracy: 0.01)
-            // Vận tốc sát sàn lớn hơn hẳn vận tốc gần đỉnh.
-            let step = 0.005
-            let nearFloor = plan.lift(at: bounce.start + step) - plan.lift(at: bounce.start)
-            let nearApex = plan.lift(at: bounce.start + bounce.duration / 2)
-                - plan.lift(at: bounce.start + bounce.duration / 2 - step)
-            XCTAssertGreaterThan(nearFloor, nearApex * 4)
-        }
-        let first = plan.bounces[0], second = plan.bounces[1]
-        XCTAssertEqual(second.duration / first.duration,
-                       Double((second.apex / first.apex).squareRoot()), accuracy: 0.001)
-        XCTAssertEqual(first.duration, BottomBarStyle.dropFirstBounceDuration, accuracy: 0.001)
+    /// Thứ một nửa chu kỳ vẽ ra ở mép của nó: đáy khi nén, mép trên khi giãn.
+    private func drawn(_ swing: Double) -> CGFloat {
+        swing >= 0 ? CGFloat(swing)
+            : CGFloat(-swing) * BottomBarStyle.stretchToSquash / CGFloat(LandingPlan.halfCycleRatio)
     }
 
-    // MARK: - Lề: viên kính luôn nằm trọn
+    // MARK: - Hai pha
 
-    /// Ở mọi mili giây: đáy thẻ (phồng xuống, rồi bị nhấc lên) không bao giờ lên
-    /// trên đáy viên kính, và khi thẻ đang bay thì còn dư ít nhất `dropMargin`.
-    /// Mép trên đi lên cùng thẻ; hai bên chỉ nở ra.
-    func testTheCapsuleStaysInsideTheCardAtEveryMillisecond() {
+    /// Nén: đáy võng (≥ sàn), hai bên nở, mép trên **đúng** ở mép trên viên
+    /// kính. Giãn: mép trên vươn lên, đáy **đúng** ở sàn, hai bên về đúng bề
+    /// ngang. Không mép nào bao giờ đi vào trong — ở từng mili giây.
+    func testSquashThenStretchWithEveryEdgeOutwardAtEveryMillisecond() {
         for (name, plan) in scenarios {
             var time = 0.0
             while time <= plan.duration + 0.05 {
-                let swell = plan.swell(at: time)
-                let lift = plan.lift(at: time)
-                XCTAssertGreaterThanOrEqual(lift, 0, name)
-                XCTAssertGreaterThanOrEqual(swell.bottom - lift, 0, "bottom inside at \(time)s, \(name)")
-                if lift > 0 {
-                    XCTAssertGreaterThanOrEqual(swell.bottom - lift, BottomBarStyle.dropMargin - 0.0001,
-                                                "less than the margin at \(time)s, \(name)")
+                let e = plan.edges(at: time)
+                XCTAssertGreaterThanOrEqual(e.top, 0, "\(name) at \(time)s")
+                XCTAssertGreaterThanOrEqual(e.bottom, 0, "\(name) at \(time)s")
+                XCTAssertGreaterThanOrEqual(e.side, 0, "\(name) at \(time)s")
+                if plan.swing(at: time) > 0 {
+                    XCTAssertEqual(e.top, 0, "the top stays at the capsule top while squashing, \(name)")
+                } else if plan.swing(at: time) < 0 {
+                    XCTAssertEqual(e.bottom, 0, "the bottom stays on the floor while stretching, \(name)")
+                    XCTAssertEqual(e.side, 0, "the sides are back at the capsule width while stretching, \(name)")
                 }
-                XCTAssertGreaterThanOrEqual(swell.top + lift, 0, name)
-                XCTAssertGreaterThanOrEqual(swell.side, 0, name)
                 time += 0.001
             }
         }
     }
 
-    /// Lề ở đỉnh từng nhịp — số cho báo cáo, và cận dưới cho nó.
-    func testTheMarginAtEachApexIsAtLeastHalfAPoint() {
+    /// Cú nén đến trước, cú giãn sau — một đường cong, nửa dương rồi nửa âm.
+    func testTheSquashComesFirstAndTheStretchFollowsOnTheSameCurve() throws {
+        for (name, plan) in scenarios where plan.squashPeak > 1 {
+            let lobes = halfCycles(plan)
+            XCTAssertGreaterThanOrEqual(lobes.count, 2, name)
+            XCTAssertGreaterThan(lobes[0].swing, 0, "first the squash, \(name)")
+            XCTAssertLessThan(lobes[1].swing, 0, "then the stretch, \(name)")
+            XCTAssertLessThan(lobes[0].time, lobes[1].time, name)
+        }
+    }
+
+    /// Phán quyết: nén ~5–7pt đáy + ~1,5–2pt mỗi bên, giãn ~5–7pt mép trên —
+    /// với cú thu thường ngày. Số cho báo cáo được in ra.
+    func testAnEverydayLandingSquashesAndStretchesFiveToSevenPoints() throws {
         for (name, plan) in scenarios {
-            for bounce in plan.bounces {
-                let apexTime = bounce.start + bounce.duration / 2
-                let margin = plan.swell(at: apexTime).bottom - plan.lift(at: apexTime)
-                print("[drop] \(name): apex \(String(format: "%.2f", bounce.apex))pt at "
-                      + "\(String(format: "%.0f", apexTime * 1000))ms, margin \(String(format: "%.2f", margin))pt")
-                XCTAssertGreaterThanOrEqual(margin, BottomBarStyle.dropMargin - 0.0001, name)
+            let lobes = halfCycles(plan)
+            let squash = plan.edges(at: lobes.first?.time ?? 0)
+            let stretch = lobes.count > 1 ? plan.edges(at: lobes[1].time) : .none
+            print("[squash] \(name): impact \(String(format: "%.0f", plan.impact * 1000))ms,"
+                  + " squash \(String(format: "%.2f", squash.bottom))pt (sides \(String(format: "%.2f", squash.side))pt)"
+                  + " at \(String(format: "%.0f", (lobes.first?.time ?? 0) * 1000))ms,"
+                  + " stretch \(String(format: "%.2f", stretch.top))pt"
+                  + " at \(String(format: "%.0f", (lobes.count > 1 ? lobes[1].time : 0) * 1000))ms,"
+                  + " done \(String(format: "%.0f", plan.duration * 1000))ms")
+        }
+        let plan = everyday
+        let lobes = halfCycles(plan)
+        let squash = plan.edges(at: lobes[0].time), stretch = plan.edges(at: lobes[1].time)
+        XCTAssertGreaterThanOrEqual(squash.bottom, 5)
+        XCTAssertLessThanOrEqual(squash.bottom, 7)
+        XCTAssertGreaterThanOrEqual(squash.side, 1.5)
+        XCTAssertLessThanOrEqual(squash.side, 2.1)
+        XCTAssertGreaterThanOrEqual(stretch.top, 5)
+        XCTAssertLessThanOrEqual(stretch.top, 7)
+    }
+
+    /// Đúng **một** cú nảy thấy được: sau cú nén và cú giãn, mọi nửa chu kỳ còn
+    /// lại vẽ ra dưới 0,5pt ở mọi mép — kể cả cú búng mạnh nhất.
+    func testExactlyOnePerceptibleBounce() {
+        for (name, plan) in scenarios {
+            let lobes = halfCycles(plan)
+            for lobe in lobes.dropFirst(2) {
+                XCTAssertLessThan(drawn(lobe.swing), 0.5,
+                                  "a further half-cycle shows \(drawn(lobe.swing))pt, \(name)")
+            }
+            if lobes.count > 2 {
+                print("[squash] \(name): third half-cycle \(String(format: "%.2f", drawn(lobes[2].swing)))pt")
             }
         }
     }
 
-    // MARK: - Cú phồng
+    // MARK: - Liền mạch và trần
 
-    /// Đỉnh phồng giữ dáng của vòng sửa 3–4: ~6–7pt mỗi mép cho cú thu thường
-    /// ngày, và giữ nguyên suốt mọi nhịp nảy.
-    func testTheSwellKeepsItsLookAndHoldsThroughTheBounces() throws {
+    /// Lúc chạm, đáy bắt đầu võng đúng ở vận tốc mép trên vừa có — đà của cú
+    /// thu chuyển nguyên vào cú nén (dưới `squashKnee`).
+    func testTheSquashStartsAtTheArrivalSpeed() {
+        let spring = BottomBarStyle.collapseSpring(afterDrag: true)
+        let velocity = PlayerCard.settleVelocity(verticalVelocity: 1900, travel: travel, from: 0.9, to: 0)
         let plan = everyday
-        let perEdge = PlayerCard.landingSwell(growth: plan.peakGrowth).bottom
-        XCTAssertGreaterThanOrEqual(perEdge, 6)
-        XCTAssertLessThanOrEqual(perEdge, 7)
-        let last = try XCTUnwrap(plan.bounces.last)
-        var time = plan.launch
-        while time < last.start + last.duration {
-            XCTAssertEqual(plan.growth(at: time), plan.peakGrowth, accuracy: 0.0001, "at \(time)s")
+        XCTAssertLessThan(plan.squashPeak, BottomBarStyle.squashKnee, "the everyday landing is below the knee")
+        let arrival = spring.velocity(target: 1.0, initialVelocity: velocity, time: plan.impact) * 0.9 * Double(travel)
+        let step = 0.0002
+        let sagSpeed = Double(plan.edges(at: plan.impact + step).bottom) / step
+        XCTAssertEqual(sagSpeed / arrival, 1, accuracy: 0.05,
+                       "the bottom starts at \(sagSpeed)pt/s against an arrival of \(arrival)pt/s")
+        // …và trước lúc chạm, không mép nào động.
+        XCTAssertEqual(plan.edges(at: plan.impact - 0.001), .none)
+    }
+
+    /// Cú búng mạnh hơn nén và giãn nhiều hơn, nhưng không quá trần.
+    func testAHarderLandingSquashesMoreButStaysUnderTheCap() {
+        let gentle = plan(afterDrag: true, velocity: 0, span: 1)
+        let hard = plan(afterDrag: true, velocity: BottomBarStyle.maxSettleVelocity, span: 1)
+        XCTAssertGreaterThan(hard.squashPeak, gentle.squashPeak)
+        XCTAssertLessThanOrEqual(hard.squashPeak, BottomBarStyle.squashCap)
+        var time = 0.0
+        while time < hard.duration {
+            let e = hard.edges(at: time)
+            XCTAssertLessThanOrEqual(max(e.bottom, e.top), BottomBarStyle.squashCap + 0.001)
             time += 0.001
         }
     }
 
-    /// Thẻ chỉ bật lên khi cú phồng đã tới đỉnh — lúc chạm, chưa có lề nào.
-    func testTheCardSquashesBeforeItLeavesTheFloor() {
-        for (name, plan) in scenarios {
-            XCTAssertGreaterThanOrEqual(plan.launch, plan.impact, name)
-            var time = 0.0
-            while time < plan.launch {
-                XCTAssertEqual(plan.lift(at: time), 0, "lifted before launch at \(time)s, \(name)")
-                time += 0.001
-            }
-        }
-        let plan = everyday
-        XCTAssertEqual(plan.growth(at: plan.impact), 0, accuracy: 0.6, "the swell starts from nothing at impact")
-    }
-
-    /// Cú thu ngắn thì cú phồng nhỏ, và các nhịp bị chặn theo — không bao giờ
-    /// ngược lại.
-    func testAShortCollapseBouncesLowerOrNotAtAll() throws {
-        let short = plan(afterDrag: true, velocity: 0, span: 0.15)
-        let perEdge = PlayerCard.landingSwell(growth: short.peakGrowth).bottom
-        let first = try XCTUnwrap(short.bounces.first)
-        XCTAssertLessThanOrEqual(first.apex, perEdge - BottomBarStyle.dropMargin + 0.0001)
-        XCTAssertLessThan(first.apex, BottomBarStyle.dropApex)
-        XCTAssertTrue(plan(afterDrag: true, velocity: 0, span: 0.02).bounces.isEmpty,
-                      "a tiny collapse has no room for a bounce")
-    }
-
-    // MARK: - Kết thúc
-
-    func testItEndsExactlyAtRest() {
-        for (name, plan) in scenarios {
-            for time in [plan.duration, plan.duration + 0.001, plan.duration + 1] {
-                XCTAssertEqual(plan.lift(at: time), 0, name)
-                XCTAssertEqual(plan.swell(at: time), .init(top: 0, bottom: 0, side: 0), name)
-            }
-            XCTAssertEqual(plan.lift(at: plan.deflateStart), 0, "the last bounce has landed before the deflate, \(name)")
-        }
-    }
-
-    /// Không có bước nhảy nào: từng mili giây, cú phồng và cú nảy chỉ đổi theo
-    /// vận tốc của chính chúng. Ngưỡng cú phồng là 2pt/ms vì ngay sau lúc chạm
-    /// nó lớn lên đúng bằng vận tốc mép trên vừa có — với cú búng mạnh nhất
-    /// ~1,3pt/ms (đo được), liền mạch chứ không phải một bước.
+    /// Không có bước nhảy: từng mili giây, mọi mép chỉ đổi theo vận tốc của
+    /// chính dao động (dưới ~3pt/ms ngay cả lúc nảy mạnh nhất).
     func testNothingJumps() {
         for (name, plan) in scenarios {
-            var previous = (plan.swell(at: 0).bottom, plan.lift(at: 0))
+            var previous = plan.edges(at: 0)
             var time = 0.001
             while time <= plan.duration + 0.01 {
-                let now = (plan.swell(at: time).bottom, plan.lift(at: time))
-                XCTAssertLessThan(abs(now.0 - previous.0), 2, "swell jumped at \(time)s, \(name)")
-                XCTAssertLessThan(abs(now.1 - previous.1), 0.5, "lift jumped at \(time)s, \(name)")
+                let now = plan.edges(at: time)
+                XCTAssertLessThan(abs(now.top - previous.top), 3, "top jumped at \(time)s, \(name)")
+                XCTAssertLessThan(abs(now.bottom - previous.bottom), 3, "bottom jumped at \(time)s, \(name)")
                 previous = now
                 time += 0.001
             }
         }
     }
 
-    /// Phán quyết: trao chỗ sau nhịp nảy cuối, tổng tới hết cú mờ ≲ 1,1s.
-    func testTheHandoffComesAfterTheLastBounceWithinAboutOnePointOneSeconds() {
+    // MARK: - Kết thúc
+
+    /// Đúng ở nghỉ từ `duration` trở đi, và cú cắt ở `duration` dưới
+    /// `squashSettle`.
+    func testItEndsExactlyAtRest() {
         for (name, plan) in scenarios {
-            let handoffEnd = plan.duration + 0.15
-            print("[drop] \(name): impact \(String(format: "%.0f", plan.impact * 1000))ms,"
-                  + " launch \(String(format: "%.0f", plan.launch * 1000))ms,"
-                  + " bounces \(plan.bounces.map { String(format: "%.2f", $0.apex) }),"
-                  + " deflate \(String(format: "%.0f", plan.deflateStart * 1000))ms,"
-                  + " handoff ends \(String(format: "%.0f", handoffEnd * 1000))ms")
-            XCTAssertGreaterThanOrEqual(plan.duration, plan.deflateStart, name)
-            XCTAssertLessThanOrEqual(handoffEnd, 1.1, name)
+            for time in [plan.duration, plan.duration + 0.001, plan.duration + 1] {
+                XCTAssertEqual(plan.edges(at: time), .none, name)
+            }
+            let before = plan.edges(at: plan.duration - 0.0005)
+            XCTAssertLessThan(max(before.top, before.bottom, before.side), BottomBarStyle.squashSettle + 0.01, name)
         }
+    }
+
+    /// Trao chỗ sau cú nảy, tổng tới hết cú mờ ≲ 0,9s.
+    func testTheHandoffComesAfterTheBounceWithinNineTenthsOfASecond() {
+        for (name, plan) in scenarios {
+            let lobes = halfCycles(plan)
+            if lobes.count > 1, plan.squashPeak > 1 {
+                XCTAssertGreaterThan(plan.duration, lobes[1].time, "after the stretch, \(name)")
+            }
+            XCTAssertLessThanOrEqual(plan.duration + 0.15, 0.9, "\(name) hands over at \(plan.duration + 0.15)s")
+        }
+    }
+}
+
+private extension LandingPlan {
+    /// Dao động không bị cắt ở `duration` — để đếm cả những nửa chu kỳ đã tắt.
+    func swingIgnoringEnd(at time: Double) -> Double {
+        let zeta = BottomBarStyle.squashDamping
+        let damped = Double.pi / BottomBarStyle.squashHalfCycle
+        let omega = damped / (1 - zeta * zeta).squareRoot()
+        let tau = time - impact
+        guard tau > 0 else { return 0 }
+        return launchSpeed / damped * exp(-zeta * omega * tau) * sin(damped * tau)
     }
 }
