@@ -541,7 +541,7 @@ enum BottomBarStyle {
     /// ─────────────────────────────────────────────────────────────────────
     /// Thời lượng giữ nguyên nhịp cũ của từng lối vào: chạm là `expand` (0.36),
     /// thả tay sau khi kéo là `settle` (0.42). Chỉ `bounce` đổi, sang
-    /// `landingBounce` — xem ghi chú ở đó về vì sao 0.22.
+    /// `landingBounce` — xem ghi chú ở đó về vì sao 0.25.
     ///
     /// Reduced: nhánh phẳng của chính lối vào ấy (`expandFlat`/`settleFlat`),
     /// không vận tốc, không lún — `PlayerCard.morph(to:curves:)` dùng nó cho
@@ -568,15 +568,30 @@ enum BottomBarStyle {
     ///     bounce   vọt qua   thu trọn quãng   kéo tới 0.9, búng 1900pt/s
     ///     0.14     0.5%       3,5pt            3,2pt    (`settle` cũ)
     ///     0.20     1.5%       9,4pt            8,8pt
-    ///     0.22     2.0%       11,3pt           10,7pt
+    ///     0.22     2.0%       11,3pt           10,7pt   (vòng sửa 1–3)
+    ///     0.25     2.8%       13,6pt           13,1pt
     ///
-    /// 0.22 vì cú thu thường ngày là một cú vuốt xuống từ thẻ đã mở ít nhiều,
-    /// không phải trọn quãng từ đứng yên. `CollapseHandoffTests` tính lại bảng
-    /// này bằng chính `CollapseSpring`, không tin con số ở đây.
+    /// **0.25, nâng từ 0.22 ở vòng sửa 4**: người dùng thấy cú phồng "có mà
+    /// thiếu đàn hồi". Phán quyết: phồng tổng ~12–14pt, tức ~6–7pt mỗi mép, vẫn
+    /// dưới trần 16pt — 0.25 cho 13,1pt với cú thu thường ngày, 13,6pt với cú
+    /// chạm. 0.28 đã là 14,6/15,0pt, sát trần đến mức trần mềm `tanh` nuốt mất
+    /// khác biệt giữa búng nhẹ và búng mạnh. `CollapseHandoffTests` tính lại
+    /// bảng này bằng chính `CollapseSpring`, không tin con số ở đây.
     ///
     /// Không ảnh hưởng gì khác: hình học dừng ở đích, nên độ nảy chỉ còn quyết
     /// thẻ tới nơi nhanh cỡ nào và lún sâu cỡ nào.
-    static let landingBounce: Double = 0.22
+    static let landingBounce: Double = 0.25
+
+    /// Hệ số cho **nhịp nảy ngược** của cú đáp — nửa chu kỳ thứ hai, khi lò xo
+    /// vọt về phía bên kia đích — trong `PlayerCard.landingGrowth`.
+    ///
+    /// Nhịp ấy nhỏ hơn nhịp đầu đúng một lần hệ số vọt qua (~2,8%): với cú thu
+    /// thường ngày nó là ~0,5pt — có trong đường cong mà mắt không thấy, nên
+    /// cú phồng đọc ra như một nhịp rồi đứng. Phán quyết vòng sửa 4: "phồng
+    /// lớn → lắng → phồng nhỏ → nghỉ". ×4 cho nhịp thứ hai ~2pt tổng (~1pt mỗi
+    /// mép), vẫn rõ ràng là nhỏ hơn nhịp đầu ~13pt. ×5 thì ~2,6pt, và cú trao
+    /// chỗ đẩy quá ~0,9s (xem `CollapseSpring.landingHandoffEpsilon`).
+    static let landingReboundGain: CGFloat = 4
 
     /// Thẻ trao chỗ cho accessory, **sau** cú nảy: thẻ mờ đi trong khi hàng mini
     /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
@@ -988,9 +1003,15 @@ struct CollapseSpring: CustomAnimation {
     /// mở). Phần dư của một cú thu trước luôn ≥ 0 (`k ≤ 1`), không bao giờ kéo
     /// thẻ xuống dưới viên kính, nên bỏ qua nó chỉ làm sàn chặt hơn.
     let residuals: [Residual]
-    /// Lúc lò xo coi như đã lắng — xem `settleEpsilon`. Tính một lần ở đây,
-    /// không mỗi khung. Với hình học có phần dư, là lúc muộn nhất trong số ấy.
+    /// Lúc đường cong kết thúc hẳn — xem `settleEpsilon` (hình học) và
+    /// `landingRemovalEpsilon` (cú đáp). Tính một lần ở đây, không mỗi khung.
+    /// Với hình học có phần dư, là lúc muộn nhất trong số ấy.
     let settlingTime: TimeInterval
+    /// Lúc đường cong báo **xong về mặt logic** (`AnimationContext.isLogicallyComplete`)
+    /// — tức lúc `completion` mặc định của `withAnimation` nổ và thẻ trao chỗ.
+    /// Với hình học, trùng `settlingTime`. Với cú đáp, sớm hơn: xem
+    /// `landingHandoffEpsilon`.
+    let logicalCompletionTime: TimeInterval
 
     /// Một cú morph trước, đang chạy: lò xo thả từ đứng yên, đi `delta`, đã
     /// chạy được `elapsed` lúc cú thu bắt đầu.
@@ -1027,8 +1048,17 @@ struct CollapseSpring: CustomAnimation {
         self.stopsAtTarget = stopsAtTarget
         self.span = span
         self.residuals = stopsAtTarget ? residuals.filter(\.isRunning) : []
-        let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
-        self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
+        if stopsAtTarget {
+            let own = Self.lastExcursion(of: spring, initialVelocity: initialVelocity)
+            self.settlingTime = self.residuals.reduce(own) { max($0, $1.settlingTime - $1.elapsed) }
+            self.logicalCompletionTime = settlingTime
+        } else {
+            self.settlingTime = Self.lastExcursion(of: spring, initialVelocity: initialVelocity,
+                                                   epsilon: Self.landingRemovalEpsilon)
+            self.logicalCompletionTime = min(settlingTime,
+                                             Self.lastExcursion(of: spring, initialVelocity: initialVelocity,
+                                                                epsilon: Self.landingHandoffEpsilon))
+        }
     }
 
     /// Tổng phần dư của các cú trước, `time` giây sau khi cú thu bắt đầu.
@@ -1045,13 +1075,14 @@ struct CollapseSpring: CustomAnimation {
     /// nên một phần ba giây dư là một phần ba giây thẻ đã đứng yên mà chưa trao
     /// chỗ. Dùng nó làm cận trên rồi dò ngược từng mili giây bằng chính
     /// `Spring.value` — vài trăm phép tính, một lần mỗi cú thu.
-    fileprivate static func lastExcursion(of spring: Spring, initialVelocity: Double) -> TimeInterval {
+    fileprivate static func lastExcursion(of spring: Spring, initialVelocity: Double,
+                                          epsilon: Double = settleEpsilon) -> TimeInterval {
         let bound = spring.settlingDuration(target: 1.0, initialVelocity: initialVelocity,
-                                            epsilon: settleEpsilon)
+                                            epsilon: epsilon)
         let step = 0.001
         var time = bound
         while time > 0,
-              abs(spring.value(target: 1.0, initialVelocity: initialVelocity, time: time) - 1) < settleEpsilon {
+              abs(spring.value(target: 1.0, initialVelocity: initialVelocity, time: time) - 1) < epsilon {
             time -= step
         }
         return min(bound, time + step)
@@ -1075,6 +1106,7 @@ struct CollapseSpring: CustomAnimation {
     func animate<V: VectorArithmetic>(value: V, time: TimeInterval,
                                       context: inout AnimationContext<V>) -> V? {
         guard let fraction = fraction(at: time) else { return nil }
+        if time >= logicalCompletionTime { context.isLogicallyComplete = true }
         return value.scaled(by: fraction)
     }
 
@@ -1090,4 +1122,28 @@ struct CollapseSpring: CustomAnimation {
     /// đáp coi như xong và thẻ trao chỗ cho accessory; lệch to hơn thì cú trao
     /// tay lộ ra thành một cú nhích.
     static let settleEpsilon: Double = 0.0005
+
+    /// Cú đáp **báo xong** — và thẻ bắt đầu mờ đi trao chỗ — khi phần còn lại
+    /// của cú nảy vẽ ra dưới ~1pt, kể cả qua hệ số `landingReboundGain` của
+    /// nhịp nảy ngược, trên trọn quãng ~710pt. Nó **vẫn chạy** sau mốc ấy, dưới
+    /// cú mờ, tới `landingRemovalEpsilon`: chút phồng còn lại tan cùng tấm thẻ
+    /// chứ không bị cắt phụt ở đầu cú mờ.
+    ///
+    /// Vì sao không đợi lắng hẳn rồi mới mờ: nhịp nảy ngược kéo dài tới ~0,86s
+    /// với cú thả tay; đợi nó tắt hẳn (0,35pt) là ~0,79s + 0,15s mờ = ~0,94s,
+    /// quá mức ~0,9s của phán quyết vòng sửa 4. Ở 1pt: cú thả tay thường ngày
+    /// ~0,72s + 0,15s; tệ nhất — thả không vận tốc từ thẻ mở hẳn — ~0,75s + 0,15s.
+    static var landingHandoffEpsilon: Double {
+        1 / (Double(BottomBarStyle.landingReboundGain) * referenceTravel)
+    }
+
+    /// Cú đáp thôi chạy hẳn khi phần còn lại vẽ ra dưới ~0,35pt — cùng mức mà
+    /// `settleEpsilon` từng chọn — kể cả qua `landingReboundGain`.
+    static var landingRemovalEpsilon: Double {
+        0.35 / (Double(BottomBarStyle.landingReboundGain) * referenceTravel)
+    }
+
+    /// Quãng kéo của iPhone 12, để đổi các mức tính bằng điểm ở trên ra phần
+    /// quãng đường. Thẻ ngắn hơn thì phần còn lại vẽ ra còn nhỏ hơn.
+    static let referenceTravel: Double = 710
 }

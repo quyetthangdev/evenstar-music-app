@@ -167,7 +167,7 @@ final class PlayerExpansion {
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO CẦN — MỘT `completion` CŨ KHÔNG BIẾT MÌNH ĐÃ CŨ
     /// ─────────────────────────────────────────────────────────────────────
-    /// Thẻ về nghỉ trong `completion` của cú đáp, ~0,6s sau khi thả. Animation
+    /// Thẻ về nghỉ trong `completion` của cú đáp, ~0,7s sau khi thả. Animation
     /// của SwiftUI cộng dồn chứ không huỷ, nên một cú thu bị cắt ngang — kéo
     /// accessory giữa cú nảy rồi thả, hay mở lại rồi thu lần nữa — vẫn chạy
     /// tới cuối và vẫn gọi `completion` **của nó**, giữa cú thu mới. Hỏi trạng

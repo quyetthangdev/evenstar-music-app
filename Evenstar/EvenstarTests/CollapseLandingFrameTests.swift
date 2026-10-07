@@ -296,7 +296,8 @@ final class CollapseLandingFrameTests: XCTestCase {
         let restTop = Int(rig.rest.minY), restBottom = Int(rig.rest.maxY) - 1
         print("[landing] snapshot shift \(rig.shift)pt, rest rows \(restTop)–\(restBottom), column \(rig.column),"
               + " predicted growth \(String(format: "%.1f", predicted))pt (half per edge),"
-              + " handoff at \(String(format: "%.0f", spring.settlingTime * 1000))ms, \(frames.count) frames")
+              + " handoff at \(String(format: "%.0f", spring.logicalCompletionTime * 1000))ms"
+              + " (landing ends \(String(format: "%.0f", spring.settlingTime * 1000))ms), \(frames.count) frames")
         for sample in frames {
             let tint = surfaceTint(sample).map { String(format: "%5.1f", $0) } ?? "    —"
             if let cover = sample.cover {
@@ -343,14 +344,15 @@ final class CollapseLandingFrameTests: XCTestCase {
         XCTAssertEqual(settledAcross.lowerBound, restLeft, accuracy: 1, "settled left")
         XCTAssertEqual(settledAcross.upperBound, restRight, accuracy: 1, "settled right")
 
-        // 3. Phồng đối xứng: ở đỉnh, mép trên lên ≥3pt và mép dưới xuống ≥3pt
+        // 3. Phồng đối xứng: ở đỉnh, mép trên lên ≥4pt và mép dưới xuống ≥4pt
         // so với chính khung đã về chỗ (nên viền kính tự triệt tiêu).
         //
         // Đỉnh đo bằng khung cực trị của **hai** cú thu giống hệt nhau, lọc cùng
         // một cách. Một `drawHierarchy` tốn ~30ms, có khung tới ~60ms, nên một
         // cuộn phim có lúc rơi hai bên đỉnh (vòng sửa 2 đo được: 8pt cho một
         // đỉnh 10,7pt, hai trong sáu lần). Lần thứ hai lệch pha lấy mẫu với lần
-        // đầu. Mỗi mép giờ chỉ ~5,3pt ở đỉnh, nên ngưỡng dưới là 3pt.
+        // đầu. Mỗi mép ~6,5pt ở đỉnh (bounce 0.25, vòng sửa 4); mép trên đọc
+        // ra thấp hơn ~1pt vì viền kính, nên ngưỡng dưới là 4pt mỗi mép.
         openFully(rig)
         dragDownAndRelease(rig, to: start, velocity: velocity)
         let again = landedFrames(film(rig, for: 0.8), rest: rig.rest)
@@ -362,13 +364,25 @@ final class CollapseLandingFrameTests: XCTestCase {
         let widest = both.compactMap { $0.across?.count }.max() ?? 0
         print("[landing] peak: top rose \(rise)pt, bottom sagged \(sag)pt, widest \(widest)pt against"
               + " \(settledAcross.count)pt settled (runs: \(landed.count) + \(again.count) landed frames)")
-        XCTAssertGreaterThanOrEqual(rise, 3, "the top edge only rose \(rise)pt")
-        XCTAssertGreaterThanOrEqual(sag, 3, "the bottom edge only sagged \(sag)pt")
+        XCTAssertGreaterThanOrEqual(rise, 4, "the top edge only rose \(rise)pt")
+        XCTAssertGreaterThanOrEqual(sag, 4, "the bottom edge only sagged \(sag)pt")
         XCTAssertLessThanOrEqual(rise, 9, "the top edge rose \(rise)pt, past the 8pt cap")
         XCTAssertLessThanOrEqual(sag, 9, "the bottom edge sagged \(sag)pt, past the 8pt cap")
         XCTAssertEqual(CGFloat(rise + sag), predicted, accuracy: 3,
                        "drawn \(rise + sag)pt of growth against \(predicted)pt computed")
         XCTAssertGreaterThanOrEqual(widest - settledAcross.count, 1, "the card did not widen")
+        // Nhịp phồng thứ hai (vòng sửa 4) — chỉ **ghi lại**, không khẳng định ở
+        // đây: nó ~2pt tổng, ~1pt mỗi mép, đúng cỡ một điểm ảnh của bộ đo và của
+        // viền kính, và rơi vào ~0,55–0,75s, quãng cú mờ trao chỗ bắt đầu cắt
+        // các khung đo. `CollapseHandoffTests.testASmallerSecondSwellFollowsTheFirst`
+        // kiểm nó trên chính đường cong và phép ánh xạ.
+        func secondSwell(_ run: [Landed]) -> Int {
+            let heights = run.map(\.cover.count)
+            guard let peak = heights.indices.max(by: { heights[$0] < heights[$1] }),
+                  let back = heights[peak...].firstIndex(where: { $0 <= settled.cover.count + 1 }) else { return 0 }
+            return (heights[back...].max() ?? settled.cover.count) - settled.cover.count
+        }
+        print("[landing] second swell: \(secondSwell(landed))pt (run 1), \(secondSwell(again))pt (run 2)")
         // …và đỉnh nằm **giữa** cuộn phim: thẻ phồng rồi về, không phải phồng
         // sẵn từ đầu.
         let peakIndex = try XCTUnwrap(landed.firstIndex { $0.cover.upperBound == landed.map(\.cover.upperBound).max() })
@@ -403,6 +417,12 @@ final class CollapseLandingFrameTests: XCTestCase {
         }
         // …và cú mờ có thật sự kết thúc: thẻ đã nhường chỗ.
         XCTAssertNil(frames.last?.cover, "the card was still drawn \(frames.last?.ms ?? 0)ms after release")
+        // Cuộn phim thứ hai chỉ dài 0,8s — đủ cho cú phồng, không chắc đủ cho cú
+        // trao chỗ (~0,72s + cú mờ, cộng độ trễ của run loop). Chờ nó.
+        let deadline = Date().addingTimeInterval(1.5)
+        while !rig.expansion.isCardResting, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
         XCTAssertTrue(rig.expansion.isCardResting)
     }
 

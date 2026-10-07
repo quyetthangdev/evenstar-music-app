@@ -2879,11 +2879,12 @@ struct PlayerCard: View {
     ///   - **Như Apple Music.** Video 33ms/khung: thẻ còn đặc ở 33ms, đã là
     ///     kính ở 66ms, chạm đáy ở ~132ms — cú chuyển gọn trong một hai khung,
     ///     xong trước khi chạm đáy một hai khung, lúc thẻ còn to hơn viên kính
-    ///     thấy rõ. Với `BottomBarStyle.collapse` (bounce 0.22), tính bằng lò xo
-    ///     trên iPhone 12: cú chạm (0.36) đi từ 2× tới 1,25× trong ~28ms và
-    ///     chạm đích ~16ms sau; cú thả tay (0.42) ~33ms và ~17ms. Tức hai khung
-    ///     ở 60Hz, bốn ở 120Hz. `CollapseLandingFrameTests` thấy đúng thế trên
-    ///     ảnh: một khung nửa kính khi thẻ cao ~70pt, khung sau kính hẳn.
+    ///     thấy rõ. Với `BottomBarStyle.collapse` (bounce 0.25 từ vòng sửa 4),
+    ///     tính bằng lò xo trên iPhone 12: cú chạm (0.36) đi từ 2× tới 1,25×
+    ///     trong ~23ms và chạm đích ~12ms sau; cú thả tay (0.42) ~27ms và ~14ms
+    ///     (ở 0.22 là ~28/33ms). Tức một, hai khung ở 60Hz, ba ở 120Hz.
+    ///     `CollapseLandingFrameTests` thấy đúng thế trên ảnh: một khung nửa
+    ///     kính khi thẻ cao ~70pt, khung sau kính hẳn.
     ///   - **Không sớm hơn.** Kể từ lúc này viên kính của hệ thống — luôn nằm
     ///     đó, nội dung đã ẩn — hiện xuyên qua thẻ, lệch khỏi hàng mini của thẻ
     ///     đúng `progress × dragTravel` (thẻ cao 2× → ~42pt, 1,25× → ~11pt). Bắt
@@ -2894,18 +2895,26 @@ struct PlayerCard: View {
     static let collapseGlassStartRatio: Double = 2
     static let collapseGlassEndRatio: Double = 1.25
 
-    /// Tổng chiều cao thẻ phồng thêm, tính bằng điểm, khi `landing` đã vọt quá
-    /// 0 một đoạn `overshoot` (đơn vị `progress`). 0 khi chưa vọt qua. Chia cho
-    /// hai mép ở `landingSwell(growth:)`.
+    /// Tổng chiều cao thẻ phồng thêm, tính bằng điểm, cho một độ lệch
+    /// `overshoot` (đơn vị `progress`) giữa hình học và cú đáp. Chia cho hai
+    /// mép ở `landingSwell(growth:)`.
     ///
-    /// Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng mép
-    /// trên thẻ đi trên mỗi đơn vị `progress` — nên tổng ấy lớn lên đúng nhịp
-    /// đà của cú thu: độ dốc của hàm này ở 0 là 1. Rồi trần mềm `tanh`: cú thu
-    /// thường ngày gần như không bị chạm tới (~11pt thô ra ~10pt), cú búng mạnh
-    /// nhất không phồng quá `landingCap`.
+    ///   - **Dương** — cú đáp đã vọt qua 0, hình học thì dừng ở 0: nhịp phồng
+    ///     lớn. Đổi ra điểm bằng `travel` — đúng `PlayerAnchor.dragTravel`, quãng
+    ///     mép trên thẻ đi trên mỗi đơn vị `progress` — nên tổng ấy lớn lên đúng
+    ///     nhịp đà của cú thu: độ dốc ở 0 là 1.
+    ///   - **Âm** — nhịp nảy ngược, lò xo vọt về phía bên kia đích. Vòng sửa 1–3
+    ///     bỏ phần này (`max(overshoot, 0)`), và cú phồng đọc ra như một nhịp rồi
+    ///     đứng. Giờ nó cũng thành một cú phồng **ra ngoài** — không bao giờ vào
+    ///     trong, nên viên kính hệ thống vẫn luôn nằm trọn — nhân
+    ///     `BottomBarStyle.landingReboundGain` vì tự nó chỉ ~0,5pt.
+    ///   - **0** — lúc tiếp cận, khi hình học và cú đáp là cùng một đường cong.
+    ///
+    /// Rồi trần mềm `tanh`: cú thu thường ngày chỉ bị chạm nhẹ (~18pt thô ra
+    /// ~13pt), cú búng mạnh nhất không phồng quá `landingCap`.
     static func landingGrowth(overshoot: Double, travel: CGFloat) -> CGFloat {
-        let raw = CGFloat(max(overshoot, 0)) * travel
-        return landingCap * tanh(raw / landingCap)
+        let swing = overshoot >= 0 ? CGFloat(overshoot) : -CGFloat(overshoot) * BottomBarStyle.landingReboundGain
+        return landingCap * tanh(swing * travel / landingCap)
     }
 
     /// Trần của cú phồng, tổng hai mép — tức 8pt mỗi mép. Không trần, cú búng
@@ -2926,7 +2935,8 @@ struct PlayerCard: View {
 
     /// Cú phồng đối xứng (vòng sửa 3, người dùng chọn sau QA trên máy): tổng
     /// `growth` chia đôi cho mép trên và mép dưới, hai bên nở theo cùng nhịp.
-    /// Mọi mép chỉ đi **ra** — `growth` âm thì 0 — nên viên kính hệ thống đứng
+    /// Mọi mép chỉ đi **ra** — `growth` âm (không bao giờ xảy ra từ
+    /// `landingGrowth`, nhưng hàm không dựa vào điều đó) thì 0 — nên viên kính hệ thống đứng
     /// yên luôn nằm trọn trong thẻ, không có viền thứ hai nào. Xem `CollapseGlass`.
     static func landingSwell(growth: CGFloat) -> LandingSwell {
         let growth = max(growth, 0)
@@ -3256,8 +3266,7 @@ private struct CollapseGlass: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background(alignment: .top) {
-            CollapseGlassLayer(progress: progress, glassGate: glassGate, anchor: anchor)
-                .modifier(LandingStretch(progress: landing, travel: anchor.dragTravel))
+            CollapseGlassLayer(progress: progress, glassGate: glassGate, landing: landing, anchor: anchor)
                 .allowsHitTesting(false)
         }
     }
@@ -3266,9 +3275,18 @@ private struct CollapseGlass: ViewModifier {
 /// Lớp kính, đọc lượng kính ở giá trị **đang vẽ** — cùng hàm, cùng
 /// `animatableData` với lớp đặc trong `CardSurface`, nên hai lớp hoà vào nhau
 /// khớp từng khung.
+///
+/// Cú phồng được áp **ở đây**, không ở `CollapseGlass`: `LandingStretch` cần
+/// hình học đang vẽ — `progress` của kiểu này, mỗi khung — để biết đâu là
+/// nhịp nảy ngược (vòng sửa 4). `landing` đi qua kiểu này như một giá trị
+/// thường, không nằm trong `animatableData`; chính `LandingStretch` nội suy nó
+/// trên đường cong của riêng nó. Modifier ấy nằm **ngoài** nhánh `if`, để nó có
+/// mặt từ đầu cú thu: một view chèn vào giữa chừng không nhận animation đang
+/// chạy, và cú phồng sẽ không bao giờ hiện.
 private struct CollapseGlassLayer: View, Animatable {
     var progress: Double
     var glassGate: Double
+    let landing: Double
     let anchor: PlayerAnchor
 
     var animatableData: AnimatablePair<Double, Double> {
@@ -3284,28 +3302,38 @@ private struct CollapseGlassLayer: View, Animatable {
             cardHeight: anchor.cardFrame(progress: progress).height,
             capsuleHeight: anchor.collapsedHeight
         )
-        if glass > 0 {
-            Color.clear.glassEffect(
-                .regular,
-                in: RoundedRectangle(
-                    cornerRadius: PlayerCard.cardTopCornerRadius(
-                        progress: progress, collapsedRadius: anchor.collapsedCornerRadius
-                    ),
-                    style: .continuous
+        Group {
+            if glass > 0 {
+                Color.clear.glassEffect(
+                    .regular,
+                    in: RoundedRectangle(
+                        cornerRadius: PlayerCard.cardTopCornerRadius(
+                            progress: progress, collapsedRadius: anchor.collapsedCornerRadius
+                        ),
+                        style: .continuous
+                    )
                 )
-            )
+            }
         }
+        .modifier(LandingStretch(progress: landing, geometry: progress, travel: anchor.dragTravel))
     }
 }
 
-/// Cú phồng: đọc phần **âm** của `PlayerCard.landing` ở giá trị đang vẽ, cho
-/// lớp kính tràn ra bốn phía theo `PlayerCard.landingSwell`.
+/// Cú phồng: đọc độ lệch giữa hình học đang vẽ (`geometry`) và `PlayerCard.landing`
+/// đang vẽ, cho lớp kính tràn ra bốn phía theo `PlayerCard.landingSwell`.
+///
+/// Độ lệch, không phải phần âm của `landing`: lúc tiếp cận hai thứ là cùng một
+/// đường cong nên độ lệch là 0, dù `landing` còn dương và lớn; sau khi hình học
+/// dừng ở 0, độ lệch là chính cú vọt qua — dương ở nhịp đầu, âm ở nhịp nảy
+/// ngược. `geometry` là giá trị thường: `CollapseGlassLayer` dựng lại modifier
+/// này mỗi khung với hình học của khung ấy.
 ///
 /// Phải là `Animatable` vì cùng lẽ với `CardSurface`: dưới `withAnimation`, một
 /// `padding(f(landing))` trần được tính một lần ở đích (`landing` 0 → 0) — không
 /// có cú phồng nào. Ngoài cú thu, `landing` ≥ 0 và đây là `padding(0)`.
 private struct LandingStretch: ViewModifier, Animatable {
     var progress: Double
+    let geometry: Double
     let travel: CGFloat
 
     var animatableData: Double {
@@ -3315,7 +3343,7 @@ private struct LandingStretch: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let swell = PlayerCard.landingSwell(
-            growth: PlayerCard.landingGrowth(overshoot: -progress, travel: travel)
+            growth: PlayerCard.landingGrowth(overshoot: geometry - progress, travel: travel)
         )
         content.padding(EdgeInsets(top: -swell.top, leading: -swell.side,
                                    bottom: -swell.bottom, trailing: -swell.side))

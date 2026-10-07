@@ -53,9 +53,28 @@ final class CollapseHandoffTests: XCTestCase {
 
     // MARK: - Cú vọt qua đổi ra tổng chiều cao phồng thêm
 
-    func testNothingMovesUntilTheLandingPassesZero() {
+    /// Lúc tiếp cận, hình học và cú đáp là cùng một đường cong: độ lệch 0,
+    /// không phồng.
+    func testNothingMovesWhileGeometryAndLandingAgree() {
         XCTAssertEqual(PlayerCard.landingGrowth(overshoot: 0, travel: 710), 0)
-        XCTAssertEqual(PlayerCard.landingGrowth(overshoot: -0.3, travel: 710), 0)
+    }
+
+    /// Vòng sửa 4: nhịp nảy ngược (độ lệch âm) thành một cú phồng **ra ngoài**,
+    /// nhân `landingReboundGain` — không bao giờ vào trong.
+    func testTheReboundSwellsOutwardNeverInward() {
+        for rebound in [0.00001, 0.0002, 0.0007, 0.002, 0.3] {
+            let growth = PlayerCard.landingGrowth(overshoot: -rebound, travel: 710)
+            XCTAssertGreaterThan(growth, 0, "rebound \(rebound)")
+            XCTAssertLessThanOrEqual(growth, PlayerCard.landingCap, "rebound \(rebound)")
+            let swell = PlayerCard.landingSwell(growth: growth)
+            XCTAssertGreaterThanOrEqual(min(swell.top, swell.bottom, swell.side), 0)
+        }
+        let tiny = 0.00005
+        XCTAssertEqual(PlayerCard.landingGrowth(overshoot: -tiny, travel: 710) / CGFloat(tiny * 710),
+                       BottomBarStyle.landingReboundGain, accuracy: 0.001,
+                       "small rebounds are amplified by exactly the gain")
+        XCTAssertEqual(PlayerCard.landingGrowth(overshoot: -0.3, travel: 710), PlayerCard.landingCap,
+                       accuracy: 0.01, "and the cap holds for them too")
     }
 
     /// Độ dốc 1 ở 0: ngay sau khi chạm đích, chiều cao thẻ lớn lên đúng tốc độ
@@ -197,26 +216,29 @@ final class CollapseHandoffTests: XCTestCase {
         let landing = CollapseSpring(spring: spring, initialVelocity: 3, stopsAtTarget: false)
         let justAfter = try XCTUnwrap(landing.fraction(at: crossing + 0.001))
         XCTAssertGreaterThanOrEqual(justAfter, 1)
-        XCTAssertLessThan(justAfter - 1, 0.001, "and it starts from the target, not from a jump")
+        // Một mili giây sau mốc chạm, lò xo chỉ đi được chừng ấy theo vận tốc
+        // của nó (~1pt/ms ở bounce 0.25): không có bước nhảy nào.
+        XCTAssertLessThan(justAfter - 1, 0.002, "and it starts from the target, not from a jump")
     }
 
     /// Cú chạm (`collapse()`, lúc bài về nil): trọn quãng, từ đứng yên.
-    func testATapCollapseLandsAboutTenPointsDown() {
+    /// Vòng sửa 4: phồng tổng ~12–14pt, tức ~6–7pt mỗi mép.
+    func testATapCollapseSwellsTwelveToFourteenPoints() {
         let r = run(afterDrag: false, velocity: 0)
         let points = landingPoints(r, from: 1)
-        XCTAssertGreaterThanOrEqual(points, 8, "\(points)pt")
-        XCTAssertLessThanOrEqual(points, 12, "\(points)pt")
+        XCTAssertGreaterThanOrEqual(points, 12, "\(points)pt")
+        XCTAssertLessThanOrEqual(points, 14, "\(points)pt")
     }
 
     /// Cú thu thường ngày: vuốt thẻ đang mở xuống một đoạn rồi buông theo đà.
-    func testAnEverydayDragReleaseLandsAboutTenPointsDown() {
+    func testAnEverydayDragReleaseSwellsTwelveToFourteenPoints() {
         let start = 0.9
         let velocity = PlayerCard.settleVelocity(verticalVelocity: 1900, travel: travel,
                                                  from: start, to: 0)
         let r = run(afterDrag: true, velocity: velocity)
         let points = landingPoints(r, from: start)
-        XCTAssertGreaterThanOrEqual(points, 8, "\(points)pt at relative velocity \(velocity)")
-        XCTAssertLessThanOrEqual(points, 12, "\(points)pt at relative velocity \(velocity)")
+        XCTAssertGreaterThanOrEqual(points, 12, "\(points)pt at relative velocity \(velocity)")
+        XCTAssertLessThanOrEqual(points, 14, "\(points)pt at relative velocity \(velocity)")
     }
 
     /// Apple Music: lún ~132–200ms, nảy về tới ~500ms. Spec: "roughly 300 ms".
@@ -244,27 +266,69 @@ final class CollapseHandoffTests: XCTestCase {
     /// quãng còn lại, như một vật thật.
     func testAShortCollapseBarelyDips() {
         let points = landingPoints(run(afterDrag: true, velocity: 0), from: 0.1)
-        XCTAssertLessThan(points, 2)
+        XCTAssertLessThan(points, 2.5, "against ~13pt for an everyday collapse")
     }
 
-    /// Thẻ chỉ về nghỉ — và nhường cho accessory — khi cú nảy đã lắng tới mức
-    /// một cú trao tay không còn lộ ra thành cú nhích: từ đó trở đi lò xo
-    /// không bao giờ lệch quá nửa điểm nữa.
-    func testTheHandoffWaitsUntilTheBounceHasSettled() throws {
+    /// Cú phồng đọc ra "lớn → lắng → nhỏ → nghỉ" (vòng sửa 4), tính bằng chính
+    /// đường cong và chính phép ánh xạ thẻ dùng: nhịp nảy ngược là một cú
+    /// phồng thứ hai, thấy được, nhỏ hơn hẳn nhịp đầu, đến **sau** khi nhịp đầu
+    /// đã về.
+    ///
+    /// Kiểm ở đây chứ không chỉ trên ảnh: nhịp thứ hai chỉ ~1pt mỗi mép, đúng
+    /// cỡ một điểm ảnh của bộ đo khung và của viền kính — xem
+    /// `CollapseLandingFrameTests`, nơi nó chỉ được ghi lại.
+    func testASmallerSecondSwellFollowsTheFirst() throws {
+        for (afterDrag, velocity, start) in [(false, 0.0, 1.0), (true, 2.99, 0.9)] {
+            let spring = BottomBarStyle.collapseSpring(afterDrag: afterDrag)
+            let landing = CollapseSpring(spring: spring, initialVelocity: velocity, stopsAtTarget: false)
+            var first: (growth: CGFloat, at: Double) = (0, 0)
+            var second: (growth: CGFloat, at: Double) = (0, 0)
+            var time = 0.0
+            // Độ lệch mà `LandingStretch` thấy sau khi hình học dừng ở 0:
+            // `0 − landing = start × (f − 1)`. Dương là nhịp đầu; âm **sau** nhịp
+            // đầu là nhịp nảy ngược (âm trước nó là lúc tiếp cận, khi hình học
+            // còn chạy và độ lệch thật là 0 — bỏ qua).
+            while let f = landing.fraction(at: time) {
+                let swing = f - 1
+                let growth = PlayerCard.landingGrowth(overshoot: swing * start, travel: travel)
+                if swing > 0, growth > first.growth { first = (growth, time) }
+                if swing < 0, first.growth > 0, growth > second.growth { second = (growth, time) }
+                time += 0.001
+            }
+            let label = "afterDrag \(afterDrag)"
+            XCTAssertGreaterThanOrEqual(second.growth, 1.5, "the second swell is invisible: \(second.growth)pt, \(label)")
+            XCTAssertLessThan(second.growth, first.growth / 3, "the second swell should be clearly smaller, \(label)")
+            XCTAssertGreaterThan(second.at, first.at + 0.15, "and it comes after the first has gone back, \(label)")
+        }
+    }
+
+    /// Thẻ trao chỗ khi cú đáp **báo xong** (`logicalCompletionTime`), và cú
+    /// trao chỗ cộng cú mờ dưới ~0,9s (phán quyết vòng sửa 4). Từ mốc ấy phần
+    /// phồng còn lại — qua cả hệ số nảy ngược — dưới 1pt và tan dưới cú mờ; cú
+    /// đáp thôi chạy hẳn (`settlingTime`) khi nó dưới ~0,35pt.
+    func testTheHandoffComesAfterBothSwellsAndUnderNineTenthsOfASecond() throws {
         for afterDrag in [false, true] {
             for velocity in [0, 3, BottomBarStyle.maxSettleVelocity] {
                 let r = run(afterDrag: afterDrag, velocity: velocity)
                 let label = "afterDrag \(afterDrag) v \(velocity)"
-                XCTAssertGreaterThan(r.settled, r.deepestAt + 0.1, "well into the return, \(label)")
-                XCTAssertLessThan(r.settled, 0.75, "and it does not hang on for ever, \(label)")
                 let spring = BottomBarStyle.collapseSpring(afterDrag: afterDrag)
-                var worst = 0.0
-                var time = r.settled
-                while time < 2 {
-                    worst = max(worst, abs(spring.value(target: 1.0, initialVelocity: velocity, time: time) - 1))
-                    time += 0.001
+                let landing = CollapseSpring(spring: spring, initialVelocity: velocity, stopsAtTarget: false)
+                let handoff = landing.logicalCompletionTime
+                XCTAssertGreaterThan(handoff, try XCTUnwrap(r.back), "after the first swell has gone back, \(label)")
+                XCTAssertLessThanOrEqual(handoff, landing.settlingTime, label)
+                XCTAssertLessThanOrEqual(handoff + 0.15, 0.9, "the handoff ends at \(handoff + 0.15)s, \(label)")
+                func worst(after start: Double) -> CGFloat {
+                    var worst: CGFloat = 0
+                    var time = start
+                    while time < 2 {
+                        let swing = spring.value(target: 1.0, initialVelocity: velocity, time: time) - 1
+                        worst = max(worst, PlayerCard.landingGrowth(overshoot: swing, travel: travel))
+                        time += 0.001
+                    }
+                    return worst
                 }
-                XCTAssertLessThan(CGFloat(worst) * travel, 0.5, label)
+                XCTAssertLessThanOrEqual(worst(after: handoff), 1.05, "what is left to fade, \(label)")
+                XCTAssertLessThan(worst(after: landing.settlingTime), 0.5, "what is cut when it stops, \(label)")
             }
         }
     }
@@ -492,7 +556,7 @@ final class CollapseHandoffTests: XCTestCase {
         let geometry = CollapseSpring(spring: spring, initialVelocity: 0, stopsAtTarget: true)
         var time = 0.0
         while geometry.fraction(at: time) != nil { time += 0.001 }
-        let rest = CollapseSpring(spring: spring, initialVelocity: 0, stopsAtTarget: false).settlingTime
+        let rest = CollapseSpring(spring: spring, initialVelocity: 0, stopsAtTarget: false).logicalCompletionTime
         XCTAssertGreaterThan(rest - time, 0.2, "the two milestones are too close to tell apart by waiting")
         return (time, rest)
     }
@@ -508,8 +572,8 @@ final class CollapseHandoffTests: XCTestCase {
     /// `morph(to: 0…)`. Suốt lò xo **và** cú nảy, thẻ đang thu và accessory
     /// vẫn ẩn; chỉ khi cú nảy lắng thẻ mới về nghỉ.
     ///
-    /// Mốc kiểm tra là **giữa** lúc hình học chạm đích (~0,26s) và lúc cú nảy
-    /// lắng (~0,6s), tính từ lò xo chứ không gõ tay — biên ~0,17s cả hai phía.
+    /// Mốc kiểm tra là **giữa** lúc hình học chạm đích (~0,25s) và lúc cú đáp
+    /// báo xong (~0,7s), tính từ lò xo chứ không gõ tay — biên ~0,2s cả hai phía.
     /// Đồng hồ của animation là đồng hồ thật, nên một máy chậm không kéo dài
     /// nó; chỉ độ trễ của run loop ăn vào biên. Bản trước về nghỉ theo
     /// `completion` của hình học, tức đã nghỉ ở mốc này.
