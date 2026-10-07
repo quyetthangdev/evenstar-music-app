@@ -2,9 +2,9 @@ import XCTest
 import SwiftUI
 @testable import Evenstar
 
-/// Cuối cú thu: thẻ thành **kính**, chạm sàn và nảy đúng một lần — nén rồi
-/// giãn (`LandingPlan`, ghim ở `LandingPlanTests`) — rồi mới nhường cho
-/// accessory.
+/// Cuối cú thu: thẻ co mềm, không nảy, vào đúng viên kính, mặt thẻ thành
+/// **kính** ở đoạn cuối, hàng mini hiện dần, rồi nhường cho accessory (spec,
+/// Phần 1, chốt 2026-10-07).
 ///
 /// Lỗi QA trên máy (iPhone 12, Release, sau `fbc0837`): thẻ thu khít lên viên
 /// kính rồi đứng chết và mờ đi — "mất hiệu ứng đàn hồi, cứng". Bản trước nữa
@@ -21,8 +21,8 @@ final class CollapseHandoffTests: XCTestCase {
 
     // MARK: - Cửa sổ kính
 
-    func testTheSurfaceIsOpaqueWhileTheCardIsMoreThanTwoAndAHalfTimesTheCapsule() {
-        for height: CGFloat in [844, 300, 120] {
+    func testTheSurfaceIsOpaqueWhileTheCardIsMoreThanTwiceTheCapsule() {
+        for height: CGFloat in [844, 300, 120, 96] {
             XCTAssertEqual(PlayerCard.collapseGlass(cardHeight: height, capsuleHeight: 48), 0,
                            "card \(height)pt")
         }
@@ -33,8 +33,8 @@ final class CollapseHandoffTests: XCTestCase {
             XCTAssertEqual(PlayerCard.collapseGlass(cardHeight: height, capsuleHeight: 48), 1,
                            "card \(height)pt")
         }
-        // Tuyến tính ở giữa: 2,5× → 1,25×, nửa đường là 1,875×.
-        XCTAssertEqual(PlayerCard.collapseGlass(cardHeight: 48 * 1.875, capsuleHeight: 48),
+        // Tuyến tính ở giữa: 2× → 1,25×, nửa đường là 1,625×.
+        XCTAssertEqual(PlayerCard.collapseGlass(cardHeight: 48 * 1.625, capsuleHeight: 48),
                        0.5, accuracy: 0.0001)
     }
 
@@ -53,26 +53,102 @@ final class CollapseHandoffTests: XCTestCase {
 
     // MARK: - Lò xo hình học của cú thu
 
-    /// Hình học dừng ở lần đầu chạm đích và không bao giờ vọt qua — với mọi vận
-    /// tốc thả tay — và cho tới lúc ấy nó **là** lò xo (`Spring.value`).
-    func testTheGeometryStopsAtItsTargetAndNeverPastIt() {
-        for afterDrag in [false, true] {
-            for velocity in [0, 3, 8, BottomBarStyle.maxSettleVelocity, -4] {
-                let spring = BottomBarStyle.collapseSpring(afterDrag: afterDrag)
-                let geometry = CollapseSpring(spring: spring, initialVelocity: velocity)
-                let label = "afterDrag \(afterDrag) v \(velocity)"
-                var time = 0.0
-                while let g = geometry.fraction(at: time) {
-                    XCTAssertLessThan(g, 1, label)
-                    XCTAssertEqual(g, spring.value(target: 1.0, initialVelocity: velocity, time: time),
-                                   accuracy: 1e-12, label)
-                    time += 0.001
-                }
-                XCTAssertGreaterThanOrEqual(spring.value(target: 1.0, initialVelocity: velocity, time: time), 1,
-                                            "it stops because the spring arrived, \(label)")
-                XCTAssertLessThan(time, 1, "the geometry has to arrive, \(label)")
+    /// Thẻ không bao giờ nhỏ hơn hay thấp hơn viên kính: hình học không bao giờ
+    /// vọt qua đích — với mọi vận tốc thả tay — và cho tới lúc kết thúc nó **là**
+    /// lò xo (`Spring.value`). Lò xo không nảy, nên nó kết thúc khi đã lắng.
+    func testTheGeometryNeverPassesItsTarget() {
+        let spring = BottomBarStyle.collapseSpring
+        for velocity in [0, 3, 8, BottomBarStyle.maxSettleVelocity, -4] {
+            let geometry = CollapseSpring(spring: spring, initialVelocity: velocity)
+            let label = "v \(velocity)"
+            var time = 0.0
+            while let g = geometry.fraction(at: time) {
+                XCTAssertLessThan(g, 1, label)
+                XCTAssertEqual(g, spring.value(target: 1.0, initialVelocity: velocity, time: time),
+                               accuracy: 1e-12, label)
+                time += 0.001
+            }
+            // Và chính lò xo cũng không vọt qua — cái chốt dừng-ở-đích chỉ là
+            // lưới an toàn ở đây.
+            var probe = 0.0
+            while probe < 2 {
+                XCTAssertLessThanOrEqual(spring.value(target: 1.0, initialVelocity: velocity, time: probe),
+                                         1 + 1e-9, "the spring itself overshot, \(label)")
+                probe += 0.001
+            }
+            XCTAssertLessThan(time, 1, "the geometry has to finish, \(label)")
+        }
+    }
+
+    /// Co đều, không nảy: quãng còn lại chỉ giảm.
+    func testTheCollapseShrinksMonotonically() {
+        let spring = BottomBarStyle.collapseSpring
+        for velocity in [0, 3, BottomBarStyle.maxSettleVelocity] {
+            var previous = 0.0
+            var time = 0.0
+            while time < 1 {
+                let f = spring.value(target: 1.0, initialVelocity: velocity, time: time)
+                XCTAssertGreaterThanOrEqual(f, previous - 1e-12, "it went backwards at \(time)s, v \(velocity)")
+                previous = f
+                time += 0.001
             }
         }
+    }
+
+    /// Phán quyết: tới nơi ~0,45–0,5s (trong 1pt trên trọn quãng 796pt), và từ
+    /// lúc chạm/thả tới hết cú mờ trao chỗ ≲ 0,7s. Thẻ trao chỗ khi hình học
+    /// kết thúc (`completion` của nó), tức `settlingTime`.
+    func testItArrivesInAboutHalfASecondAndHandsOverWithinPointSeven() {
+        let spring = BottomBarStyle.collapseSpring
+        var arrival = 0.0
+        while 1 - spring.value(target: 1.0, initialVelocity: 0, time: arrival) > 1.0 / 796 { arrival += 0.001 }
+        XCTAssertGreaterThanOrEqual(arrival, 0.43, "arrives in \(arrival)s")
+        XCTAssertLessThanOrEqual(arrival, 0.52, "arrives in \(arrival)s")
+        for velocity in [0, 3, BottomBarStyle.maxSettleVelocity] {
+            let geometry = CollapseSpring(spring: spring, initialVelocity: velocity)
+            let handoffEnd = geometry.settlingTime + 0.15
+            print("[collapse] v \(velocity): handoff starts \(String(format: "%.0f", geometry.settlingTime * 1000))ms,"
+                  + " ends \(String(format: "%.0f", handoffEnd * 1000))ms; tap arrives in 1pt at"
+                  + " \(String(format: "%.0f", arrival * 1000))ms")
+            XCTAssertLessThanOrEqual(handoffEnd, 0.7, "v \(velocity)")
+            XCTAssertGreaterThanOrEqual(geometry.settlingTime, arrival * 0.8,
+                                        "the handoff waits for the card to arrive, v \(velocity)")
+        }
+    }
+
+    // MARK: - Hàng mini hiện dần ở đoạn cuối
+
+    func testTheMiniRowAppearsOnlyAsTheCardNearsThePill() {
+        XCTAssertEqual(PlayerCard.miniRowFadeIn(progress: 1), 0)
+        XCTAssertEqual(PlayerCard.miniRowFadeIn(progress: 0.5), 0)
+        XCTAssertEqual(PlayerCard.miniRowFadeIn(progress: PlayerCard.miniRowFadeStart), 0)
+        XCTAssertEqual(PlayerCard.miniRowFadeIn(progress: PlayerCard.miniRowFadeEnd), 1)
+        XCTAssertEqual(PlayerCard.miniRowFadeIn(progress: 0), 1)
+        var previous = 0.0
+        for p in stride(from: 1.0, through: 0, by: -0.01) {
+            let o = PlayerCard.miniRowFadeIn(progress: p)
+            XCTAssertGreaterThanOrEqual(o, previous)
+            previous = o
+        }
+    }
+
+    /// Theo thời gian của cú chạm: hàng chưa hiện trong nửa đầu cú thu, bắt đầu
+    /// hiện khi thẻ còn vài lần viên kính, và hiện hẳn trước khi thẻ tới nơi.
+    func testTheMiniRowFadesInOverTheLastPartOfTheCollapse() {
+        let spring = BottomBarStyle.collapseSpring
+        func time(reaching p: Double) -> Double {
+            var t = 0.0
+            while 1 - spring.value(target: 1.0, initialVelocity: 0, time: t) > p { t += 0.001 }
+            return t
+        }
+        let start = time(reaching: PlayerCard.miniRowFadeStart)
+        let end = time(reaching: PlayerCard.miniRowFadeEnd)
+        let settle = CollapseSpring(spring: spring, initialVelocity: 0).settlingTime
+        print("[collapse] mini row fades in from \(String(format: "%.0f", start * 1000))ms"
+              + " to \(String(format: "%.0f", end * 1000))ms; handoff at \(String(format: "%.0f", settle * 1000))ms")
+        XCTAssertGreaterThan(start, 0.15, "the row should not appear early in the collapse")
+        XCTAssertLessThan(end, settle, "and should be fully there before the handoff")
+        XCTAssertGreaterThan(end - start, 0.08, "a fade, not a cut")
     }
 
     // MARK: - Sàn: cú thu cắt ngang một cú bung còn sớm
@@ -82,7 +158,7 @@ final class CollapseHandoffTests: XCTestCase {
     private func lowestDrawn(afterDrag: Bool, interruptAt elapsed: Double, floored: Bool) -> Double {
         let expand = try! XCTUnwrap(BottomBarStyle.expandCurves.geometrySpring)
         let residual = CollapseSpring.Residual(spring: expand, initialVelocity: 0, delta: 1, elapsed: elapsed)
-        let geometry = CollapseSpring(spring: BottomBarStyle.collapseSpring(afterDrag: afterDrag),
+        let geometry = CollapseSpring(spring: BottomBarStyle.collapseSpring,
                                       initialVelocity: 0,
                                       span: 1, residuals: floored ? [residual] : [])
         var lowest = Double.infinity
@@ -118,8 +194,11 @@ final class CollapseHandoffTests: XCTestCase {
         defer { BottomBarStyle.reduceMotion = saved }
         BottomBarStyle.reduceMotion = false
 
+        // Với lò xo thu không nảy (0,34s), cú thu bắt ngay sau cú mở vẫn chạy
+        // nhanh hơn phần dư của cú mở một quãng: đo được ~−0,007, tức thẻ thấp
+        // hơn viên kính ~5pt trên 796pt. Nhỏ hơn thời lò xo có nảy, nhưng là thật.
         let lowest = lowestDrawn(afterDrag: false, interruptAt: 0, floored: false)
-        XCTAssertLessThan(lowest, -0.03, "the unfloored tap collapse right after a tap open only reached \(lowest)")
+        XCTAssertLessThan(lowest, -0.005, "the unfloored tap collapse right after a tap open only reached \(lowest)")
     }
 
     /// Trường hợp thường — không cú nào đang bay — không đổi một bit.
@@ -144,28 +223,25 @@ final class CollapseHandoffTests: XCTestCase {
         BottomBarStyle.reduceMotion = false
 
         let curves = BottomBarStyle.collapse(initialVelocity: 4, afterDrag: true)
-        let spring = BottomBarStyle.collapseSpring(afterDrag: true)
+        let spring = BottomBarStyle.collapseSpring
         XCTAssertEqual(curves.geometry,
                        Animation(CollapseSpring(spring: spring, initialVelocity: 4)))
         XCTAssertEqual(curves.collapseSpring, spring)
         XCTAssertEqual(curves.initialVelocity, 4)
-        XCTAssertEqual(BottomBarStyle.collapseSpring(afterDrag: false),
-                       Spring(duration: 0.36, bounce: BottomBarStyle.landingBounce),
-                       "a tap keeps the tempo of `expand`")
-        XCTAssertEqual(spring, Spring(duration: 0.42, bounce: BottomBarStyle.landingBounce),
-                       "a release keeps the tempo of `settle`")
+        XCTAssertEqual(BottomBarStyle.collapse(afterDrag: false).collapseSpring, spring,
+                       "a tap and a release share one tempo")
+        XCTAssertEqual(spring, Spring(duration: 0.34, bounce: 0), "no bounce")
     }
 
-    /// Giảm chuyển động: không lún, không vận tốc — nhánh phẳng của chính lối
-    /// vào ấy, cho cả hai nửa.
-    func testWithReduceMotionThereIsNoLandingAtAll() {
+    /// Giảm chuyển động: không vận tốc — nhánh phẳng của chính lối vào ấy.
+    func testWithReduceMotionTheCollapseIsTheFlatCurve() {
         let saved = BottomBarStyle.reduceMotion
         defer { BottomBarStyle.reduceMotion = saved }
         BottomBarStyle.reduceMotion = true
 
         let release = BottomBarStyle.collapse(initialVelocity: 9, afterDrag: true)
         XCTAssertEqual(release.geometry, .easeInOut(duration: 0.29))
-        XCTAssertNil(release.collapseSpring, "no landing plan with Reduce Motion")
+        XCTAssertNil(release.collapseSpring)
         let tap = BottomBarStyle.collapse(afterDrag: false)
         XCTAssertEqual(tap.geometry, .easeInOut(duration: 0.26))
         XCTAssertNil(tap.collapseSpring)
@@ -292,17 +368,15 @@ final class CollapseHandoffTests: XCTestCase {
     }
 
     /// Hai mốc của một cú thu sau cú thả tay không vận tốc, tính bằng chính lò
-    /// xo ấy: lúc hình học chạm đích, và lúc cú đáp lắng — thẻ về nghỉ.
-    /// `span`: quãng `progress` cú thu đi. Kéo accessory lên 120pt rồi thả là
-    /// `(120 − 10) / 705` — 705 là quãng kéo của khung dự phòng trên 390×844.
-    private func releaseMilestones(span: Double = 110.0 / 705) throws -> (crossing: Double, rest: Double) {
-        let spring = BottomBarStyle.collapseSpring(afterDrag: true)
-        let geometry = CollapseSpring(spring: spring, initialVelocity: 0)
-        var time = 0.0
-        while geometry.fraction(at: time) != nil { time += 0.001 }
-        let rest = LandingPlan(spring: spring, initialVelocity: 0, span: span, travel: 705).duration
-        XCTAssertGreaterThan(rest - time, 0.1, "the two milestones are too close to tell apart by waiting")
-        return (time, rest)
+    /// xo ấy: lúc thẻ đã gần tới (98% quãng), và lúc hình học kết thúc — thẻ
+    /// trao chỗ. Không phụ thuộc quãng: lò xo đo theo phần quãng đường.
+    private func releaseMilestones() throws -> (near: Double, rest: Double) {
+        let spring = BottomBarStyle.collapseSpring
+        var near = 0.0
+        while spring.value(target: 1.0, initialVelocity: 0, time: near) < 0.98 { near += 0.001 }
+        let rest = CollapseSpring(spring: spring, initialVelocity: 0).settlingTime
+        XCTAssertGreaterThan(rest - near, 0.15, "the two milestones are too close to tell apart by waiting")
+        return (near, rest)
     }
 
     private func waitForRest(_ expansion: PlayerExpansion) {
@@ -313,14 +387,13 @@ final class CollapseHandoffTests: XCTestCase {
     }
 
     /// Kéo accessory lên rồi thả: cú thả rơi về 0, `PlayerCard.handle` gọi
-    /// `morph(to: 0…)`. Suốt lò xo **và** cú nảy, thẻ đang thu và accessory
-    /// vẫn ẩn; chỉ khi cú nảy lắng thẻ mới về nghỉ.
+    /// `morph(to: 0…)`. Suốt cú thu thẻ đang thu và accessory vẫn ẩn; chỉ khi
+    /// hình học kết thúc thẻ mới về nghỉ.
     ///
-    /// Mốc kiểm tra là ngay trước lúc lịch chạm sàn xong (~0,42s với cú thu
-    /// ngắn này) và sau lúc hình học chạm đích (~0,26s), cả hai tính từ lò xo
-    /// chứ không gõ tay. Bản trước về nghỉ theo `completion` của hình học, tức
-    /// đã nghỉ ở mốc này.
-    func testAReleaseThatFallsBackRestsOnlyAfterTheBounce() throws {
+    /// Mốc kiểm tra là **giữa** lúc thẻ đã gần tới (98%, ~0,32s) và lúc hình học
+    /// kết thúc (~0,54s), tính từ lò xo chứ không gõ tay — biên ~0,11s cả hai
+    /// phía.
+    func testAReleaseThatFallsBackRestsOnlyOnceTheCardHasArrived() throws {
         let expansion = try mountRestingCard(reduceMotion: false)
         let milestones = try releaseMilestones()
 
@@ -336,11 +409,8 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertTrue(expansion.cardSurfaceIsGlass)
         XCTAssertFalse(expansion.showsAccessoryContent, "hidden under the translucent card")
 
-        // 40ms trước mốc trao chỗ, và sau mốc hình học chạm đích. Phía an toàn
-        // là phía này: đồng hồ animation đi theo giờ thật và chỉ bắt đầu ở
-        // khung sau cú thả, nên `completion` có thể đến muộn chứ không sớm.
-        RunLoop.main.run(until: released.addingTimeInterval(max(milestones.crossing, milestones.rest - 0.04)))
-        XCTAssertFalse(expansion.isCardResting, "the geometry has arrived but the bounce is still running")
+        RunLoop.main.run(until: released.addingTimeInterval((milestones.near + milestones.rest) / 2))
+        XCTAssertFalse(expansion.isCardResting, "the card is nearly there but has not arrived")
         XCTAssertFalse(expansion.showsAccessoryContent)
 
         waitForRest(expansion)
@@ -351,12 +421,12 @@ final class CollapseHandoffTests: XCTestCase {
 
     // MARK: - Một `completion` cũ không được về nghỉ giữa cú thu mới
 
-    /// Đường (a) của review: thu, rồi giữa cú nảy kéo accessory lên một chút
+    /// Đường (a) của review: thu, rồi giữa cú thu kéo accessory lên một chút
     /// và thả — cú thu thứ hai. `completion` của cú thứ nhất vẫn nổ ở mốc lắng
     /// **của nó**, lúc cú thứ hai còn đang bay.
     ///
-    /// Mốc kiểm tra: giữa lúc lịch của cú thứ nhất xong (`rest₁`) và lúc lịch
-    /// của cú thứ hai xong (`0,35 + rest₂`), cả hai tính từ `LandingPlan`.
+    /// Mốc kiểm tra: giữa lúc cú thứ nhất kết thúc (`rest₁`) và lúc cú thứ hai
+    /// kết thúc (`0,35 + rest₂`), cả hai tính từ lò xo của cú thu.
     ///
     /// Đo được: trên simulator iOS 26 đường này **xanh cả khi tháo chốt** —
     /// `completion` của cú thứ nhất không nổ giữa cú thứ hai ở đây. Đường (b)
@@ -375,7 +445,7 @@ final class CollapseHandoffTests: XCTestCase {
         RunLoop.main.run(until: first.addingTimeInterval(0.35))
         expansion.accessoryDragEnded(predictedTranslationHeight: -70, verticalVelocity: 0)
 
-        let second = try releaseMilestones(span: 60.0 / 705)
+        let second = try releaseMilestones()
         RunLoop.main.run(until: first.addingTimeInterval((milestones.rest + 0.35 + second.rest) / 2))
         XCTAssertFalse(expansion.isCardResting,
                        "the first collapse's completion rested the card in the middle of the second")
@@ -385,11 +455,11 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertTrue(expansion.isCardResting, "and the second collapse still rests the card")
     }
 
-    /// Đường (b) của review: thu, mở lại giữa cú nảy (chạm accessory), rồi thu
+    /// Đường (b) của review: thu, mở lại giữa chừng (chạm accessory), rồi thu
     /// lần nữa bằng một cú kéo xuống. Hai `completion` cũ — của cú thu đầu và
     /// của cú mở — đều nổ trong cú thu thứ hai, và với `settled == 0` lúc ấy,
     /// một phép hỏi trạng thái hiện tại sẽ gật đầu với cả hai.
-    func testReopeningMidBounceAndCollapsingAgainRestsOnlyAtTheEnd() throws {
+    func testReopeningMidCollapseAndCollapsingAgainRestsOnlyAtTheEnd() throws {
         let expansion = try mountRestingCard(reduceMotion: false)
         let milestones = try releaseMilestones()
 
@@ -404,10 +474,11 @@ final class CollapseHandoffTests: XCTestCase {
         expansion.accessoryDragChanged(translationHeight: 700)
         expansion.accessoryDragEnded(predictedTranslationHeight: 800, verticalVelocity: 0)
 
-        // Cú thu đầu xong lịch ở `rest`; cú thu thứ hai — từ `progress`
-        // ~0,021 — bắt đầu ở 0,6s và xong ở 0,6 + lịch của nó. Kiểm ở giữa:
-        // sau `completion` cũ, trước `completion` thật.
-        let second = try releaseMilestones(span: 1 - 690.0 / 705)
+        // Cú thu đầu kết thúc ở `rest`; cú thu thứ hai bắt đầu ở 0,6s và kết
+        // thúc ở 0,6 + `rest` hoặc muộn hơn (sàn phần dư của cú mở bị cắt
+        // ngang kéo dài nó). Kiểm ở giữa: sau `completion` cũ, trước
+        // `completion` thật.
+        let second = try releaseMilestones()
         RunLoop.main.run(until: first.addingTimeInterval((milestones.rest + 0.6 + second.rest) / 2))
         XCTAssertFalse(expansion.isCardResting,
                        "a stale completion rested the card in the middle of the last collapse")

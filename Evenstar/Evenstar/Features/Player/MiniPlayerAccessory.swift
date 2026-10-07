@@ -9,8 +9,8 @@ import SwiftUI
 ///   Nút play/next nằm ngoài vùng ấy, nên bấm nút không bao giờ thành kéo.
 ///
 /// Ẩn đi (opacity 0) khi thẻ rời trạng thái nghỉ: lúc ấy chính thẻ đang vẽ
-/// hàng này, ở đúng chỗ này. Hiện lại khi thẻ về nghỉ — sau cú lún và nảy ở
-/// cuối cú thu, khi hai hàng đã trùng khít — và nằm dưới tấm thẻ đang mờ đi.
+/// hàng này, ở đúng chỗ này. Hiện lại khi thẻ về nghỉ — khi thẻ đã tới đúng
+/// viên kính và hai hàng trùng khít — và nằm dưới tấm thẻ đang mờ đi.
 /// Không sớm hơn: suốt đoạn cuối cú thu thẻ là kính trong suốt, nên một hàng
 /// nằm dưới sẽ hiện xuyên qua. Xem `PlayerExpansion.showsAccessoryContent`.
 struct MiniPlayerAccessory: View {

@@ -430,14 +430,9 @@ enum BottomBarStyle {
 
     // MARK: - Cú thu về accessory
 
-    /// Đường cong của **một** cú morph cho hình học của thẻ, kèm thứ cần để
-    /// dựng những gì đi theo nó: lò xo của cú thu (cho `LandingPlan` — cú phồng
-    /// và cú nảy cuối cú thu — và cho sàn phần dư), hay lò xo của hình học khi
-    /// nó là một lò xo thường (cho một cú thu tới sau).
-    ///
-    /// Vòng sửa 1–4 còn mang một đường thứ hai cho `PlayerCard.landing`, bản sao
-    /// không dừng ở đích của hình học. Vòng sửa 5 thay nó bằng `LandingPlan`
-    /// chạy trên một đồng hồ (`LandingClock`) — xem `PlayerCard.morph(to:curves:)`.
+    /// Đường cong của **một** cú morph cho hình học của thẻ, kèm lò xo của cú
+    /// thu (cho sàn phần dư — `flooring(span:residuals:)`), hay lò xo của hình
+    /// học khi nó là một lò xo thường (cho một cú thu tới sau).
     struct MorphCurves {
         let geometry: Animation
         /// Hình học, viết lại thành một lò xo thả từ đứng yên với vận tốc ban
@@ -446,8 +441,8 @@ enum BottomBarStyle {
         /// `CollapseSpring.Residual`. `nil` cho mọi thứ khác.
         let geometrySpring: Spring?
         let initialVelocity: Double
-        /// Lò xo của cú thu có lún, để `flooring(span:residuals:)` dựng lại hình
-        /// học kèm sàn. `nil` khi đây không phải cú thu ấy.
+        /// Lò xo của cú thu, để `flooring(span:residuals:)` dựng lại hình học
+        /// kèm sàn. `nil` khi đây không phải một cú thu có animation.
         let collapseSpring: Spring?
 
         init(_ geometry: Animation, spring: Spring? = nil, initialVelocity: Double = 0) {
@@ -471,7 +466,7 @@ enum BottomBarStyle {
             collapseSpring = other.collapseSpring
         }
 
-        /// Cú thu có lún, dựng lại hình học để nó không bao giờ đưa thẻ dưới
+        /// Cú thu, dựng lại hình học để nó không bao giờ đưa thẻ dưới
         /// viên kính **dù có những cú morph trước còn đang chạy** — xem
         /// `CollapseSpring.residuals`. Không có phần dư nào (trường hợp thường)
         /// thì trả nguyên si, nên đường đi thường không đổi một bit.
@@ -499,113 +494,50 @@ enum BottomBarStyle {
                                    initialVelocity: initialVelocity)
     }
 
-    /// Thẻ thu về viên kính accessory, **phồng quá chỗ ~10pt rồi nảy lại**, theo
-    /// nhịp Apple Music (video 2026-10-06, từng khung 33ms: chạm đáy ~132ms, lún
-    /// tới ~200ms, nảy về tới ~500ms). Sửa 2026-10-06 sau QA trên máy: bản trước
-    /// đáp khít viên kính rồi đứng chết — người dùng gọi là "cứng". Apple Music
-    /// dời cả viên kính xuống; ta **phồng** thẻ đối xứng — mép trên lên, mép
-    /// dưới xuống, hai bên nở — vì viên kính của hệ thống đứng yên: một tấm thẻ
-    /// dời xuống để lộ nó thành viền thứ hai (QA IMG_2559), một tấm thẻ ghim mép
-    /// trên thì "mép trên không đàn hồi, nhìn như gãy". Xem `CollapseGlass`.
+    /// Thẻ thu về viên kính accessory: **co mềm, không nảy** — dẹt dần và gọn
+    /// vào viên thuốc như cú zoom của iOS, rồi nhường chỗ (spec, chốt
+    /// 2026-10-07). Cú zoom native đẹp nhưng iOS khoá thời gian của nó; các cú
+    /// nảy tự chế đều bị chê hoặc làm lộ viên kính tĩnh của hệ thống.
     ///
     /// ─────────────────────────────────────────────────────────────────────
-    /// VÌ SAO KHÔNG CHỈ LÀ MỘT LÒ XO NẢY HƠN
+    /// VÌ SAO VẪN LÀ MỘT `CollapseSpring`, DÙ KHÔNG NẢY
     /// ─────────────────────────────────────────────────────────────────────
     /// Hình học của thẻ được tính trong `PlayerCard.body` **một lần**, ở đích,
-    /// rồi SwiftUI nội suy khung và padding dọc đường cong. Lò xo vọt qua đích
-    /// thì phép nội suy ấy **ngoại suy**: chiều cao thẻ đi dưới 48 và mép dưới
-    /// nhích **lên** — thẻ bẹp lại tại chỗ chứ không lún xuống. Đúng cái spec cấm.
+    /// rồi SwiftUI nội suy khung và padding dọc đường cong. Vọt qua đích là
+    /// ngoại suy: chiều cao thẻ đi dưới 48 và mép dưới nhích **lên** — thẻ bẹp
+    /// lại và viên kính hệ thống lộ ra. Lò xo `bounce` 0 thả từ đứng yên thì
+    /// không vọt qua; nhưng cú thả tay mang vận tốc, và một lò xo tắt hẳn đủ
+    /// vận tốc vẫn vọt qua một lần. `CollapseSpring` dừng ở lần đầu chạm đích,
+    /// và mang sàn phần dư cho cú thu cắt ngang một cú bung — xem `residuals`.
+    /// (Với `maxSettleVelocity` 18 < ω ≈ 18,5 thì lò xo này không bao giờ chạm
+    /// đích trước khi lắng; chốt ấy vẫn ở đó cho sàn phần dư và cho ai đổi số.)
     ///
-    /// Nên hình học **dừng ở lần đầu chạm đích** (`CollapseSpring`):
-    /// khung thẻ không bao giờ ngoại suy, nên không bao giờ nhỏ hơn viên kính.
-    /// Phần còn lại của lò xo — cú vọt qua — được đọc bằng phép tính, không qua
-    /// nội suy: `LandingPlan` (trong `PlayerCard.swift`) dựng từ chính lò xo ấy
-    /// cú chạm sàn — nén rồi giãn, một dao động — chạy trên một đồng hồ
-    /// (`LandingClock`) bắt đầu cùng lượt với hình học.
-    ///
-    /// Không có thời lượng nào phải đoán: cú nén bắt đầu **đúng** khung hình
-    /// học chạm đích, vì đó là cùng một phép tính `Spring.value` trên cùng
-    /// một đồng hồ. Đà của cú thu đi vào cú nén: ngay trước khi chạm, mép trên
-    /// thẻ đi `dragTravel × dp/dt`; ngay sau, đáy thẻ võng xuống đúng tốc độ ấy.
-    /// Một cú búng mạnh nén hơn — vận tốc ngón tay đi vào cả hai — và
-    /// `squashCap` chặn trần nó.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────
-    /// THỜI LƯỢNG VÀ ĐỘ NẢY
-    /// ─────────────────────────────────────────────────────────────────────
-    /// Thời lượng giữ nguyên nhịp cũ của từng lối vào: chạm là `expand` (0.36),
-    /// thả tay sau khi kéo là `settle` (0.42). Chỉ `bounce` đổi, sang
-    /// `landingBounce` — xem ghi chú ở đó về vì sao 0.25.
+    /// Một nhịp cho cả cú chạm lẫn cú thả tay (`collapseDuration`); cú thả tay
+    /// giữ vận tốc của ngón tay. `afterDrag` chỉ còn chọn nhánh phẳng khi giảm
+    /// chuyển động.
     ///
     /// Reduced: nhánh phẳng của chính lối vào ấy (`expandFlat`/`settleFlat`),
-    /// không vận tốc, không lún — `PlayerCard.morph(to:curves:)` dùng nó cho
-    /// cú hoà mờ và về nghỉ ngay, như trước.
+    /// không vận tốc — `PlayerCard.morph(to:curves:)` dùng nó cho cú hoà mờ và
+    /// về nghỉ ngay, như trước.
     @MainActor
     static func collapse(initialVelocity: Double = 0, afterDrag: Bool) -> MorphCurves {
         if reduceMotion { return MorphCurves(afterDrag ? settleFlat : expandFlat) }
-        return MorphCurves(collapse: collapseSpring(afterDrag: afterDrag), initialVelocity: initialVelocity)
+        return MorphCurves(collapse: collapseSpring, initialVelocity: initialVelocity)
     }
 
-    /// Lò xo của cú thu, trước khi tách đôi. Tách riêng để test dựng lại đúng
-    /// đường cong `collapse(initialVelocity:afterDrag:)` chạy.
-    static func collapseSpring(afterDrag: Bool) -> Spring {
-        Spring(duration: afterDrag ? settleDuration : expandDuration, bounce: landingBounce)
-    }
+    /// Lò xo của cú thu. Tách riêng để test dựng lại đúng đường cong
+    /// `collapse(initialVelocity:afterDrag:)` chạy.
+    static let collapseSpring = Spring(duration: collapseDuration, bounce: 0)
 
-    /// Độ nảy của lò xo thu. **Từ vòng sửa 6 nó chỉ còn quyết thẻ chạm sàn
-    /// mạnh cỡ nào**: hình học dừng ở đích, nên cú vọt qua của lò xo không bao
-    /// giờ hiện ra; thứ duy nhất của nó còn tới mắt là **vận tốc lúc chạm**, thứ
-    /// nạp cho cú nén (`LandingPlan`). Đo bằng `Spring.velocity` lúc chạm, mép
-    /// trên thẻ trên iPhone 12:
-    ///
-    ///     bounce   thu thường ngày (0,9; 1900pt/s)   chạm (trọn quãng)
-    ///     0.22     453pt/s, chạm ở 248ms              572pt/s, 226ms
-    ///     0.25     630pt/s, 229ms                     796pt/s, 210ms
-    ///
-    /// 0.22 (hạ lại từ 0.25 của vòng 4–5): với nửa chu kỳ nén 0,08s, 453pt/s
-    /// cho cú nén ~5,9pt — giữa khoảng 5–7pt của phán quyết, và còn chỗ dưới
-    /// trần cho cú búng mạnh hơn. 0.25 đã cho ~7,7pt ngay với cú thường ngày.
-    static let landingBounce: Double = 0.22
+    /// 0,34s, `bounce` 0 — tắt hẳn: tới gần (98%) ở ~0,31s, tới đích trong 1pt
+    /// ở ~0,49s, lắng (0,05% quãng — xem `CollapseSpring.settleEpsilon`) ở
+    /// ~0,54s, tức lúc thẻ trao chỗ. Cộng cú mờ 0,15s là ~0,69s từ lúc chạm tới
+    /// lúc accessory thế chỗ hẳn — trong mức ~0,7s của phán quyết. Hình dáng cú
+    /// zoom của iOS, nhanh hơn nó: cú zoom native thu mất ~1,2s.
+    /// `CollapseHandoffTests` tính lại các mốc này bằng chính `Spring`.
+    static let collapseDuration: Double = 0.34
 
-    // MARK: Nén & giãn (vòng sửa 6) — xem `LandingPlan` trong `PlayerCard.swift`
-
-    /// Nửa chu kỳ của dao động chạm sàn: cú nén kéo dài chừng ấy, cú giãn cũng
-    /// chừng ấy — một dao động tắt dần, hai nửa bằng nhau. 0,08s: đủ dài để mắt
-    /// đọc ra hai nhịp riêng (nén rồi bật), đủ ngắn để cả cú nảy — ~0,16s sau
-    /// lúc chạm — không đọc ra như một vật mềm nhũn.
-    static let squashHalfCycle: Double = 0.08
-
-    /// Hệ số tắt dần ζ của dao động ấy. Mỗi nửa chu kỳ nhỏ đi một tỉ lệ
-    /// `r = e^(−πζ/√(1−ζ²))` — 0,205 ở 0.45. Đúng **một** cú nảy thấy được:
-    /// nửa chu kỳ thứ ba (một cú nén nữa) là `r²` ≈ 4% cú nén đầu, dưới 0,4pt
-    /// kể cả ở trần (`squashCap` 9pt). ζ thấp hơn thì nhịp thứ ba lộ ra; cao
-    /// hơn thì cú giãn phải khuếch đại nhiều hơn nữa (`stretchToSquash / r`).
-    static let squashDamping: Double = 0.45
-
-    /// Cú giãn cao bằng 0,9 cú nén. Trong dao động, nửa chu kỳ thứ hai chỉ còn
-    /// `r` ≈ 0,2 nửa đầu — một vật mềm thật thì bật lên mạnh hơn thế, vì cú nén
-    /// không chỉ là dao động mà là năng lượng dồn lại. Nên nửa âm của **cùng một
-    /// đường cong** được nhân `stretchToSquash / r` khi đổi ra mép trên. Không
-    /// có đường cong thứ hai, không có chỗ nối: hai nửa gặp nhau ở 0.
-    static let stretchToSquash: CGFloat = 0.9
-
-    /// Cú nén theo đúng vận tốc chạm tới `squashKnee`, rồi mềm dần về trần
-    /// `squashCap`: cú thu thường ngày liền mạch vận tốc, cú búng mạnh nhất
-    /// không nén quá ~9pt — và vì cả dao động được thu theo, nửa chu kỳ thứ ba
-    /// vẫn dưới 0,4pt.
-    static let squashKnee: CGFloat = 6
-    static let squashCap: CGFloat = 9
-
-    /// Trong lúc nén, hai bên nở 0,3 phần đáy võng: ~1,8pt mỗi bên ở cú nén
-    /// thường ngày — một khối bị ép xuống thì phình ra. Lúc giãn hai bên về
-    /// đúng bề ngang viên kính, không bao giờ vào trong.
-    static let squashSideRatio: CGFloat = 0.3
-
-    /// Dao động coi như xong — thẻ trao chỗ — khi phần còn lại vẽ ra dưới chừng
-    /// này ở mọi mép.
-    static let squashSettle: CGFloat = 0.1
-
-    /// Thẻ trao chỗ cho accessory, **sau** cú nảy: thẻ mờ đi trong khi hàng mini
+    /// Thẻ trao chỗ cho accessory, **sau** khi đã tới đích: thẻ mờ đi trong khi hàng mini
     /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
     /// `PlayerCard.morph(to:curves:)`.
     ///
@@ -1060,10 +992,10 @@ struct CollapseSpring: CustomAnimation {
     /// bước — tức từ đó trở đi nó nằm yên trong biên.
     ///
     /// Không dùng thẳng `Spring.settlingDuration(target:initialVelocity:epsilon:)`:
-    /// đo ra nó dè dặt hơn hẳn đường cong — 0,87s cho lò xo thả tay, trong khi
-    /// lần cuối đường cong còn lệch 0,05% là quanh 0,6s. Thẻ về nghỉ ở mốc ấy,
-    /// nên một phần ba giây dư là một phần ba giây thẻ đã đứng yên mà chưa trao
-    /// chỗ. Dùng nó làm cận trên rồi dò ngược từng mili giây bằng chính
+    /// đo ra nó dè dặt hơn hẳn đường cong — 0,87s cho một lò xo thả tay từng
+    /// dùng ở đây, trong khi lần cuối đường cong còn lệch 0,05% là quanh 0,6s.
+    /// Thẻ trao chỗ ở mốc ấy, nên phần dư là thời gian thẻ đã đứng yên mà chưa
+    /// trao chỗ. Dùng nó làm cận trên rồi dò ngược từng mili giây bằng chính
     /// `Spring.value` — vài trăm phép tính, một lần mỗi cú thu.
     fileprivate static func lastExcursion(of spring: Spring, initialVelocity: Double,
                                           epsilon: Double = settleEpsilon) -> TimeInterval {
@@ -1106,27 +1038,8 @@ struct CollapseSpring: CustomAnimation {
     }
 
     /// Lắng là khi phần còn lệch dưới 0,05% quãng đường: trên trọn quãng
-    /// ~710pt của iPhone 12 là ~0,35pt — dưới một điểm ảnh @2x. Đây là lúc cú
-    /// đáp coi như xong và thẻ trao chỗ cho accessory; lệch to hơn thì cú trao
-    /// tay lộ ra thành một cú nhích.
+    /// ~710pt của iPhone 12 là ~0,35pt — dưới một điểm ảnh @2x. Đây là lúc hình
+    /// học của cú thu kết thúc và thẻ trao chỗ cho accessory; lệch to hơn thì cú
+    /// trao tay lộ ra thành một cú nhích.
     static let settleEpsilon: Double = 0.0005
-
-}
-
-/// Một đồng hồ: đi đều từ 0 tới 1 trong đúng `duration` giây rồi dừng.
-///
-/// Cú phồng và cú nảy cuối cú thu không phải một giá trị nội suy giữa hai đầu
-/// mà một **lịch** — `LandingPlan` — đọc theo thời gian. Thứ duy nhất SwiftUI
-/// cần nội suy là thời gian ấy: `PlayerCard.landingClock` chạy trên đồng hồ
-/// này, bắt đầu cùng lượt với hình học, và mỗi khung các modifier đọc
-/// `clock × duration` rồi hỏi lịch. `completion` của nó — `logicallyComplete`
-/// là lúc nó trả `nil` — là lúc lịch xong, tức lúc thẻ trao chỗ.
-struct LandingClock: CustomAnimation {
-    let duration: TimeInterval
-
-    func animate<V: VectorArithmetic>(value: V, time: TimeInterval,
-                                      context: inout AnimationContext<V>) -> V? {
-        guard time < duration, duration > 0 else { return nil }
-        return value.scaled(by: time / duration)
-    }
 }

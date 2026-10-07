@@ -95,13 +95,12 @@ final class PlayerExpansion {
     private(set) var isCardResting = true
 
     /// Một cú thu đã được quyết (`PlayerCard.morph(to: 0…)`) và thẻ chưa về
-    /// nghỉ — tức đang ở giữa lò xo, trong cú lún và nảy ở cuối, hoặc trong cú
-    /// mờ trao tay.
+    /// nghỉ — tức đang ở giữa lò xo, hoặc trong cú mờ trao tay.
     ///
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO KHÔNG CHỈ DỰA VÀO `isCardResting`
     /// ─────────────────────────────────────────────────────────────────────
-    /// `isCardResting` chỉ lật khi cú thu đã **xong hẳn** — sau cú nảy (xem
+    /// `isCardResting` chỉ lật khi cú thu đã **xong hẳn** — thẻ đã tới đích (xem
     /// `PlayerCard.morph(to:curves:)`). Trong khi ấy thẻ phải biết mình đang
     /// thu hay đang mở: chỉ khi thu, mặt thẻ mới chuyển sang kính ở đoạn cuối
     /// (`cardSurfaceIsGlass`). Chiều mở và lúc kéo thì thẻ đặc từ khung đầu.
@@ -113,7 +112,7 @@ final class PlayerExpansion {
     /// accessory tới ~40pt — nên một hàng nằm dưới sẽ **hiện xuyên qua** thành
     /// hai dòng chữ lệch nhau. Xem `showsAccessoryContent`.
     ///
-    /// Lật bên trong `withAnimation` của cú thu, nên lớp kính (`CollapseGlass`)
+    /// Lật bên trong `withAnimation` của cú thu, nên lớp kính (`CardSurface`)
     /// đi theo đường cong của hình học thay vì bật một bậc — chuyện này chỉ lộ
     /// khi thả tay lúc thẻ đã gần bằng viên kính.
     private(set) var isCollapsing = false
@@ -124,8 +123,8 @@ final class PlayerExpansion {
     /// lệch khỏi viên kính cho tới khi hình học tới đích — nên hàng của
     /// accessory phải vắng mặt, không thì nó hiện xuyên qua thẻ. Kể cả khi đã
     /// trùng chỗ: chữ của hai hàng chồng nhau qua một lớp kính không đọc ra là
-    /// một hàng. Nó hiện lại đúng lúc thẻ về nghỉ:
-    /// cú nảy đã xong, hai hàng trùng khít, và thẻ mờ đi phía trên nó
+    /// một hàng. Nó hiện lại đúng lúc thẻ về nghỉ: thẻ đã tới đích, hai hàng
+    /// trùng khít, và thẻ mờ đi phía trên nó
     /// (`BottomBarStyle.collapseHandoff`).
     var showsAccessoryContent: Bool { isCardResting }
 
@@ -167,9 +166,9 @@ final class PlayerExpansion {
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO CẦN — MỘT `completion` CŨ KHÔNG BIẾT MÌNH ĐÃ CŨ
     /// ─────────────────────────────────────────────────────────────────────
-    /// Thẻ về nghỉ trong `completion` của cú đáp, ~0,7s sau khi thả. Animation
-    /// của SwiftUI cộng dồn chứ không huỷ, nên một cú thu bị cắt ngang — kéo
-    /// accessory giữa cú nảy rồi thả, hay mở lại rồi thu lần nữa — vẫn chạy
+    /// Thẻ về nghỉ trong `completion` của hình học cú thu, ~0,5s sau khi thả.
+    /// Animation của SwiftUI cộng dồn chứ không huỷ, nên một cú thu bị cắt
+    /// ngang — kéo accessory giữa chừng rồi thả, hay mở lại rồi thu lần nữa — vẫn chạy
     /// tới cuối và vẫn gọi `completion` **của nó**, giữa cú thu mới. Hỏi trạng
     /// thái hiện tại (`settled == 0`, không ai đang kéo) thì câu trả lời là
     /// "đúng, đang thu về 0" — của cú khác. Thẻ về nghỉ sớm: mờ đi khi còn
