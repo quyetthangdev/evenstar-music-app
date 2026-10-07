@@ -39,7 +39,7 @@ import SwiftUI
 ///     Màu ấy chỉ có thể tới từ nền phía sau. (Sọc không còn thấy từng vạch:
 ///     đo được, lớp kính cỡ thẻ nhoè hẳn 4pt.)
 @MainActor
-final class CollapseLandingFrameTests: XCTestCase {
+final class CollapseFrameTests: XCTestCase {
 
     private var window: UIWindow?
     private var savedReduceMotion = false
@@ -282,16 +282,16 @@ final class CollapseLandingFrameTests: XCTestCase {
                                                        travel: PlayerAnchor.dragTravel(for: rig.rest),
                                                        from: start, to: 0)
         )
-        print("[landing] snapshot shift \(rig.shift)pt, rest rows \(restTop)–\(restBottom), column \(rig.column),"
+        print("[frames] snapshot shift \(rig.shift)pt, rest rows \(restTop)–\(restBottom), column \(rig.column),"
               + " handoff at \(String(format: "%.0f", geometry.settlingTime * 1000))ms, \(frames.count) frames")
         for sample in frames {
             let tint = surfaceTint(sample).map { String(format: "%5.1f", $0) } ?? "    —"
             if let cover = sample.cover {
                 let across = sample.across.map { "left=\($0.lowerBound) right=\($0.upperBound)" } ?? "left/right —"
-                print(String(format: "[landing] t=%6.1fms top=%4d bottom=%4d height=%3d tint=%@ ",
+                print(String(format: "[frames] t=%6.1fms top=%4d bottom=%4d height=%3d tint=%@ ",
                              sample.ms, cover.lowerBound, cover.upperBound, cover.count, tint) + across)
             } else {
-                print(String(format: "[landing] t=%6.1fms no card at the capsule", sample.ms))
+                print(String(format: "[frames] t=%6.1fms no card at the capsule", sample.ms))
             }
         }
 
@@ -336,7 +336,7 @@ final class CollapseLandingFrameTests: XCTestCase {
         XCTAssertEqual(settled.cover.upperBound, restBottom, accuracy: 1, "settled bottom")
         XCTAssertEqual(settledAcross.lowerBound, restLeft, accuracy: 1, "settled left")
         XCTAssertEqual(settledAcross.upperBound, restRight, accuracy: 1, "settled right")
-        print("[landing] arrived (within 4pt) at \(String(format: "%.0f", landed.first?.ms ?? 0))ms,"
+        print("[frames] arrived (within 4pt) at \(String(format: "%.0f", landed.first?.ms ?? 0))ms,"
               + " handoff fade from \(fading < frames.count ? String(format: "%.0f", frames[fading].ms) : "—")ms")
 
         // 4. Kính ở cuối: màu của nền lọt qua mặt thẻ — mọi khung đã gần viên kính.

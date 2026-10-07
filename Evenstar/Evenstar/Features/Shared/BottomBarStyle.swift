@@ -552,7 +552,7 @@ enum BottomBarStyle {
     ///      hàng chồng nhau.
     ///
     /// Vì sao không còn là một cú mờ cả thẻ (vòng sửa 8, "chớp ở cuối cú thu"),
-    /// đo từng khung ở `CollapseLandingFrameTests`:
+    /// đo từng khung ở `CollapseFrameTests`:
     ///
     ///   - **Lớp kính nằm giữa hai hàng.** Cả thẻ mờ đi trên hàng accessory đã
     ///     hiện sẵn, nên suốt cú mờ chữ và nút của accessory nhạt đi sau tấm

@@ -1426,7 +1426,7 @@ struct PlayerCard: View {
     /// cú zoom của iOS: hàng của viên thuốc chỉ hiện ra khi thẻ đã gần thành
     /// viên thuốc, không phải từ đầu cú thu. Với `BottomBarStyle.collapseSpring`
     /// cú chạm đi qua quãng ấy ở ~0,18s → ~0,32s, chồng lên cú hoà sang kính
-    /// (2,5× → 1,25×, ~0,23s → ~0,34s) — hai thứ cùng kể một chuyện: thẻ đang
+    /// (2× → 1,25×, ~0,24s → ~0,33s) — hai thứ cùng kể một chuyện: thẻ đang
     /// thành viên thuốc.
     static let miniRowFadeStart: Double = 0.15
     static let miniRowFadeEnd: Double = 0.02
@@ -2949,12 +2949,10 @@ struct PlayerCard: View {
     ///     không nảy), cú chạm đi từ 2× tới 1,25× trong ~90ms (0,24s → 0,33s,
     ///     tính bằng lò xo trên iPhone 12) — năm khung ở 60Hz — rồi còn ~150ms
     ///     tiến nốt vào viên kính dưới dạng kính. Lò xo không nảy chậm dần rất
-    ///     lâu ở cuối, nên cửa sổ này tự rộng; vòng sửa 6 phải nới nó lên 2,5×
-    ///     chỉ vì lò xo nảy khi ấy lao vào đích nhanh.
+    ///     lâu ở cuối, nên cửa sổ này tự rộng.
     ///   - **Không sớm hơn.** Kể từ lúc này viên kính của hệ thống — luôn nằm
     ///     đó, nội dung đã ẩn — hiện xuyên qua thẻ, lệch khỏi hàng mini của thẻ
-    ///     đúng `progress × dragTravel` (thẻ cao 2× → ~42pt, 1,25× → ~11pt). Ở
-    ///     2,5× là ~64pt và thêm ~27ms — không cần nữa.
+    ///     đúng `progress × dragTravel` (thẻ cao 2× → ~42pt, 1,25× → ~11pt).
     static let collapseGlassStartRatio: Double = 2
     static let collapseGlassEndRatio: Double = 1.25
 

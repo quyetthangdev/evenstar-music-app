@@ -14,8 +14,7 @@ import SwiftUI
 /// kính, lò xo hình học của cú thu (hỏi thẳng `CollapseSpring` bằng
 /// `Spring.value`, không chạy animation), sàn phần dư, các cờ của
 /// `PlayerExpansion`, và việc thẻ thật nối chúng lại đúng — kể cả chốt cú
-/// morph. Cú chạm sàn **vẽ ra** thật được đo từng khung ở
-/// `CollapseLandingFrameTests`.
+/// morph. Cú thu **vẽ ra** thật được đo từng khung ở `CollapseFrameTests`.
 @MainActor
 final class CollapseHandoffTests: XCTestCase {
 
@@ -196,7 +195,7 @@ final class CollapseHandoffTests: XCTestCase {
 
         // Với lò xo thu không nảy (0,34s), cú thu bắt ngay sau cú mở vẫn chạy
         // nhanh hơn phần dư của cú mở một quãng: đo được ~−0,007, tức thẻ thấp
-        // hơn viên kính ~5pt trên 796pt. Nhỏ hơn thời lò xo có nảy, nhưng là thật.
+        // hơn viên kính ~5pt trên 796pt. Nhỏ, nhưng là thật.
         let lowest = lowestDrawn(afterDrag: false, interruptAt: 0, floored: false)
         XCTAssertLessThan(lowest, -0.005, "the unfloored tap collapse right after a tap open only reached \(lowest)")
     }
