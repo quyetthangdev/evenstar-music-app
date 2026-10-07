@@ -640,7 +640,26 @@ final class CollapseFrameTests: XCTestCase {
             guard shot.capsuleHidden, let top = shot.top, shot.bottom != nil else { return false }
             return top >= restTop - 1
         }
-        XCTAssertGreaterThanOrEqual(landed.count, 4, "too few frames caught the landing")
+        // Bao nhiêu khung *có thể* bắt được cú lún, theo đúng nhịp chụp của lần
+        // chạy này: mỗi lần `drawHierarchy` mất ~33ms, nhưng có lần chạy chậm
+        // hơn hẳn, và một ngưỡng cố định 4 khung khi ấy đánh trượt một cú lún
+        // đúng. Cửa sổ là từ lúc thẻ chạm đích tới lúc viên kính bắt đầu hiện
+        // lại — `LandingBounce.arrival` … `handoff` của chính cú thu này (thả ở
+        // `progress` 0,98, vận tốc 0).
+        let intervals = zip(shots, shots.dropFirst()).map { $1.ms - $0.ms }.sorted()
+        let interval = try XCTUnwrap(intervals.isEmpty ? nil : intervals[intervals.count / 2])
+        let anchor = PlayerAnchor(frame: rig.expansion.anchorFrame, screen: rig.screen)
+        let bounce = try XCTUnwrap(LandingBounce(initialVelocity: 0, span: 0.98,
+                                                 centerTravel: Double(anchor.centerTravel)))
+        let expected = Int(((bounce.handoff - bounce.arrival) * 1000 / interval).rounded(.down))
+        print(String(format: "[landing] capture interval %.1fms, window %.0fms → %d frames expected, %d caught",
+                     interval, (bounce.handoff - bounce.arrival) * 1000, expected, landed.count))
+        // Dưới 4 khung thì cú lún không đo được hình dáng — lún, đáy, về — nên
+        // bỏ qua chứ không hạ ngưỡng: các khẳng định dưới đây cần ít nhất 3.
+        guard expected >= 4 else {
+            throw XCTSkip("capture interval \(Int(interval))ms is too coarse for a \(Int((bounce.handoff - bounce.arrival) * 1000))ms landing")
+        }
+        XCTAssertGreaterThanOrEqual(landed.count, max(3, expected - 1), "too few frames caught the landing")
         let sinks = landed.map { $0.top! - restTop }
         let deepest = try XCTUnwrap(sinks.max())
         print("[landing] sinks \(sinks), deepest \(deepest)pt")

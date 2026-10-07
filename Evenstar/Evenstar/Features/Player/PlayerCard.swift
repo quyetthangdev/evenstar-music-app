@@ -495,21 +495,21 @@ struct PlayerCard: View {
     ///   1. the title block — two reserved `.title2` lines + a `.subheadline`,
     ///      measured at 81pt
     ///   2. `ScrubberBar`, ~53pt with its time labels
-    ///   3. the transport row, ~82pt — **not** the 44pt glyph frame plus its
-    ///      8pt top padding. The play button is `.font(.system(size: 64))` and
-    ///      draws ~74pt tall, which is what actually sizes the `HStack`. Sizing
-    ///      this row from `transportGlyphFrame` under-counts it by 30pt.
-    ///   4. the repeat row — 32pt frame + `.padding(.top, 4)` = 36pt
-    ///   5. `SystemVolumeSlider`, 44pt
+    ///   3. the transport row — three `.glass` circle buttons. The play button
+    ///      sizes it: a 42pt glyph in a `42 × 1.4` = 58.8pt label frame, plus
+    ///      the glass style's own padding around the label, plus the row's
+    ///      8pt top padding. **Not** the 44pt `transportGlyphFrame` of the two
+    ///      arrows beside it. (The hand-drawn version this paragraph used to
+    ///      describe — a bare 64pt glyph, ~82pt row — is gone.)
+    ///   4. `SystemVolumeSlider`, `ScrubberBar.touchHeight` (28)
+    ///   5. `queueToggleRow`, a 44pt frame inside `.glass` padding
     ///
-    /// The five elements are the title block (81), scrubber (53), transport
-    /// row (82), volume row (28) and repeat row (40, being a 36pt frame plus
-    /// 4pt of top padding). With four 24pt gaps that is **~380pt**.
-    ///
-    /// The transport row is 82 and not the 44 of `transportGlyphFrame`: the
-    /// play button is `.font(.system(size: 64))` with no frame of its own, so
-    /// it, not its neighbours, sizes that `HStack`. The heights here were
-    /// measured off a screenshot of the real expanded player, not estimated.
+    /// The per-element figures drifted every time a row was restyled, so the
+    /// number that is kept now is the **whole stack, measured**:
+    /// `PlayerCardSmallScreenTests` lays out the real `NowPlayingContent` at a
+    /// 4.7" screen's width (375 − 48) and asks its height — **389.7pt** at the
+    /// default text size and **398.7pt** one step up (`.xLarge`), against the
+    /// 400pt region (2026-10-07, iOS 26 simulator).
     ///
     /// Its history is a list of the same mistake. It was raised from 350 when
     /// the volume slider was added, but only by the slider's own 44pt — the
@@ -535,20 +535,14 @@ struct PlayerCard: View {
     /// `440 - 40 = 400pt`. It is now that 400pt directly and unconditionally:
     /// `contentOffset(fullSize:)` measures up from the card's bottom, so the
     /// region is the same on every device and no longer depends on the artwork
-    /// at all. Against the ~380pt stack this was last measured for that left
-    /// ~20pt; the fifth element is `queueToggleRow` now, not the repeat pill
-    /// row (see `jamendoCredit`'s comment on `NowPlayingContent`) — a plain
-    /// 44pt frame where the pill row's 36pt frame plus 4pt of top padding
-    /// contributed 40, four points taller — so the real stack is ~384pt and
-    /// the real slack is **~16pt**, not 20. `contentBudget` was correctly not
-    /// raised for that four-point difference (still comfortably inside the
-    /// existing floor), but do not read either number as headroom:
-    /// `NowPlayingContent` has no `.dynamicTypeSize` cap, so one step up in
-    /// accessibility text grows the two `.title2` lines and the
-    /// `.subheadline` beneath them by more than 16pt and clips the bottom
-    /// again on a 4.7" screen. The durable fix is to measure the stack
-    /// instead of allowing for it; until then this constant is a floor, not a
-    /// margin. At 380
+    /// at all. Against the measured stack above that leaves **~10pt** at the
+    /// default text size and **~1pt** one step up — the queue row then sits
+    /// flush on the bottom edge of a 4.7" screen. Do not read either number
+    /// as headroom: `NowPlayingContent` has no `.dynamicTypeSize` cap, so two
+    /// steps up clips the bottom again on a 4.7" screen, and any row that
+    /// grows by a few points does the same one step up.
+    /// `PlayerCardSmallScreenTests` goes red when that happens; this constant
+    /// is a floor, not a margin. At 380
     /// the region was 340pt, 52pt short, and the whole volume slider sat below
     /// the card's bottom edge where it could not be dragged.
     ///
@@ -649,8 +643,13 @@ struct PlayerCard: View {
     /// value, which is what keeps a short screen reserving its full region
     /// rather than being pushed down and clipped.
     private static func contentOffset(fullSize: CGSize) -> CGFloat {
-        fullSize.height - (Self.contentBudget - Self.contentInset)
+        fullSize.height - Self.contentRegionHeight
     }
+
+    /// Chiều cao vùng dành cho `NowPlayingContent`, đo từ đáy thẻ lên — 400pt.
+    /// Nội bộ chứ không `private` để `PlayerCardSmallScreenTests` so được
+    /// chồng nội dung đo thật với nó.
+    static var contentRegionHeight: CGFloat { Self.contentBudget - Self.contentInset }
 
     /// How far the queue list may grow past `contentOffset`, into the space
     /// `NowPlayingContent`'s title block reserves but leaves invisible in
