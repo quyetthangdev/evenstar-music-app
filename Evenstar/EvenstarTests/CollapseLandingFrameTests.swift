@@ -257,9 +257,9 @@ final class CollapseLandingFrameTests: XCTestCase {
     /// Những khung từ lúc hình học tới đích tới lúc thẻ bắt đầu mờ đi trao chỗ —
     /// dùng **cùng** một cách lọc cho cả hai cuộn phim.
     ///
-    /// Tới đích là khung đầu tiên thẻ chỉ còn cao bằng viên kính (cộng 4pt cho
-    /// viền kính và hàng pha trộn); từ đó mọi khung đều tính, kể cả đỉnh cú
-    /// phồng cao ~61pt — lọc theo chiều cao thì chính các khung đỉnh rơi mất.
+    /// Tới đích là khung đầu tiên thẻ đã vào vùng phồng (xem dưới); từ đó mọi
+    /// khung đều tính, kể cả đỉnh cú phồng cao ~63pt — lọc từng khung theo
+    /// chiều cao thì chính các khung đỉnh rơi mất.
     /// Mờ đi là khung đầu tiên màu sọc lọt qua đậm hơn hẳn ~35–45 của kính:
     /// từ đó thẻ nửa trong suốt và không còn mép nào để đo. Đọc mốc từ ảnh chứ
     /// không từ `settlingTime`: đồng hồ của animation bắt đầu ở lượt cập nhật
@@ -269,7 +269,12 @@ final class CollapseLandingFrameTests: XCTestCase {
             ?? frames.endIndex
         let measured: [Landed] = frames[..<fading]
             .compactMap { s in s.landedCover.map { (ms: s.ms, cover: $0, column: s.column, across: s.across) } }
-        guard let arrival = measured.firstIndex(where: { $0.cover.count <= Int(rest.height) + 4 }) else { return [] }
+        // Vòng sửa 5: cú phồng lớn lên ngay khi chạm và giữ suốt các nhịp nảy,
+        // nên có cuộn phim không còn khung nào cao đúng bằng viên kính trước
+        // lúc xẹp — mốc "tới đích" là thẻ đã vào vùng phồng: cao không quá
+        // viên kính + trần phồng (`landingCap`) + 4pt.
+        let landingZone = Int(rest.height + PlayerCard.landingCap) + 4
+        guard let arrival = measured.firstIndex(where: { $0.cover.count <= landingZone }) else { return [] }
         return Array(measured[arrival...])
     }
 
@@ -277,8 +282,12 @@ final class CollapseLandingFrameTests: XCTestCase {
     /// cú phồng ở đỉnh, chưa nhấc) tới khung mép trên cao nhất trong ~0,22s sau
     /// đó (đỉnh nhịp 0,18s). Trả mép trên và mép dưới đi lên bao nhiêu điểm.
     private func firstBounce(_ run: [Landed]) -> (top: Int, bottom: Int)? {
+        // "Sâu nhất" trong 1pt: lúc rời sàn và mỗi lần chạm lại, đáy ở cùng một
+        // chỗ (cú phồng giữ nguyên), và chỉ lần đầu là lúc rời sàn. Lấy đúng
+        // giá trị lớn nhất thì một hàng pha trộn ở một lần chạm sau có thể
+        // thắng, và cửa sổ nhịp đầu rơi vào cuối cuộn phim.
         guard let deepest = run.map(\.cover.upperBound).max(),
-              let launch = run.firstIndex(where: { $0.cover.upperBound == deepest }) else { return nil }
+              let launch = run.firstIndex(where: { $0.cover.upperBound >= deepest - 1 }) else { return nil }
         let window = run[launch...].filter { $0.ms <= run[launch].ms + 220 }
         guard let apex = window.min(by: { $0.cover.lowerBound < $1.cover.lowerBound }) else { return nil }
         return (run[launch].cover.lowerBound - apex.cover.lowerBound,
