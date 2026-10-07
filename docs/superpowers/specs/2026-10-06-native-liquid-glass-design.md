@@ -151,6 +151,14 @@ pill" không còn đúng.
     cố định thời gian (mở ~1 s mới xong, thu ~1,2 s, vuốt sớm bị giữ lại), đo
     trên iPhone 12 / iOS 27; không chỉnh được. Các cú nảy tự chế (lún, phồng,
     nảy vật rơi, nén–giãn) đều bị chê hoặc lộ viên kính tĩnh của hệ thống.
+  - **Bổ sung 2026-10-07 (theo video Apple Music đo từng khung):** khi tới nơi,
+    cả viên lún **cứng** xuống quá chỗ ~8pt rồi về, một nhịp, kích thước giữ
+    nguyên (lò xo vị trí hơi nảy; tới nơi ~300ms, đáy ~350ms, yên ~530ms). Để
+    không lộ viên kính tĩnh, **ẩn tạm view chứa viên kính của hệ thống** (tìm
+    bằng hình học: tổ tiên cao nhất của một neo trong hàng accessory còn đúng
+    khung hàng — không tên lớp, không API riêng) trong lúc thẻ hạ cánh, hiện lại
+    đúng lúc nhường chỗ — như zoom transition của iOS tự ẩn nguồn của nó. Không
+    tìm thấy view ấy → bỏ cú nảy, giữ cú co mềm. Kiểm lại mỗi bản iOS lớn.
 - **Đóng tìm kiếm không còn tự quay về tab trước đó.** Search là một tab thường
   của hệ thống, như Apple Music.
 - **Lệnh của nút transport chạy lúc nhấc tay** thay vì lúc chạm xuống (hệ quả của
