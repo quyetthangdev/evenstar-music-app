@@ -91,6 +91,13 @@ final class PlayerExpansion {
     /// trong thẻ đọc nó để ẩn ⏭ giống hệt accessory ở khung đầu.
     private(set) var anchorIsInline = false
 
+    /// Cỡ biểu tượng và cỡ chữ mà hệ thống đặt cho nội dung accessory, đo được
+    /// mới nhất. Không quan sát, cùng lẽ với `accessoryFrame`.
+    @ObservationIgnored private(set) var accessoryTextStyle = AccessoryTextStyle.systemDefault
+    /// …và bản chụp lúc thẻ rời nghỉ. Hàng mini của thẻ vẽ theo nó, để trùng
+    /// khít hàng của accessory — xem `AccessoryTextStyle`.
+    private(set) var anchorTextStyle = AccessoryTextStyle.systemDefault
+
     /// Thẻ đang nằm yên ở 0 và vô hình, còn accessory đang hiện nội dung của nó.
     private(set) var isCardResting = true
 
@@ -123,18 +130,25 @@ final class PlayerExpansion {
     /// lệch khỏi viên kính cho tới khi hình học tới đích — nên hàng của
     /// accessory phải vắng mặt, không thì nó hiện xuyên qua thẻ. Kể cả khi đã
     /// trùng chỗ: chữ của hai hàng chồng nhau qua một lớp kính không đọc ra là
-    /// một hàng. Nó hiện lại đúng lúc thẻ về nghỉ: thẻ đã tới đích, hai hàng
-    /// trùng khít, và thẻ mờ đi phía trên nó
-    /// (`BottomBarStyle.collapseHandoff`).
+    /// một hàng. Nó hiện lại đúng lúc thẻ về nghỉ — bước hai của cú trao tay
+    /// (`BottomBarStyle.collapseHandoff`): thẻ đã tới đích, mặt kính của thẻ đã
+    /// tan, và hàng y hệt của thẻ biến mất trong cùng lượt ấy.
     var showsAccessoryContent: Bool { isCardResting }
+
+    /// Bước một của cú trao tay đã chạy: **mặt** thẻ đã nhường cho viên kính của
+    /// hệ thống, chỉ còn hàng mini của thẻ — xem
+    /// `BottomBarStyle.collapseHandoff`. Giữ nguyên lúc nghỉ (thẻ vô hình
+    /// thì nó không vẽ ra gì), và tắt ngay khi rời nghỉ, ngoài mọi animation:
+    /// thẻ mở ra đặc từ khung đầu như trước.
+    private(set) var cardSurfaceHandedOver = false
 
     /// Mặt thẻ có được phép là kính không — xem `CardSurface` trong
     /// `PlayerCard.swift`. Đúng khi thẻ đang thu, và cả lúc nghỉ.
     ///
-    /// Lúc nghỉ vì cú mờ trao tay: `arriveAtRest()` hạ `isCollapsing` trong
-    /// cùng lượt nó dựng `isCardResting`, ngay lúc thẻ bắt đầu mờ. Chỉ dựa vào
-    /// `isCollapsing` thì mặt thẻ quay về đặc **giữa** cú mờ — một mảng xám
-    /// hiện lên trên viên kính rồi tan. Thẻ nghỉ thì vô hình, nên kính ở đó
+    /// Lúc nghỉ vì cú trao tay: `arriveAtRest()` hạ `isCollapsing` trong cùng
+    /// lượt nó dựng `isCardResting`, ở bước hai của cú trao tay. Mặt thẻ khi ấy
+    /// đã tan (`cardSurfaceHandedOver`), nhưng giữ nó là kính thì bước hai
+    /// không có gì phải đổi ở mặt thẻ cả. Thẻ nghỉ thì vô hình, nên kính ở đó
     /// không vẽ ra gì; rời nghỉ là cờ này tắt ngay, ngoài mọi animation, và
     /// thẻ đặc từ khung đầu.
     var cardSurfaceIsGlass: Bool { isCollapsing || isCardResting }
@@ -153,6 +167,10 @@ final class PlayerExpansion {
     /// `cancelAccessoryDrag()` gửi lần hai khi trạng thái cử chỉ reset ngay sau
     /// một cú thả bình thường. Không quan sát: không view nào vẽ theo nó.
     @ObservationIgnored private var releasePending = false
+
+    func reportAccessoryTextStyle(_ style: AccessoryTextStyle) {
+        accessoryTextStyle = style
+    }
 
     func reportAccessoryFrame(_ frame: CGRect, isInline: Bool) {
         guard isCardResting else { return }
@@ -193,9 +211,11 @@ final class PlayerExpansion {
         // cú kéo trên accessory gọi hàm này mỗi khung, và mỗi lần ghi một
         // thuộc tính `@Observable` là một lần mời các view đọc nó dựng lại.
         if isCollapsing { isCollapsing = false }
+        if cardSurfaceHandedOver { cardSurfaceHandedOver = false }
         guard isCardResting else { return }
         anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
         anchorIsInline = accessoryIsInline
+        if anchorTextStyle != accessoryTextStyle { anchorTextStyle = accessoryTextStyle }
         isCardResting = false
     }
 
@@ -204,6 +224,13 @@ final class PlayerExpansion {
     func commitCollapse() {
         guard !isCollapsing else { return }
         isCollapsing = true
+    }
+
+    /// Bước một của cú trao tay — xem `cardSurfaceHandedOver`. Chỉ khi đang
+    /// thu và không ai đang kéo accessory, cùng điều kiện với `arriveAtRest()`.
+    func handOverCardSurface() {
+        guard isCollapsing, !accessoryDragging, !cardSurfaceHandedOver else { return }
+        cardSurfaceHandedOver = true
     }
 
     func arriveAtRest() {
@@ -297,6 +324,34 @@ extension View {
     func recedesBehindPlayer(_ expansion: PlayerExpansion) -> some View {
         modifier(RecedeBehindPlayer(expansion: expansion))
     }
+}
+
+/// Môi trường chữ mà `tabViewBottomAccessory` của hệ thống áp lên nội dung của
+/// nó — và hàng mini trong thẻ phải vẽ theo đúng như thế.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// VÌ SAO CẦN — HAI HÀNG "TRÙNG KHÍT" ĐÃ KHÔNG TRÙNG
+/// ─────────────────────────────────────────────────────────────────────────
+/// Cú trao tay cuối cú thu dựa trên một tiền đề: hàng mini của thẻ và hàng của
+/// accessory là một. Cùng code (`MiniPlayerTitle`, `MiniPlayerControls`) nhưng
+/// **không cùng môi trường**. Đo trên simulator iOS 26 (vòng sửa 8), hệ thống
+/// đặt cho nội dung accessory `imageScale` `.large` — thẻ thì `.medium` — và
+/// kẹp cỡ chữ vào `.large … .xxLarge` (máy để XS vẫn ra `.large`, AX3 ra
+/// `.xxLarge`). Nên ▶ ⏭ và nốt nhạc của accessory to hơn của thẻ thấy rõ (đo
+/// trên simulator để cỡ chữ `.medium`: ▶ cao ~20pt so với ~14,5pt, chữ rộng hơn
+/// ~7%), và ở mọi cỡ chữ ngoài khoảng kẹp thì cả chữ cũng lệch. Suốt cú mờ trao
+/// tay, hai hàng lệch nhau chồng lên nhau — chữ và nút nhân đôi — rồi cả hàng
+/// "nảy" to ra khi thẻ tan: một phần của cú chớp người dùng thấy ở cuối cú thu
+/// (phần kia: `BottomBarStyle.collapseHandoff`).
+///
+/// Đọc từ accessory chứ không chép hằng số: thẻ vẽ theo cái hệ thống **đang**
+/// đặt, nên một bản iOS đổi luật kẹp không tách hai hàng ra lần nữa.
+struct AccessoryTextStyle: Equatable {
+    var imageScale: Image.Scale
+    var typeSize: DynamicTypeSize
+
+    /// Trước khi accessory kịp báo: cái hệ thống đặt ở cỡ chữ mặc định.
+    static let systemDefault = AccessoryTextStyle(imageScale: .large, typeSize: .large)
 }
 
 /// Một việc accessory nhờ thẻ làm. `id` riêng cho mỗi lần gửi, để hai lần chạm

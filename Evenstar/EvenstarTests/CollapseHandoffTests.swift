@@ -106,7 +106,7 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertLessThanOrEqual(arrival, 0.52, "arrives in \(arrival)s")
         for velocity in [0, 3, BottomBarStyle.maxSettleVelocity] {
             let geometry = CollapseSpring(spring: spring, initialVelocity: velocity)
-            let handoffEnd = geometry.settlingTime + 0.15
+            let handoffEnd = geometry.settlingTime + BottomBarStyle.collapseHandoffDuration
             print("[collapse] v \(velocity): handoff starts \(String(format: "%.0f", geometry.settlingTime * 1000))ms,"
                   + " ends \(String(format: "%.0f", handoffEnd * 1000))ms; tap arrives in 1pt at"
                   + " \(String(format: "%.0f", arrival * 1000))ms")
@@ -296,7 +296,57 @@ final class CollapseHandoffTests: XCTestCase {
         XCTAssertTrue(e.cardSurfaceIsGlass)
         e.arriveAtRest()
         XCTAssertTrue(e.cardSurfaceIsGlass,
-                      "still glass while the card fades out over the accessory — no grey flash")
+                      "still glass at rest — nothing about the surface changes in the swap")
+    }
+
+    /// Bước một của cú trao tay: mặt thẻ tan trong khi hàng của accessory **vẫn
+    /// ẩn** — không gì nằm dưới một lớp kính đang tan (vòng sửa 8).
+    func testHandingOverTheSurfaceKeepsTheAccessorysContentHidden() {
+        let e = make()
+        e.leaveRest()
+        e.commitCollapse()
+        e.handOverCardSurface()
+        XCTAssertTrue(e.cardSurfaceHandedOver)
+        XCTAssertFalse(e.isCardResting)
+        XCTAssertFalse(e.showsAccessoryContent)
+        e.arriveAtRest()
+        XCTAssertTrue(e.cardSurfaceHandedOver, "the surface stays gone through the swap")
+        XCTAssertTrue(e.showsAccessoryContent)
+    }
+
+    func testTheSurfaceIsOnlyHandedOverAtTheEndOfACollapse() {
+        let e = make()
+        e.leaveRest()
+        e.handOverCardSurface()
+        XCTAssertFalse(e.cardSurfaceHandedOver, "an open card keeps its surface")
+    }
+
+    /// Rời nghỉ — mở lại, hay chạm accessory giữa cú trao tay — dựng mặt thẻ
+    /// lại ngay: thẻ mở ra đặc từ khung đầu.
+    func testLeavingRestBringsTheSurfaceBack() {
+        let e = make()
+        e.leaveRest()
+        e.commitCollapse()
+        e.handOverCardSurface()
+        e.leaveRest()
+        XCTAssertFalse(e.cardSurfaceHandedOver)
+        e.commitCollapse()
+        e.handOverCardSurface()
+        e.arriveAtRest()
+        e.leaveRest()
+        XCTAssertFalse(e.cardSurfaceHandedOver)
+    }
+
+    /// Hàng của thẻ vẽ theo môi trường chữ của accessory, chụp lúc rời nghỉ —
+    /// như khung của nó (vòng sửa 8, `AccessoryTextStyle`).
+    func testTheCardTakesTheAccessorysTextStyleWhenItLeavesRest() {
+        let e = make()
+        XCTAssertEqual(e.anchorTextStyle, .systemDefault)
+        let style = AccessoryTextStyle(imageScale: .large, typeSize: .xxLarge)
+        e.reportAccessoryTextStyle(style)
+        XCTAssertEqual(e.anchorTextStyle, .systemDefault, "not until the card leaves rest")
+        e.leaveRest()
+        XCTAssertEqual(e.anchorTextStyle, style)
     }
 
     /// Chạm accessory giữa cú thu: thẻ chưa về nghỉ nên `leaveRest()` bỏ qua

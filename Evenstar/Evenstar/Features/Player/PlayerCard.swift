@@ -884,9 +884,9 @@ struct PlayerCard: View {
         // accessory vẽ hàng mini player. Thẻ chỉ hiện khi rời trạng thái nghỉ.
         //
         // Rời nghỉ là ngoài mọi animation, nên thẻ hiện ngay trong một khung.
-        // Về nghỉ thì bên trong `BottomBarStyle.collapseHandoff` — xem
-        // `morph(to:curves:)` — nên đây là cú mờ trao tay: kính mờ trên kính,
-        // trên hàng mini của accessory đã nằm sẵn đúng chỗ.
+        // Về nghỉ cũng vậy — xem `handOff(_:)`: khi ấy mặt thẻ đã tan, cái biến
+        // mất ở đây chỉ còn hàng mini của thẻ, và hàng y hệt của accessory hiện
+        // ra đúng chỗ ấy trong cùng lượt.
         .opacity(expansion.isCardResting ? 0 : 1)
         .animation(BottomBarStyle.settle, value: playback.currentTrack == nil)
         // Mốc chính để tra lại cache: bài đổi, hoặc đường dẫn bìa của chính bài
@@ -1102,6 +1102,9 @@ struct PlayerCard: View {
 
         return ZStack(alignment: .topLeading) {
             background(anchor: anchor)
+                // Bước một của cú trao tay: mặt thẻ tan, hàng ở lại — xem
+                // `BottomBarStyle.collapseHandoff`.
+                .opacity(expansion.cardSurfaceHandedOver ? 0 : 1)
             // Behind the controls, not in front of them.
             //
             // It used to sit last, above `expandedContent`, and that was
@@ -1402,6 +1405,10 @@ struct PlayerCard: View {
 
     private func miniChrome(width: CGFloat, restWidth: CGFloat, height: CGFloat) -> some View {
         MiniPlayerRow(playback: playback, showsNext: !expansion.anchorIsInline, restWidth: restWidth)
+            // Môi trường chữ của accessory, không phải của thẻ — không có nó
+            // hai hàng lệch nhau suốt cú trao tay. Xem `AccessoryTextStyle`.
+            .imageScale(expansion.anchorTextStyle.imageScale)
+            .dynamicTypeSize(expansion.anchorTextStyle.typeSize)
             .frame(width: width, height: height)
             .modifier(MiniRowFade(progress: progress, legacyOpacity: max(0, 1 - progress * 3),
                                   collapsing: expansion.isCollapsing))
@@ -1667,6 +1674,9 @@ struct PlayerCard: View {
                 ZStack {
                     Image(systemName: "music.note")
                         .font(.system(size: Self.placeholderGlyphBase * 0.5))
+                        // Cỡ biểu tượng của accessory, nơi nốt này vẽ ở
+                        // `imageScale` `.large` — xem `AccessoryTextStyle`.
+                        .imageScale(expansion.anchorTextStyle.imageScale)
                         .foregroundStyle(ArtworkThumbnail.placeholderGlyph)
                         .environment(\.colorScheme, systemColorScheme)
                         .opacity(1 - Self.placeholderExpandedWeight(progress: progress))
@@ -2687,12 +2697,10 @@ struct PlayerCard: View {
     /// (`MiniRowFade`), và ở đoạn cuối mặt thẻ chuyển sang kính (`CardSurface`,
     /// `collapseGlass`). Chiều mở không đổi gì.
     ///
-    /// Thẻ về nghỉ trong `completion` của hình học — tức ngay khi nó tới đích —
-    /// và về
-    /// bên trong `BottomBarStyle.collapseHandoff`: thẻ kính mờ đi trên viên
-    /// kính của hệ thống, nơi hàng mini của accessory vừa hiện ra đúng chỗ ấy.
-    /// Kính nhường cho kính, nên không có cú đổi màu nào; cái duy nhất thật sự
-    /// hoà vào nhau là ô bìa của bài không bìa.
+    /// Thẻ trao chỗ trong `completion` của hình học — tức ngay khi nó tới đích
+    /// — qua `handOff(_:)`: mặt kính của thẻ tan trên viên kính của hệ thống,
+    /// rồi hàng mini của thẻ đổi chỗ với hàng y hệt của accessory. Kính nhường
+    /// cho kính, nên không có cú đổi màu nào.
     ///
     /// `commitCollapse()` nằm **trong** `withAnimation` của hình học, để lớp
     /// kính đi theo đường cong ấy thay vì bật một bậc lúc nhấc tay (xem
@@ -2724,15 +2732,7 @@ struct PlayerCard: View {
                 // Cú này đã bị một chuyển động mới hơn thay thế: không phải việc
                 // của nó nữa. Xem `PlayerExpansion.motion`.
                 guard expansion.motion == generation else { return }
-                // Một cú mờ: thẻ là thứ duy nhất đọc `isCardResting` mà vẽ ra
-                // thứ nội suy được; accessory tự từ chối animation. Cú mờ không
-                // có bước "xong" nào phải chốt: `arriveAtRest()` chạy ngay ở
-                // đầu nó, và một chuyển động mới giữa chừng gọi `leaveRest()`,
-                // thứ dựng thẻ lại ngay ngoài mọi animation. Với cú mở,
-                // `arriveAtRestIfCollapsed()` không làm gì.
-                withAnimation(BottomBarStyle.collapseHandoff) {
-                    arriveAtRestIfCollapsed()
-                }
+                handOff(generation)
             }
             return
         }
@@ -2766,6 +2766,29 @@ struct PlayerCard: View {
         }
         // Giảm chuyển động: hình học đã ở đích ngay, nên về nghỉ ngay.
         arriveAtRestIfCollapsed()
+    }
+
+    /// Cú trao tay cho accessory, khi hình học của cú thu đã tới đích: mặt thẻ
+    /// tan, rồi hai hàng y hệt đổi chỗ cho nhau — hai bước và lý do ở
+    /// `BottomBarStyle.collapseHandoff`.
+    ///
+    /// Bước hai không animation, viết rõ chứ không trông vào việc `completion`
+    /// chạy ngoài transaction: một cú mờ ở đây là hai hàng chồng nhau, đúng cái
+    /// đậm lên mà cú trao tay hai bước tồn tại để tránh.
+    ///
+    /// Một chuyển động mới giữa chừng gọi `leaveRest()`, thứ tăng `motion`
+    /// (bước hai không chạy) và dựng lại mặt thẻ ngay, ngoài mọi animation. Với
+    /// cú mở thì không làm gì.
+    private func handOff(_ generation: Int) {
+        guard settled == 0, dragDelta == 0, !isDragging else { return }
+        withAnimation(BottomBarStyle.collapseHandoff) {
+            expansion.handOverCardSurface()
+        } completion: {
+            guard expansion.motion == generation else { return }
+            withTransaction(Transaction(animation: nil)) {
+                arriveAtRestIfCollapsed()
+            }
+        }
     }
 
     /// Hỏi lại trạng thái **hiện tại** chứ không tin vào đích lúc đăng ký: một

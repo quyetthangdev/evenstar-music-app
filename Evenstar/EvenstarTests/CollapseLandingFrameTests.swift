@@ -370,6 +370,161 @@ final class CollapseLandingFrameTests: XCTestCase {
         XCTAssertTrue(rig.expansion.isCardResting)
     }
 
+    // MARK: - Cú trao tay, với accessory thật
+
+    /// Thẻ trong một `TabView` có `tabViewBottomAccessory` thật — như
+    /// `RootView` — trên nền trắng: cú trao tay là chuyện giữa hàng của thẻ và
+    /// hàng của accessory, nên phải có accessory thật, với môi trường chữ mà
+    /// hệ thống đặt cho nó.
+    private struct Shell: View {
+        let playback: PlaybackService
+        let expansion: PlayerExpansion
+
+        var body: some View {
+            ZStack {
+                TabView {
+                    Tab("A", systemImage: "music.note") { Color.white.ignoresSafeArea() }
+                    Tab("B", systemImage: "square.stack") { Color.white }
+                }
+                .tabViewBottomAccessory {
+                    MiniPlayerAccessory(playback: playback, expansion: expansion)
+                }
+                .recedesBehindPlayer(expansion)
+                PlayerCard(playback: playback, expansion: expansion)
+            }
+        }
+    }
+
+    /// Một khung của dải quanh viên kính, ở 2×, và trạng thái lúc chụp.
+    private struct HandoffShot {
+        let ms: Double
+        let surfaceHandedOver: Bool
+        let resting: Bool
+        /// Độ sáng từng điểm ảnh bên trong viên kính (bỏ 4pt sát mép).
+        let pill: [UInt8]
+    }
+
+    /// Chênh lệch trung bình từng điểm ảnh giữa hai khung, theo độ sáng 0…255.
+    private static func difference(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        Double(zip(a, b).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }) / Double(a.count)
+    }
+
+    private static func luminance(_ image: CGImage, in rect: CGRect, scale: CGFloat) -> [UInt8] {
+        let w = image.width, h = image.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        let context = CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var out: [UInt8] = []
+        for y in Int(rect.minY * scale)..<min(h, Int(rect.maxY * scale)) {
+            for x in Int(rect.minX * scale)..<min(w, Int(rect.maxX * scale)) {
+                let p = (y * w + x) * 4
+                out.append(UInt8((299 * Int(data[p]) + 587 * Int(data[p + 1]) + 114 * Int(data[p + 2])) / 1000))
+            }
+        }
+        return out
+    }
+
+    /// **Cú trao tay không chớp** (vòng sửa 8): từ lúc thẻ đã nằm trên viên kính
+    /// tới khi accessory thế chỗ, vùng viên kính chỉ tiến **một chiều** về
+    /// khung cuối, và hàng của thẻ là hàng của accessory.
+    ///
+    /// Đo được trước khi sửa, cùng test này: khung cuối trước khi về nghỉ lệch
+    /// khung cuối 11,3 (hai hàng khác cỡ — `AccessoryTextStyle`), rồi cú mờ
+    /// **đẩy lên** 13,0 trước khi giảm (hai hàng lệch chồng nhau sau một lớp
+    /// kính nửa trong). Sửa môi trường chữ thôi: 3,9 → 6,3 → 0 — vẫn nảy lên,
+    /// vì kính của thẻ vẫn nằm giữa hai hàng. Sau cả hai: 3,9 → 2,9 → 2,0 →
+    /// 1,1 → 0,2 → 0.
+    func testTheHandoffMovesOneWayAndTheTwoRowsAreTheSame() throws {
+        let library = try InMemoryLibrary.make()
+        let track = InMemoryLibrary.makeTrack()
+        try library.insert(track)
+        let playback = PlaybackService(player: MockAudioPlayer(), nowPlaying: MockNowPlayingPublisher(),
+                                       library: library)
+        playback.play(track, in: [track])
+        let expansion = PlayerExpansion()
+        let host = UIHostingController(rootView: Shell(playback: playback, expansion: expansion)
+            .environment(library).environment(playback))
+        let screen = CGSize(width: 390, height: 844)
+        host.view.frame = CGRect(origin: .zero, size: screen)
+        host.overrideUserInterfaceStyle = .light
+        let window = UIWindow(frame: host.view.frame)
+        window.overrideUserInterfaceStyle = .light
+        window.rootViewController = host
+        // `makeKeyAndVisible`, rồi một lượt `drawHierarchy`: đo được, thiếu
+        // lượt chụp ấy thì 2s sau accessory của hệ thống vẫn chưa có khung.
+        window.makeKeyAndVisible()
+        self.window = window
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        _ = UIGraphicsImageRenderer(size: screen).image { _ in
+            host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        let pill = expansion.accessoryFrame
+        XCTAssertGreaterThan(pill.width, 100, "the system accessory was never laid out")
+
+        playback.play(track, in: [track])
+        RunLoop.main.run(until: Date().addingTimeInterval(0.9))
+        XCTAssertEqual(expansion.progress, 1)
+
+        // Thả không vận tốc: cùng lò xo với cú chạm thu.
+        let travel = PlayerAnchor.dragTravel(for: expansion.anchorFrame)
+        let translation = 0.02 * travel + AccessoryDragAxis.lockDistance
+        expansion.accessoryDragChanged(translationHeight: translation)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        expansion.accessoryDragEnded(predictedTranslationHeight: translation + 900, verticalVelocity: 0)
+
+        let band = CGRect(x: 0, y: pill.minY - 30, width: screen.width, height: pill.height + 60)
+        let inner = CGRect(x: pill.minX + 4, y: 34, width: pill.width - 8, height: pill.height - 8)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        var shots: [HandoffShot] = []
+        var restedAt: Double?
+        let start = CACurrentMediaTime()
+        while CACurrentMediaTime() - start < 3 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.002))
+            let ms = (CACurrentMediaTime() - start) * 1000
+            let image = UIGraphicsImageRenderer(size: band.size, format: format).image { _ in
+                host.view.drawHierarchy(in: CGRect(x: 0, y: -band.minY, width: screen.width, height: screen.height),
+                                        afterScreenUpdates: true)
+            }
+            shots.append(HandoffShot(ms: ms, surfaceHandedOver: expansion.cardSurfaceHandedOver,
+                                     resting: expansion.isCardResting,
+                                     pill: Self.luminance(image.cgImage!, in: inner, scale: 2)))
+            if expansion.isCardResting, restedAt == nil { restedAt = ms }
+            if let restedAt, ms - restedAt > 150 { break }
+        }
+        let final = try XCTUnwrap(shots.last).pill
+        let differences = shots.map { Self.difference($0.pill, final) }
+        for (shot, difference) in zip(shots, differences) {
+            print(String(format: "[handoff] t=%6.1fms surface=%@ resting=%d diffFinal=%6.2f", shot.ms,
+                         shot.surfaceHandedOver ? "gone" : "kept", shot.resting ? 1 : 0, difference))
+        }
+
+        let firstRest = try XCTUnwrap(shots.firstIndex(where: \.resting), "the card never rested")
+        XCTAssertGreaterThan(firstRest, 0)
+        // Khung đầu của cú trao tay, bước nào trước cũng vậy.
+        let handoff = try XCTUnwrap(shots.firstIndex { $0.surfaceHandedOver || $0.resting })
+
+        // 1. Hai hàng là một: ngay trước cú đổi chỗ, vùng viên kính đã là khung
+        // cuối — mặt thẻ đã tan, và hàng của thẻ là hàng của accessory.
+        XCTAssertLessThan(differences[firstRest - 1], 1,
+                          "just before the swap the pill still differs from its final look by "
+                          + "\(differences[firstRest - 1]) — the surface is still there, or the rows differ")
+
+        // 2. Một chiều: từ khung cuối trước cú trao tay tới hết, không khung nào
+        // xa khung cuối hơn khung trước nó (0,3 cho nhiễu của kính).
+        for index in max(handoff - 1, 0)..<(shots.count - 1) {
+            XCTAssertLessThanOrEqual(differences[index + 1], differences[index] + 0.3,
+                                     "the pill moved away from its final look at t=\(shots[index + 1].ms)ms")
+        }
+
+        // 3. Mặt thẻ tan trước, rồi hai hàng mới đổi chỗ.
+        XCTAssertTrue(shots[..<firstRest].contains(where: \.surfaceHandedOver),
+                      "the rows swapped while the card's surface was still there")
+    }
+
     // MARK: - Cú bung
 
     /// Chiều mở không đổi: đặc ngay từ khung đầu, không có kính.

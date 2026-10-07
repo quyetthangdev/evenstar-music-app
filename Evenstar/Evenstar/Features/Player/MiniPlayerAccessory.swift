@@ -4,7 +4,8 @@ import SwiftUI
 ///
 /// Ba việc:
 /// - vẽ hàng mini player trùng khít hàng mà `PlayerCard` vẽ ở `progress` 0;
-/// - báo khung của mình lên `PlayerExpansion`, để thẻ biết bung ra từ đâu;
+/// - báo khung của mình lên `PlayerExpansion`, để thẻ biết bung ra từ đâu — và
+///   môi trường chữ hệ thống đặt cho nó, để hàng của thẻ vẽ y như thế;
 /// - nhận chạm và cú kéo lên trên vùng thông tin bài, rồi chuyển sang thẻ.
 ///   Nút play/next nằm ngoài vùng ấy, nên bấm nút không bao giờ thành kéo.
 ///
@@ -19,6 +20,11 @@ struct MiniPlayerAccessory: View {
 
     /// Chỉ đọc để ẩn ⏭ khi thu nhỏ — xem Global Constraints của plan.
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    /// Hệ thống đặt hai giá trị này cho nội dung accessory, khác với phần còn
+    /// lại của app; thẻ phải vẽ hàng mini theo đúng chúng — xem
+    /// `AccessoryTextStyle`.
+    @Environment(\.imageScale) private var imageScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var axis: AccessoryDragAxis?
     @State private var drivesCard = false
@@ -50,9 +56,9 @@ struct MiniPlayerAccessory: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(expansion.showsAccessoryContent ? 1 : 0)
         // Bật tắt, không bao giờ mờ dần, dù lượt cập nhật có mang animation
-        // nào. Thẻ về nghỉ bên trong `BottomBarStyle.collapseHandoff`, và cú
-        // mờ ấy là của **thẻ**: hàng này phải đặc sẵn dưới nó. Mờ cả hai cùng
-        // lúc thì giữa chừng chữ của hai hàng cùng nhạt — một nhịp chớp.
+        // nào: hàng này thế chỗ hàng y hệt của thẻ trong một lượt — xem
+        // `BottomBarStyle.collapseHandoff`. Mờ dần thì giữa chừng hai hàng
+        // chồng nhau hoặc cùng nhạt — một nhịp chớp.
         .animation(nil, value: expansion.showsAccessoryContent)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
@@ -64,6 +70,9 @@ struct MiniPlayerAccessory: View {
         .onChange(of: isInline) { _, inline in
             lastIsInline = inline
             expansion.reportAccessoryFrame(lastFrame, isInline: inline)
+        }
+        .onChange(of: AccessoryTextStyle(imageScale: imageScale, typeSize: typeSize), initial: true) { _, style in
+            expansion.reportAccessoryTextStyle(style)
         }
         .onChange(of: expansion.isCardResting) { _, resting in
             if resting { expansion.reportAccessoryFrame(lastFrame, isInline: lastIsInline) }

@@ -121,11 +121,15 @@ final class ArtworkPlaceholderBlendTests: XCTestCase {
                 expansion.setAccessoryDragDelta(0)
             }
 
-            // Accessory: một `ArtworkThumbnail` không bìa, trên cùng mặt nền.
+            // Accessory: một `ArtworkThumbnail` không bìa, trên cùng mặt nền, với
+            // cỡ biểu tượng mà accessory của hệ thống đặt cho nội dung của nó —
+            // xem `AccessoryTextStyle`. Không có dòng ấy thì đây không còn là ô
+            // của accessory: nốt nhạc nhỏ hơn cái người dùng thấy.
             let accessory = try render(
                 ZStack(alignment: .topLeading) {
                     Color(.secondarySystemBackground).ignoresSafeArea()
                     ArtworkThumbnail(relativePath: nil, size: MiniPlayerMetrics.artworkSide)
+                        .imageScale(AccessoryTextStyle.systemDefault.imageScale)
                         .position(x: tile.midX, y: tile.midY)
                 }
                 .ignoresSafeArea(),
@@ -140,11 +144,11 @@ final class ArtworkPlaceholderBlendTests: XCTestCase {
                 XCTAssertEqual(a.mean[c], b.mean[c], accuracy: 3, "\(label): tile colour channel \(c)")
             }
             // Cực trị là nét nốt nhạc (tối nhất ở chế độ sáng, sáng nhất ở chế
-            // độ tối), và nét ấy không trùng từng điểm ảnh: thẻ vẽ nốt ở 140pt
-            // rồi thu nhỏ (`placeholderGlyphBase`, để cỡ nốt hoạt hoá được),
-            // accessory vẽ thẳng ở 15pt — SF Symbols đổi độ dày nét theo cỡ
-            // quang học. Đo được: lệch 15/12 trên tổng ba kênh. Độ trung bình
-            // của cả ô — màu nền ô cộng nốt — thì trùng tới 1.
+            // độ tối). Thẻ vẽ nốt ở 140pt rồi thu nhỏ (`placeholderGlyphBase`,
+            // để cỡ nốt hoạt hoá được), accessory vẽ thẳng ở 15pt, nên nét có
+            // thể lệch theo cỡ quang học của SF Symbols — biên giữ rộng vì thế.
+            // Đo được, trên tổng ba kênh: lệch 15/12 khi cả hai vẽ ở
+            // `imageScale` `.medium` (trước vòng sửa 8), 0/1 ở `.large`.
             XCTAssertEqual(Double(a.darkest), Double(b.darkest), accuracy: 24, "\(label): glyph ink")
             XCTAssertEqual(Double(a.lightest), Double(b.lightest), accuracy: 20, "\(label): tile ground / glyph")
         }

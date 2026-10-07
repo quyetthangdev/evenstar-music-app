@@ -531,26 +531,44 @@ enum BottomBarStyle {
 
     /// 0,34s, `bounce` 0 — tắt hẳn: tới gần (98%) ở ~0,31s, tới đích trong 1pt
     /// ở ~0,49s, lắng (0,05% quãng — xem `CollapseSpring.settleEpsilon`) ở
-    /// ~0,54s, tức lúc thẻ trao chỗ. Cộng cú mờ 0,15s là ~0,69s từ lúc chạm tới
-    /// lúc accessory thế chỗ hẳn — trong mức ~0,7s của phán quyết. Hình dáng cú
-    /// zoom của iOS, nhanh hơn nó: cú zoom native thu mất ~1,2s.
+    /// ~0,54s, tức lúc thẻ trao chỗ. Cộng cú trao tay 0,15s là ~0,69s từ lúc
+    /// chạm tới lúc accessory thế chỗ hẳn — trong mức ~0,7s của phán quyết.
+    /// Hình dáng cú zoom của iOS, nhanh hơn nó: cú zoom native thu mất ~1,2s.
     /// `CollapseHandoffTests` tính lại các mốc này bằng chính `Spring`.
     static let collapseDuration: Double = 0.34
 
-    /// Thẻ trao chỗ cho accessory, **sau** khi đã tới đích: thẻ mờ đi trong khi hàng mini
-    /// của accessory đã nằm sẵn dưới nó, đúng chỗ ấy — xem
-    /// `PlayerCard.morph(to:curves:)`.
+    /// Cú trao tay, **sau** khi thẻ đã tới đích, gồm hai bước nối nhau bằng
+    /// `completion` — xem `PlayerCard.handOff(_:)`:
     ///
-    /// Ngắn vì hai hàng trùng khít và hai lớp kính là cùng một chất liệu: thứ
-    /// duy nhất thật sự hoà vào nhau là ô bìa của bài không bìa (thẻ tô theo
-    /// màu bài, accessory tô xám hệ thống) — đúng cú "ô bìa tối nhảy sang sáng"
-    /// đo được ở QA lần trước.
+    ///   1. Cú mờ này: **mặt** thẻ (lớp kính) tan đi trên viên kính của hệ
+    ///      thống, trong khi hàng mini của thẻ vẫn đặc phía trên và hàng của
+    ///      accessory vẫn ẩn.
+    ///   2. Một cú đổi chỗ, không animation: hàng của accessory hiện ra và thẻ —
+    ///      giờ chỉ còn hàng mini y hệt nằm đúng chỗ ấy — biến mất, cùng một
+    ///      lượt cập nhật. Hai hàng ở hai cây view khác nhau (accessory là của
+    ///      hệ thống), nên điều này phải đo chứ không suy ra được: quay video 60
+    ///      khung/giây trên simulator, accessory thật, bốn cú thu liền — cú đổi
+    ///      chỗ rơi trọn trong một khung, không khung nào thiếu hàng hay có hai
+    ///      hàng chồng nhau.
     ///
-    /// **Hằng số duy nhất trong kiểu này không trả lời `reduceMotion`, và đó là
-    /// chủ ý.** Nhánh giảm chuyển động của `morph(to:curves:)` về nghỉ ngay,
-    /// không qua cú mờ này — nên một nhánh "phẳng" ở đây sẽ là một nhánh không
-    /// ai gọi, trông như đã được nghĩ tới mà thật ra chưa từng chạy.
-    static let collapseHandoff = Animation.easeOut(duration: 0.15)
+    /// Vì sao không còn là một cú mờ cả thẻ (vòng sửa 8, "chớp ở cuối cú thu"),
+    /// đo từng khung ở `CollapseLandingFrameTests`:
+    ///
+    ///   - **Lớp kính nằm giữa hai hàng.** Cả thẻ mờ đi trên hàng accessory đã
+    ///     hiện sẵn, nên suốt cú mờ chữ và nút của accessory nhạt đi sau tấm
+    ///     kính nửa trong rồi đậm lại, và mép kính bẻ cong hàng ấy thành một
+    ///     vệt mờ phía trên.
+    ///   - **Hai hàng chồng nhau thì đậm lên.** Kể cả khi đã trùng khít: ô bìa,
+    ///     nốt nhạc và ⏭ vẽ bằng màu nửa trong, nên hai lớp chồng nhau đậm hơn
+    ///     một lớp — ⏭ xám thành đen suốt lúc chồng, rồi nhạt lại.
+    ///
+    /// Tổng 0,15s như cú mờ một bước trước đó, nên mốc ~0,7s không đổi.
+    ///
+    /// **Không trả lời `reduceMotion`, và đó là chủ ý.** Nhánh giảm chuyển động
+    /// của `morph(to:curves:)` về nghỉ ngay, không qua cú trao tay — nên một
+    /// nhánh "phẳng" ở đây sẽ là một nhánh không ai gọi.
+    static let collapseHandoff = Animation.easeOut(duration: collapseHandoffDuration)
+    static let collapseHandoffDuration: Double = 0.15
 
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.
