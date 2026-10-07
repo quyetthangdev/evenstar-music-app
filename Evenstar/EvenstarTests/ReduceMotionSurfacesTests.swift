@@ -110,288 +110,6 @@ private enum LivePixels {
     }
 }
 
-// MARK: - Việc 2 — the tap halo
-
-/// **The halo does not bloom when motion is reduced.**
-///
-/// Sampled at the centre of the disc, which is inside it at every scale the
-/// keyframes visit, so this is the most sensitive point there is: if any part
-/// of the pulse runs, this sees it.
-@MainActor
-final class TapHaloReducedTests: XCTestCase {
-
-    private enum Harness {
-        @MainActor static var fire: (() -> Void)?
-    }
-
-    private struct Probe: View {
-        @State private var trigger = 0
-
-        var body: some View {
-            Color.clear
-                .frame(width: 40, height: 40)
-                .tapHalo(trigger: trigger)
-                .background(Color.white)
-                .onAppear { Harness.fire = { trigger += 1 } }
-        }
-    }
-
-    private var saved = false
-    private var window: UIWindow?
-    private var host: UIViewController?
-
-    override func setUp() async throws {
-        try await super.setUp()
-        saved = BottomBarStyle.reduceMotion
-    }
-
-    override func tearDown() async throws {
-        BottomBarStyle.reduceMotion = saved
-        window?.isHidden = true
-        window = nil
-        host = nil
-        Harness.fire = nil
-        try await super.tearDown()
-    }
-
-    /// The darkest the centre of the disc ever got over the halo's full 0.52s
-    /// of keyframes.
-    private func darkestCentre(reduceMotion: Bool) throws -> Int {
-        BottomBarStyle.reduceMotion = reduceMotion
-        Harness.fire = nil
-        let (window, host) = LivePixels.host(Probe())
-        self.window = window
-        self.host = host
-
-        let fire = try XCTUnwrap(Harness.fire)
-        fire()
-
-        var darkest = 255
-        for _ in 0..<60 {
-            LivePixels.pump(0.01)
-            let grab = try XCTUnwrap(
-                LivePixels.grab(host.view, CGSize(width: 40, height: 40)),
-                "CALayer.render produced nothing"
-            )
-            let p = (20 * grab.width + 20) * 4
-            darkest = min(darkest, Int(grab.data[p + 1]))
-        }
-        return darkest
-    }
-
-    /// With the setting on, the ground under the button stays white for the
-    /// whole length of the pulse the halo would have run.
-    func testTheHaloNeverBloomsWhenMotionIsReduced() throws {
-        XCTAssertGreaterThan(
-            try darkestCentre(reduceMotion: true), 250,
-            "something bloomed under the button with Reduce Motion on"
-        )
-    }
-
-    /// And with it off the same probe sees it, which is what makes the
-    /// assertion above mean anything.
-    func testTheHaloStillBloomsWithTheSettingOff() throws {
-        XCTAssertLessThan(
-            try darkestCentre(reduceMotion: false), 250,
-            "the halo did not bloom at all with Reduce Motion off"
-        )
-    }
-}
-
-// MARK: - Việc 3 — the two button styles
-
-/// **The press constants, and the threshold they have to clear.**
-@MainActor
-final class PressFeedbackConstantsTests: XCTestCase {
-
-    private var saved = false
-
-    override func setUp() async throws {
-        try await super.setUp()
-        saved = BottomBarStyle.reduceMotion
-    }
-
-    override func tearDown() async throws {
-        BottomBarStyle.reduceMotion = saved
-        try await super.tearDown()
-    }
-
-    /// Both press scales go to 1 — no deformation left anywhere — and the
-    /// opacity that replaces them appears only in the reduced mode.
-    func testThePressScalesFlattenAndTheDimAppears() {
-        BottomBarStyle.reduceMotion = false
-        XCTAssertEqual(BottomBarStyle.pressedScale, 0.96)
-        XCTAssertEqual(QueueToggleStyle.pressedScale, 0.9)
-        XCTAssertEqual(BottomBarStyle.pressedOpacity, 1)
-
-        BottomBarStyle.reduceMotion = true
-        XCTAssertEqual(BottomBarStyle.pressedScale, 1)
-        XCTAssertEqual(QueueToggleStyle.pressedScale, 1)
-        XCTAssertEqual(BottomBarStyle.pressedOpacity, 0.45)
-    }
-
-    /// **The threshold the brief names: a press must still show.**
-    ///
-    /// Stated against a number the bar already stakes a readability claim on
-    /// rather than against a taste — the old tab bar's tint
-    /// separated the current destination from the others by 1.0 against 0.6
-    /// and nothing else. A momentary dim has to be at least that visible,
-    /// and must stop short of the range that reads as disabled.
-    func testTheReducedPressIsStillVisibleAndNotADisabledLook() {
-        BottomBarStyle.reduceMotion = true
-
-        XCTAssertLessThan(BottomBarStyle.pressedOpacity, 0.6)
-        XCTAssertGreaterThan(BottomBarStyle.pressedOpacity, 0.35)
-    }
-
-    /// The transport kick's three tracks all lose their displacement together.
-    /// Asserted on `kickPeak` because that is the only thing the keyframes read
-    /// — there is no second copy of these numbers left in the file to disagree
-    /// with it.
-    ///
-    /// **The dim is deliberately not asserted here any more.** It used to be a
-    /// fourth field on `Kick`, and a review round found that fatal rather than
-    /// untidy: every track of that animator fires on `trigger`, the completed
-    /// command, so the dim arrived after the finger had left and not at all for
-    /// a press dragged off the button. It lives on `isPressed` now, and
-    /// `TransportPressDimTests` below is what pins it.
-    func testTheTransportKickLosesEveryDisplacement() {
-        let skip: TransportButtonStyle = .transportSkip(trigger: 0, direction: 1)
-        let toggle: TransportButtonStyle = .transportToggle(trigger: 0)
-
-        BottomBarStyle.reduceMotion = false
-        XCTAssertEqual(skip.kickPeak.offset, 7)
-        XCTAssertEqual(skip.kickPeak.scaleX, 1.12)
-        XCTAssertEqual(skip.kickPeak.scaleY, 0.92)
-        XCTAssertEqual(toggle.kickPeak.scaleX, 1.08)
-
-        BottomBarStyle.reduceMotion = true
-        for style in [skip, toggle] {
-            XCTAssertEqual(style.kickPeak.offset, 0)
-            XCTAssertEqual(style.kickPeak.scaleX, 1)
-            XCTAssertEqual(style.kickPeak.scaleY, 1)
-        }
-    }
-}
-
-/// **The dim that answers the finger, on the pixels, with no command ever
-/// sent.**
-///
-/// This is the case the shipped version got wrong and nothing could see: the
-/// press is held and `trigger` never changes, which is a finger resting on the
-/// button, and — if it is lifted somewhere else — a press dragged off it. The
-/// halo is switched off in this mode and the kick only fires on the command, so
-/// if the dim is not on `isPressed` there is nothing on screen at all.
-///
-/// It renders `TransportButtonStyle.Interaction` directly rather than a
-/// `Button`. `ButtonStyleConfiguration` cannot be constructed and a real button
-/// cannot be held pressed from a unit-test process, so the style's pressed frame
-/// is unreachable any other way — which is why that type is internal and takes a
-/// plain `Bool`.
-@MainActor
-final class TransportPressDimTests: XCTestCase {
-
-    private enum Harness {
-        @MainActor static var press: ((Bool) -> Void)?
-    }
-
-    private struct Probe: View {
-        @State private var pressed = false
-
-        var body: some View {
-            // `trigger: 0`, and it never changes for the life of the probe.
-            // Everything this test sees therefore came from `isPressed`.
-            TransportButtonStyle.Interaction(
-                label: Color.blue.frame(width: 20, height: 20),
-                isPressedFromButton: pressed,
-                style: .transportSkip(trigger: 0, direction: 1)
-            )
-            .frame(width: 60, height: 40)
-            .background(Color.white)
-            .onAppear { Harness.press = { pressed = $0 } }
-        }
-    }
-
-    private var saved = false
-    private var window: UIWindow?
-    private var host: UIViewController?
-
-    override func setUp() async throws {
-        try await super.setUp()
-        saved = BottomBarStyle.reduceMotion
-    }
-
-    override func tearDown() async throws {
-        BottomBarStyle.reduceMotion = saved
-        window?.isHidden = true
-        window = nil
-        host = nil
-        Harness.press = nil
-        try await super.tearDown()
-    }
-
-    /// How blue the block's centre is, 0 for white and 255 for solid blue.
-    private func centre() throws -> Int {
-        let view = try XCTUnwrap(host?.view)
-        let grab = try XCTUnwrap(
-            LivePixels.grab(view, CGSize(width: 60, height: 40)),
-            "CALayer.render produced nothing"
-        )
-        let p = (20 * grab.width + 30) * 4
-        return Int(grab.data[p + 2]) - Int(grab.data[p])
-    }
-
-    /// Holds the button down for `0.4s`, then lets go for another `0.4s`, and
-    /// reports how blue the centre got at its extremes in each half.
-    private func trace(reduceMotion: Bool) throws -> (held: Int, released: Int) {
-        BottomBarStyle.reduceMotion = reduceMotion
-        Harness.press = nil
-        let (window, host) = LivePixels.host(Probe())
-        self.window = window
-        self.host = host
-
-        let press = try XCTUnwrap(Harness.press)
-
-        press(true)
-        var held = 255
-        for _ in 0..<40 {
-            LivePixels.pump(0.01)
-            held = min(held, try centre())
-        }
-
-        press(false)
-        var released = 0
-        for _ in 0..<40 {
-            LivePixels.pump(0.01)
-            released = max(released, try centre())
-        }
-        return (held, released)
-    }
-
-    /// **Reduced: contact dims the glyph, and letting go restores it.**
-    ///
-    /// A solid 20pt blue block reads 255; at `pressedOpacity`'s 0.45 over white
-    /// it reads about 115. 200 sits between the two with room on either side and
-    /// is the same threshold `TransportKickPixelTests` uses.
-    func testAHeldPressDimsTheGlyphWithNoCommandSentWhenMotionIsReduced() throws {
-        let (held, released) = try trace(reduceMotion: true)
-
-        XCTAssertLessThan(held, 200, "a held press drew no dim at all; centre bottomed at \(held)")
-        XCTAssertGreaterThan(released, 200, "the dim never came back after release; centre peaked at \(released)")
-    }
-
-    /// **Full: the same press changes nothing**, because `pressedOpacity` is 1
-    /// there and the kick is still the answer. Without this half, a dim that had
-    /// leaked into the unreduced mode — which would change how the app looks for
-    /// everyone — would go unnoticed.
-    func testTheSamePressDoesNotDimWithTheSettingOff() throws {
-        let (held, released) = try trace(reduceMotion: false)
-
-        XCTAssertGreaterThan(held, 200, "the glyph dimmed with Reduce Motion off; centre bottomed at \(held)")
-        XCTAssertGreaterThan(released, 200, "the glyph never returned to full strength; centre peaked at \(released)")
-    }
-}
-
 /// **The play/pause glyph swaps without changing size when motion is reduced.**
 ///
 /// This is the hole `symbolReplace()` closes, on the pixels, in the control it
@@ -402,13 +120,13 @@ final class TransportPressDimTests: XCTestCase {
 ///
 /// **A version of this class was written and deleted a round earlier, and the
 /// reason it was deleted was wrong.** The justification was that no edit to
-/// `TransportButtonStyle` could make it red — true, and generalised to "no edit
+/// the old transport style could make it red — true, and generalised to "no edit
 /// anywhere", which was not. Swapping the transition is such an edit, and it is
 /// the one that fixes the thing. The test earns its place now: take the branch
 /// out of `symbolReplace()` and the first of these two goes red.
 ///
-/// The measurement is the glyph's row span. Ink cannot be used — a press fires
-/// `TapHalo` with the setting off and the dim takes ink away with it on —
+/// The measurement is the glyph's row span. Ink cannot be used — a press fired
+/// the old halo with the setting off and the dim takes ink away with it on —
 /// and neither moves where the glyph's edges are.
 @MainActor
 final class TransportSymbolSwapTests: XCTestCase {
@@ -420,31 +138,22 @@ final class TransportSymbolSwapTests: XCTestCase {
         @MainActor static var release: (() -> Void)?
     }
 
-    /// The label exactly as `MiniPlayerChrome` writes it, rendered through the
-    /// style that wraps it, with the press flipping in the same transaction the
-    /// symbol does — which is what a real tap does.
+    /// The label as the transport row writes it: a bare glyph through
+    /// `symbolReplace()`, no button style around it any more.
     private struct Probe: View {
         @State private var playing = false
-        @State private var pressed = false
 
         var body: some View {
-            TransportButtonStyle.Interaction(
-                label: Image(systemName: playing ? "pause.fill" : "play.fill")
-                    .font(.title3)
-                    .symbolReplace()
-                    .frame(width: 32, height: 32),
-                isPressedFromButton: pressed,
-                style: .transportToggle(trigger: 0)
-            )
-            .frame(width: 60, height: 60)
-            .background(Color.white)
-            .onAppear {
-                Harness.flip = {
-                    playing.toggle()
-                    pressed = true
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.title3)
+                .symbolReplace()
+                .frame(width: 32, height: 32)
+                .frame(width: 60, height: 60)
+                .background(Color.white)
+                .onAppear {
+                    Harness.flip = { playing.toggle() }
+                    Harness.release = {}
                 }
-                Harness.release = { pressed = false }
-            }
         }
     }
 
@@ -743,7 +452,7 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 ///
 /// Evidence, in the shape of `SwiftUIAnimationTransactionEvidenceTests` and for
 /// the same reason: a production decision rests on this, and reasoning about it
-/// was not good enough. `TransportButtonStyle.Interaction` applies
+/// was not good enough. the old `TransportButtonStyle.Interaction` (deleted) applied
 /// `.animation(_:value: isPressed)` over the whole label, and one caller's label
 /// is `Image(systemName: isPlaying ? …)` carrying that effect, with `isPlaying`
 /// flipping in the same touch-down transaction. If an ancestor's animation
@@ -752,7 +461,7 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 /// change meant to remove scale.
 ///
 /// **Not a test of Evenstar's code.** It is the platform assumption `symbolReplace()`
-/// and the note at `TransportButtonStyle`'s `.animation` both rest on. If a
+/// rests on. If a
 /// future iOS lets the surrounding transaction drive the effect, this fails and
 /// those two stop being true on the same day.
 ///
@@ -789,7 +498,7 @@ final class SymbolReplaceCoverageTests: XCTestCase {
 ///
 /// That matters more than a loose budget usually would, because this class is
 /// the **sole** evidence for a claim quoted in three production comments —
-/// `BottomBarStyle.symbolReplace()`, `TransportButtonStyle.Interaction.body`,
+/// `BottomBarStyle.symbolReplace()`, the old transport style,
 /// and `TransportSymbolSwapTests` — all of which say, on this test's authority,
 /// that an ancestor's animation cannot reach a symbol replace transition. A
 /// green run here is good evidence that the effect is not being retimed by
@@ -938,136 +647,7 @@ final class SymbolReplaceTransactionEvidenceTests: XCTestCase {
             )
         }
     }
-
-    /// **The off-switch can, and so can replacing the transition** — the two
-    /// routes to taking the scale out, and the half the first version of this
-    /// class was missing.
-    ///
-    /// `symbolReplace()` takes the second. The first is recorded because it is
-    /// the reason the absolute in the old comment was wrong, and because it is
-    /// the fallback if a transition ever has to stay `.symbolEffect`.
-    func testTheEffectIsSuppressedByDisablingAnimationsAndByAnOpacityTransition() throws {
-        let bare = try swap(.bare)
-        let disabled = try swap(.disabled)
-        let opacity = try swap(.opacityTransition)
-
-        XCTAssertGreaterThanOrEqual(
-            bare.rest - bare.trough, 4,
-            "the symbol never collapsed even bare; there is nothing to suppress"
-        )
-
-        for (name, other) in [("disablesAnimations", disabled), ("opacity transition", opacity)] {
-            XCTAssertEqual(
-                other.trough, other.rest,
-                "\(name) still collapsed the glyph, to \(other.trough) from \(other.rest)"
-            )
-        }
-    }
 }
-
-/// **The kick, on the pixels.** The constants above say what the peak is; this
-/// says the keyframes are aimed at it.
-///
-/// A 20pt blue block in a 60×40 white field, thrown right by 7 and stretched to
-/// 1.12. At rest it spans 20…40; kicked it reaches past 48. Column 45 is
-/// therefore a column only a *moving* button reaches, and the centre of the
-/// block is where a dim shows up.
-@MainActor
-final class TransportKickPixelTests: XCTestCase {
-
-    private enum Harness {
-        @MainActor static var fire: (() -> Void)?
-    }
-
-    private struct Probe: View {
-        @State private var trigger = 0
-
-        var body: some View {
-            Button {} label: {
-                Color.blue.frame(width: 20, height: 20)
-            }
-            .buttonStyle(.transportSkip(trigger: trigger, direction: 1))
-            .frame(width: 60, height: 40)
-            .background(Color.white)
-            .onAppear { Harness.fire = { trigger += 1 } }
-        }
-    }
-
-    private var saved = false
-    private var window: UIWindow?
-    private var host: UIViewController?
-
-    override func setUp() async throws {
-        try await super.setUp()
-        saved = BottomBarStyle.reduceMotion
-    }
-
-    override func tearDown() async throws {
-        BottomBarStyle.reduceMotion = saved
-        window?.isHidden = true
-        window = nil
-        host = nil
-        Harness.fire = nil
-        try await super.tearDown()
-    }
-
-    /// How blue a pixel is, 0 for white and 255 for solid blue.
-    private func blueness(_ grab: (width: Int, height: Int, data: [UInt8]), x: Int, y: Int) -> Int {
-        let p = (y * grab.width + x) * 4
-        return Int(grab.data[p + 2]) - Int(grab.data[p])
-    }
-
-    /// The bluest column 45 ever got, and the least blue the block's own centre
-    /// ever got, over the whole kick.
-    private func trace(reduceMotion: Bool) throws -> (beyond: Int, centre: Int) {
-        BottomBarStyle.reduceMotion = reduceMotion
-        Harness.fire = nil
-        let (window, host) = LivePixels.host(Probe())
-        self.window = window
-        self.host = host
-
-        let fire = try XCTUnwrap(Harness.fire)
-        fire()
-
-        var beyond = 0
-        var centre = 255
-        for _ in 0..<40 {
-            LivePixels.pump(0.01)
-            let grab = try XCTUnwrap(
-                LivePixels.grab(host.view, CGSize(width: 60, height: 40)),
-                "CALayer.render produced nothing"
-            )
-            beyond = max(beyond, blueness(grab, x: 45, y: 20))
-            centre = min(centre, blueness(grab, x: 30, y: 20))
-        }
-        return (beyond, centre)
-    }
-
-    /// Reduced: the button never reaches a column only a thrown button reaches.
-    ///
-    /// **And it does not dim either, which is the assertion this pair gained
-    /// rather than lost.** `fire()` moves `trigger` and nothing else — no finger
-    /// is on the button — so this is the command arriving on its own. A dim here
-    /// would mean the acknowledgement was back on the completed tap, which is
-    /// exactly the defect `TransportPressDimTests` was written for.
-    func testTheKickNeitherTravelsNorDimsOnTheCommandWhenMotionIsReduced() throws {
-        let (beyond, centre) = try trace(reduceMotion: true)
-
-        XCTAssertLessThan(beyond, 20, "the button travelled: column 45 reached \(beyond)")
-        XCTAssertGreaterThan(centre, 200, "the command dimmed the glyph on its own; centre bottomed at \(centre)")
-    }
-
-    /// Full: it travels, and it does not dim. Together with the pair above this
-    /// says the two modes swapped one for the other rather than one of them
-    /// having quietly stopped doing anything.
-    func testTheKickStillTravelsAndDoesNotDimWithTheSettingOff() throws {
-        let (beyond, centre) = try trace(reduceMotion: false)
-
-        XCTAssertGreaterThan(beyond, 20, "the button never travelled; column 45 peaked at \(beyond)")
-        XCTAssertGreaterThan(centre, 200, "the button dimmed with Reduce Motion off; centre \(centre)")
-    }
-}
-
 // MARK: - Việc 4 — the reorder settle
 
 /// `ReorderTuning`'s two flat durations, re-derived from the springs they
@@ -1267,146 +847,6 @@ final class ReorderReducedMotionTests: XCTestCase {
         XCTAssertEqual(answers(), expected)
     }
 }
-
-/// **With Reduce Motion off, the disabled tint still switches instantly.**
-///
-/// `Interaction.body` gained an `.animation(_:value: isPressed)` on this branch,
-/// for the press dim. Its scope is the whole label, and `.foregroundStyle(isEnabled
-/// ? .primary : .tertiary)` is inside that scope — so a change of `isEnabled`
-/// arriving in the same update as a change of `isPressed` gets carried along on
-/// `dimReturn`'s 0.20s.
-///
-/// That is not a hypothetical pairing, it is the ordinary one: tapping Next onto
-/// the last track lifts the finger (`isPressed` → false) and runs the command
-/// (`canGoNext` → false, so `isEnabled` → false) in one turn. Pre-branch the tint
-/// switched in a frame. **Behaviour with the setting off was to be identical to
-/// before the branch**, and a 0.20s tint fade is not identical.
-///
-/// **Measured with the setting off, and only there, deliberately.** With it on,
-/// `pressedOpacity` is 0.45 and lifting the finger *is* meant to animate the glyph
-/// back to full over `dimReturn` — a value that legitimately travels, which would
-/// drown out the thing being measured. Off, `pressedOpacity` is 1, so the press
-/// draws nothing at all and the only thing left that can move the pixel is the
-/// tint.
-@MainActor
-final class TransportDisabledTintTests: XCTestCase {
-
-    private enum Harness {
-        @MainActor static var down: (() -> Void)?
-        @MainActor static var up: (() -> Void)?
-    }
-
-    private struct Probe: View {
-        @State private var enabled = true
-        @State private var pressed = false
-
-        var body: some View {
-            // A bare `Rectangle()` and not a `Color`: an unfilled shape paints
-            // itself with the current foreground style, which is the one thing
-            // this test is looking at. `Color.blue` — what the sibling press-dim
-            // probe uses — carries its own fill and would ignore the tint
-            // entirely.
-            //
-            // `trigger: 0` for the life of the probe, so nothing here came from
-            // the kick.
-            TransportButtonStyle.Interaction(
-                label: Rectangle().frame(width: 20, height: 20),
-                isPressedFromButton: pressed,
-                style: .transportSkip(trigger: 0, direction: 1)
-            )
-            .disabled(!enabled)
-            .frame(width: 60, height: 40)
-            .background(Color.white)
-            .onAppear {
-                Harness.down = { pressed = true }
-                // One turn, both writes — a touch-up that also happens to be
-                // the command that disables the button. Splitting them would
-                // measure a pairing that does not occur.
-                Harness.up = {
-                    pressed = false
-                    enabled = false
-                }
-            }
-        }
-    }
-
-    private var saved = false
-    private var window: UIWindow?
-    private var host: UIViewController?
-
-    override func setUp() async throws {
-        try await super.setUp()
-        saved = BottomBarStyle.reduceMotion
-    }
-
-    override func tearDown() async throws {
-        BottomBarStyle.reduceMotion = saved
-        window?.isHidden = true
-        window = nil
-        host = nil
-        Harness.down = nil
-        Harness.up = nil
-        try await super.tearDown()
-    }
-
-    /// How dark the block's centre is: 255 for solid ink, 0 for white.
-    private func centre() throws -> Int {
-        let view = try XCTUnwrap(host?.view)
-        let grab = try XCTUnwrap(
-            LivePixels.grab(view, CGSize(width: 60, height: 40)),
-            "CALayer.render produced nothing"
-        )
-        return 255 - Int(grab.data[(20 * grab.width + 30) * 4 + 1])
-    }
-
-    func testTheDisabledTintArrivesInOneFrameWithTheSettingOff() throws {
-        BottomBarStyle.reduceMotion = false
-        Harness.down = nil
-        Harness.up = nil
-        let (window, host) = LivePixels.host(Probe())
-        self.window = window
-        self.host = host
-
-        LivePixels.pump(0.5)
-        let whileEnabled = try centre()
-
-        // Pressed and left to settle before the interesting moment, so the halo
-        // this touch-down fires has expired and cannot be mistaken for the tint
-        // moving. The halo is keyed on touch-*down* only, so lifting the finger
-        // below fires no second one.
-        try XCTUnwrap(Harness.down)()
-        LivePixels.pump(0.6)
-
-        try XCTUnwrap(Harness.up)()
-        var samples: [Int] = []
-        for _ in 0..<25 {
-            LivePixels.pump(0.01)
-            samples.append(try centre())
-        }
-        LivePixels.pump(0.6)
-        let settled = try centre()
-
-        // The anchor. Without it, a probe drawing nothing, or drawing the same
-        // grey in both states, satisfies the real assertion trivially — every
-        // sample would sit on top of a `settled` that means nothing.
-        let gap = abs(whileEnabled - settled)
-        XCTAssertGreaterThan(
-            gap, 40,
-            "the probe cannot tell the two tints apart: \(whileEnabled) enabled against \(settled) disabled"
-        )
-
-        // Every sample from the first frame after the lift onwards is already at
-        // the disabled value. A fade would put the early ones up near
-        // `whileEnabled` and walk them down; `dimReturn` is 0.20s, so 25 frames
-        // covers the whole of it with room to spare.
-        let worst = samples.map { abs($0 - settled) }.max() ?? 0
-        XCTAssertLessThanOrEqual(
-            worst, gap / 10,
-            "the disabled tint faded in instead of switching: \(samples) settling at \(settled)"
-        )
-    }
-}
-
 /// **The queue transition: every distance goes, and the transition still
 /// happens.**
 ///
@@ -1450,15 +890,10 @@ final class QueueTransitionDistanceTests: XCTestCase {
         BottomBarStyle.reduceMotion = false
         XCTAssertEqual(QueuePanel.riseDistance, 55)
         XCTAssertEqual(QueuePanel.headerTextRise, 8)
-        XCTAssertEqual(NowPlayingContent.queueBadgeScale, 0.7)
 
         BottomBarStyle.reduceMotion = true
         XCTAssertEqual(QueuePanel.riseDistance, 0)
         XCTAssertEqual(QueuePanel.headerTextRise, 0)
-        // 1, not 0: a scale's "no distance" is unity. Asserting 0 here would
-        // pin the badge to being invisible, which is the opposite of the
-        // requirement.
-        XCTAssertEqual(NowPlayingContent.queueBadgeScale, 1)
     }
 
     /// **The swap still has to happen.** Reduce Motion removes travel, scale and

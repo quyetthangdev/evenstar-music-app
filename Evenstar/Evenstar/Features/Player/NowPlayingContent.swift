@@ -32,6 +32,7 @@ struct NowPlayingContent: View {
     @State private var nextTaps = 0
     @State private var previousTaps = 0
     @State private var playPauseTaps = 0
+    @State private var queueTaps = 0
     @State private var volumeTaps = 0
     /// Ngón tay đang đè trên thanh âm lượng. Đọc ngược từ `MPVolumeView` vì
     /// cú phồng được vẽ ở phía SwiftUI — xem chỗ dùng.
@@ -288,22 +289,6 @@ struct NowPlayingContent: View {
         return "\(track.artistName) · \(source)"
     }
 
-    /// Runs a transport command on the next main-actor turn, so the tap's own
-    /// acknowledgement renders first.
-    ///
-    /// SwiftUI renders a button's action *after* it returns, so anything
-    /// synchronous in there sits between the tap and the first frame of the tap
-    /// effect. `next()` loads an `AVAudioPlayer` from disk; `previous()` seeks,
-    /// which persists. Neither can be made free, and neither needs to happen
-    /// inside that frame: audio starting one turn later is inaudible, while the
-    /// animation starting one turn later is the thing being complained about.
-    ///
-    /// Ordering is safe — main-actor tasks run in the order they are enqueued —
-    /// so holding Next still advances one track per tap, in order.
-    private func acknowledge(_ command: @escaping () -> Void) {
-        Task { @MainActor in command() }
-    }
-
     /// Moved into `PlayerSubtitle` so the collapsed player applies the identical
     /// rule and so the rule has a test. It had neither before.
     private var subtitle: PlayerSubtitle {
@@ -318,53 +303,45 @@ struct NowPlayingContent: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 48) {
-            TouchDownButton {
+        HStack(spacing: 40) {
+            Button {
                 previousTaps += 1
-                acknowledge { playback.previous() }
+                playback.previous()
             } label: {
                 Image(systemName: "backward.fill")
                     .font(.title2)
                     .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
-            .buttonStyle(.transportSkip(trigger: previousTaps, direction: -1))
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .sensoryFeedback(.impact(weight: .light), trigger: previousTaps)
             .disabled(playback.currentTrack == nil)
 
-            TouchDownButton {
+            Button {
                 playPauseTaps += 1
-                // NOT deferred, unlike the two arrows. For play/pause the
-                // response *is* the state change: `isPlaying` flips and the
-                // glyph swaps. Deferring that pushed the very thing being
-                // acknowledged a turn later and made the button feel slower,
-                // not faster. It can afford to run inline because it already
-                // does nothing expensive — `pause()`/`resume()` defer their own
-                // lock-screen push and disk write.
                 playback.togglePlayPause()
             } label: {
-                // The bare glyph, not `.circle.fill`. The ring was doing no
-                // work the size and position were not already doing, and it
-                // made this the only transport control with a filled backdrop.
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: Self.playGlyphSize))
                     .symbolReplace()
-                    // No glyph handover: a handover says "that went somewhere",
-                    // true of Previous and Next and false of this one, which
-                    // toggles in place. Its own glyph already changes, which is
-                    // feedback the arrows do not have. The halo now comes from
-                    // the button style, along with the press physics.
+                    .frame(width: Self.playGlyphSize * 1.4, height: Self.playGlyphSize * 1.4)
             }
-            .buttonStyle(.transportToggle(trigger: playPauseTaps))
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .sensoryFeedback(.impact(weight: .medium), trigger: playPauseTaps)
             .disabled(playback.currentTrack == nil)
 
-            TouchDownButton {
+            Button {
                 nextTaps += 1
-                acknowledge { playback.next() }
+                playback.next()
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.title2)
                     .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
-            .buttonStyle(.transportSkip(trigger: nextTaps, direction: 1))
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .sensoryFeedback(.impact(weight: .light), trigger: nextTaps)
             .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
@@ -373,26 +350,6 @@ struct NowPlayingContent: View {
     /// The glyph frame. 44pt, so the hit region needs no tricks — unlike the
     /// pills, this row replaces nothing and can afford its own height.
     private static let queueGlyphFrame: CGFloat = 44
-
-    /// Mảng nền của nút hàng đợi nở ra từ đâu: 0,7 khi tắt, **1** khi giảm
-    /// chuyển động.
-    ///
-    /// Cùng đường với `BottomBarStyle.pressedScale` và
-    /// `QueueToggleStyle.pressedScale` — cái phải bỏ là cú phóng, không phải
-    /// cú hiện. `.opacity(showingQueue ? 1 : 0)` ngay trên giữ nguyên, nên nền
-    /// vẫn xuất hiện và vẫn biến mất, chỉ là nó không còn nở ra nữa.
-    ///
-    /// Nhỏ, và vẫn tính: nó nổ cùng lúc với cú bay của tấm bìa, tức là ngay
-    /// giữa chỗ đợt này đang dọn.
-    ///
-    /// Nội bộ chứ không `private`, cùng lý do `QueueToggleStyle.pressedScale`
-    /// và `QueuePanel.riseDistance` là vậy: một nhánh Giảm chuyển động chỉ tồn
-    /// tại trong diff là đúng loại nhánh đợt này đã để lọt năm lần.
-    @MainActor static var queueBadgeScale: CGFloat {
-        BottomBarStyle.reduceMotion ? queueBadgeScaleFlat : queueBadgeScaleFull
-    }
-    private static let queueBadgeScaleFull: CGFloat = 0.7
-    private static let queueBadgeScaleFlat: CGFloat = 1
 
     /// One icon, trailing. Apple Music puts three here — lyrics, AirPlay and
     /// the queue — and this app has nothing to put behind the other two.
@@ -406,45 +363,19 @@ struct NowPlayingContent: View {
         HStack {
             sleepTimerButton
             Spacer()
-            TouchDownButton {
+            Button {
+                queueTaps += 1
                 withAnimation(BottomBarStyle.queue) {
                     showingQueue.toggle()
                 }
             } label: {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(
-                        // Literal white, not the accent, when the queue is
-                        // open: this glyph sits on the now-playing card, over
-                        // artwork the darkening overlay already keeps dark, so
-                        // white is legible there and only there — it is not a
-                        // statement about what the accent colour should be.
-                        playback.currentTrack == nil ? AnyShapeStyle(.tertiary)
-                            : showingQueue ? AnyShapeStyle(Color.white)
-                                           : AnyShapeStyle(.secondary)
-                    )
                     .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)
-                    // Nền chỉ có khi hàng đợi đang mở, và **rất nhẹ**.
-                    //
-                    // Bản đầu dùng `.ultraThinMaterial` đục hoàn toàn: nó đọc
-                    // ra như cái nút đang bị nhấn giữ, nên đã bỏ đi. Nhưng bỏ
-                    // hẳn thì mất luôn thứ Apple Music có ở đây — một mảng mờ
-                    // nói "chế độ này đang bật", cùng ngôn ngữ với hai viên
-                    // thuốc trong panel.
-                    //
-                    // Khác nhau ở độ đậm chứ không ở việc có hay không: 0.14
-                    // của `Color.primary` đủ để thấy là có nền, nhạt hơn hẳn
-                    // một viên thuốc đang bật, nên nó không tranh chỗ.
-                    .background {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.primary.opacity(0.14))
-                            .opacity(showingQueue ? 1 : 0)
-                            .scaleEffect(showingQueue ? 1 : Self.queueBadgeScale)
-                            .animation(BottomBarStyle.content, value: showingQueue)
-                    }
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.queueToggle)
+            .glassToggleStyle(isOn: showingQueue)
+            .buttonBorderShape(.circle)
+            .sensoryFeedback(.impact(weight: .light), trigger: queueTaps)
             .disabled(playback.currentTrack == nil)
             .accessibilityLabel(String(
                 localized: "Hàng đợi",

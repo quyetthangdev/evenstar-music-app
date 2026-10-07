@@ -2557,7 +2557,7 @@ struct PlayerCard: View {
     ///      trả 0 ngay ở dòng đầu.
     ///   3. Hai khối dưới của panel — `QueuePanel.riseDistance`.
     ///   4. Khối chữ header của panel — `QueuePanel.headerTextRise`.
-    ///   5. Mảng nền nút hàng đợi — `NowPlayingContent.queueBadgeScale`.
+    ///   5. Mảng nền nút hàng đợi — không còn; nút giờ là kính native.
     ///
     /// Cái *không* nằm trong danh sách cũng có ý: mọi cú `.opacity` ở năm chỗ
     /// ấy đều ở nguyên. Hàng đợi vẫn mở, vẫn đóng, và thứ tự hiện/tan của hai

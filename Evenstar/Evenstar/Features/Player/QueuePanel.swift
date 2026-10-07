@@ -95,7 +95,7 @@ struct QueuePanel: View {
     /// một cú dịch chuyển thật, và quãng đường ấy "do B3/B4 quyết có còn hay
     /// không". Đây là chỗ quyết.
     ///
-    /// Nội bộ chứ không `private`, cùng lý do `QueueToggleStyle.pressedScale`
+    /// Nội bộ chứ không `private`, cùng lý do `QueuePanel.riseDistance`
     /// là vậy: đây là con số duy nhất nói hai khối ấy còn trượt hay không, và
     /// một nhánh Giảm chuyển động chỉ tồn tại trong diff là đúng loại nhánh đợt
     /// này đã để lọt hai lần.
@@ -348,11 +348,7 @@ struct QueuePanel: View {
 
     /// One capsule control.
     ///
-    /// The **fill** says on or off, not the glyph's colour: `shuffle` and
-    /// `repeat` render identically armed or not, so a tint alone would leave
-    /// shuffle with no readable state. `JamendoDiscoveryView`'s genre chips
-    /// shipped that mistake with a 0.12-opacity fill against
-    /// `tertiarySystemFill` and it was invisible.
+    /// Trạng thái bật/tắt nói bằng kiểu kính — xem `glassToggleStyle`.
     @ViewBuilder
     private func pill(
         systemImage: String,
@@ -362,50 +358,15 @@ struct QueuePanel: View {
         action: @escaping () -> Void
     ) -> some View {
         let enabled = playback.currentTrack != nil
-        TouchDownButton(action: action) {
+        Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 18, weight: .semibold))
-                // Three branches, and set *inside* the label on purpose:
-                // `TransportButtonStyle` dims a disabled label from outside,
-                // but the innermost `foregroundStyle` wins, so its dimming
-                // would never land.
-                // Dark when on, because the capsule behind it is filled white
-                // on the same condition — a white glyph there would be white
-                // on white, which is `ProminentActionButton`'s failure moved
-                // to a new control. Inverting is also what Apple Music does:
-                // the armed pill is a white capsule with a dark glyph.
-                .foregroundStyle(
-                    !enabled ? AnyShapeStyle(.tertiary)
-                             : isOn ? AnyShapeStyle(Color.black)
-                                    : AnyShapeStyle(.secondary)
-                )
                 .symbolReplace()
                 .frame(width: pillWidth, height: Self.pillHeight)
-                .background(
-                    // Literal white, not the accent: this pill sits on the
-                    // now-playing card, over artwork the darkening overlay
-                    // already keeps dark, so white is legible there and only
-                    // there — it is not a statement about what the accent
-                    // colour should be. Matches the glyph above, which already
-                    // goes `Color.white` on the same condition.
-                    // Trạng thái tắt bám theo màu của tấm bìa đang phát chứ
-                    // không dùng màu xám hệ thống: viên thuốc nằm trên nền là
-                    // chính tấm bìa ấy, và một mảng xám hệ thống ở đó đọc ra
-                    // như một miếng vá dán lên. Pha rất loãng — nó phải là nền
-                    // cho glyph, không phải một khối màu tranh chỗ.
-                    // 0.45 chứ không phải 0.32: con số cũ là một phần của màu
-                    // trội *chưa* kéo tối, tức đã sáng sẵn. Trên trường tối bây
-                    // giờ, cùng con số ấy ra một mảng gần như không thấy.
-                    isOn && enabled
-                        ? AnyShapeStyle(Color.white)
-                        : AnyShapeStyle(tint.opacity(0.45)),
-                    in: Capsule()
-                )
-                .padding(.vertical, Self.pillHitPad)
-                .contentShape(Rectangle())
-                .padding(.vertical, -Self.pillHitPad)
         }
-        .buttonStyle(.transportPill(trigger: trigger))
+        .glassToggleStyle(isOn: isOn && enabled)
+        .buttonBorderShape(.capsule)
+        .sensoryFeedback(.impact(weight: .light), trigger: trigger)
         .disabled(!enabled)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isOn && enabled ? [.isButton, .isSelected] : .isButton)

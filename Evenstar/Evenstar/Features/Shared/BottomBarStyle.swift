@@ -31,7 +31,7 @@ enum BottomBarStyle {
     ///
     /// A static rather than an environment value, for two reasons. The weaker
     /// one is reach — `BottomBarStyle` has no instances, and
-    /// `TransportButtonStyle`, `QueueToggleStyle` and `TapHalo` are
+    /// the old transport, queue and halo styles (since deleted) were
     /// `ButtonStyle`s and `ViewModifier`s that cannot read the environment
     /// where the constant is actually needed. The stronger one is agreement:
     /// the player's morph is run by `PlayerCard` and, on the same curve, by
@@ -58,7 +58,7 @@ enum BottomBarStyle {
     /// **Neither of those two is how this feature mostly reads the flag, and
     /// this paragraph used to stop before saying so.** The dominant mechanism
     /// is a **structural branch**: a `body` that asks `reduceMotion` and returns
-    /// a *different view* — `TapHalo.body`, `symbolReplace()`, and until the
+    /// a *different view* — `symbolReplace()`, and until the
     /// tab bar became the system's, three of the hand-drawn bar's own views.
     /// That case is not
     /// covered by the argument above, because there is no `v` and no
@@ -69,7 +69,7 @@ enum BottomBarStyle {
     /// from `RootView`, which re-renders the tree, so the first render that can
     /// see the new value is also the one that picks the new structure. (The
     /// test that pinned this changed tab on the hand-drawn bar and went with
-    /// it; the structural readers left are `TapHalo` and `symbolReplace()`.)
+    /// it; the one structural reader left is `symbolReplace()`.)
     @MainActor static var reduceMotion = false
 
     // Where the `…Flat` durations below come from — none of them is invented.
@@ -143,7 +143,7 @@ enum BottomBarStyle {
     // and spends the difference overshooting. Both are honest results of
     // dropping the overshoot, not rounding accidents.
     //
-    // Six constants below — `press`, `control`, `queueContentIn`,
+    // Five constants below — `control`, `queueContentIn`,
     // `queueContentOut`, `queueTitleOut`, `queueTitleIn` — are already duration
     // curves driving a fade or a 5pt swell, with no displacement to take out,
     // so their flat branch is the full one spelled `xFlat = xFull`. They are
@@ -196,75 +196,6 @@ enum BottomBarStyle {
     @MainActor static var selection: Animation { reduceMotion ? selectionFlat : selectionFull }
     private static let selectionFull = Animation.spring(duration: 0.38, bounce: 0.34)
     private static let selectionFlat = Animation.easeInOut(duration: 0.18)
-
-    /// How a control answers the finger, before anything has moved.
-    ///
-    /// 0.09s ease-out, the same figure `TransportButtonStyle.kickDuration` now
-    /// carries, and for the same reason: it is the part that has to be
-    /// immediate. (That style once had a matching `squeeze` constant named
-    /// here; it was removed when its buttons moved to touch-down, because a
-    /// held-press squeeze cancelled out the kick that replaced it.) It was
-    /// written for the hand-drawn tab bar, whose tabs had carried no press
-    /// feedback at all — `.buttonStyle(.plain)` draws none — so the first
-    /// thing that happened after a tap happened on touch-*up*. Everything
-    /// before that was the app appearing not to have noticed.
-    ///
-    /// Reduced: unchanged, and see the shared note above. 0.09s of ease-out is
-    /// not a curve anyone can perceive as motion; the thing that moves is
-    /// `pressedScale`, and removing *that* is B4's decision at the call site.
-    /// Whatever replaces it there still wants to answer the finger in 0.09s.
-    @MainActor static var press: Animation { reduceMotion ? pressFlat : pressFull }
-    private static let pressFull = Animation.easeOut(duration: 0.09)
-    private static let pressFlat = pressFull
-
-    /// What a pressed tab of the hand-drawn bar shrank to; nothing in the app
-    /// reads it since the bar became the system's. Shallower than the transport
-    /// buttons' 0.92: those are 44pt circles the thumb lands on squarely, while
-    /// a tab was a whole quarter of the bar, and the same ratio on something
-    /// that wide read as the bar itself flinching.
-    ///
-    /// Reduced: **1**, no shrink at all. The second constant here that is a
-    /// distance rather than a curve, and it goes the way `recedeScale` went for
-    /// the same reason — `press` above can flatten nothing, because what moves
-    /// is this. `pressedOpacity` below is what answers the finger instead.
-    @MainActor static var pressedScale: CGFloat { reduceMotion ? pressedScaleFlat : pressedScaleFull }
-    private static let pressedScaleFull: CGFloat = 0.96
-    private static let pressedScaleFlat: CGFloat = 1
-
-    /// What a pressed control dims to when the scale has been taken out of it.
-    ///
-    /// **The whole point of this constant is that pressing must still show.** A
-    /// control that answers a finger with nothing is a broken control, not a
-    /// more accessible one, so the styles that lose a scale here —
-    /// `QueueToggleStyle` and `TransportButtonStyle`, and the hand-drawn tab
-    /// bar's press style before it was deleted — all pick this up in its place.
-    ///
-    /// **One number for all of them, where `pressedScale` deliberately differs per
-    /// control.** That difference exists because a percentage of a wide thing is
-    /// many points of travel and a percentage of a small thing is barely any:
-    /// 0.96 on a quarter-bar tab and 0.9 on a 44pt glyph are the same *apparent*
-    /// movement. Opacity has no points in it. There is nothing for the size of
-    /// the control to scale, so a second figure would be a distinction without
-    /// a difference — and this file exists to stop the pieces down here drifting
-    /// apart.
-    ///
-    /// **0.45, and why that is enough to see.** The hand-drawn tab bar this was
-    /// written for staked a readability claim on a smaller gap than this one:
-    /// it distinguished the current destination from the other three by 1.0
-    /// against 0.6 and nothing else, and that difference was expected to be
-    /// read at a glance, on a 15pt glyph, without moving. A press
-    /// dim has to clear that bar, because it is momentary where the tint is
-    /// permanent — 0.45 is more than twice the distance from 1. It stops short
-    /// of the 0.3 or so that reads as *disabled*: the control is being pressed,
-    /// not switched off, and `isEnabled` already owns that appearance in
-    /// `TransportButtonStyle`.
-    ///
-    /// Full: **1**, which is no dim at all. The full mode keeps answering with
-    /// the scale it always did, and stacking a dim on top of it would change how
-    /// the app looks for everyone — the setting off must be untouched.
-    @MainActor static var pressedOpacity: Double { reduceMotion ? pressedOpacityFlat : pressedOpacityFull }
-    private static let pressedOpacityFull: Double = 1
-    private static let pressedOpacityFlat: Double = 0.45
 
     /// Content inside a surface as that surface changes shape: icons and labels
     /// shrinking and fading as the pill closes over them.

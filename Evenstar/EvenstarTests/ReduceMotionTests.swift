@@ -119,7 +119,6 @@ final class ReduceMotionTests: XCTestCase {
     func testTheAlreadyFlatCurvesAreUnchanged() {
         BottomBarStyle.reduceMotion = false
         let full = [
-            BottomBarStyle.press,
             BottomBarStyle.control,
             BottomBarStyle.queueContentIn,
             BottomBarStyle.queueContentOut,
@@ -129,7 +128,6 @@ final class ReduceMotionTests: XCTestCase {
 
         BottomBarStyle.reduceMotion = true
         let reduced = [
-            BottomBarStyle.press,
             BottomBarStyle.control,
             BottomBarStyle.queueContentIn,
             BottomBarStyle.queueContentOut,
@@ -142,7 +140,6 @@ final class ReduceMotionTests: XCTestCase {
         // And they are still the measured curves, delays included: the delays
         // are staging, not motion, and dropping one would put two blocks of
         // text on screen at once in the reduced mode only.
-        XCTAssertEqual(BottomBarStyle.press, .easeOut(duration: 0.09))
         XCTAssertEqual(BottomBarStyle.control, .easeOut(duration: 0.15))
         XCTAssertEqual(BottomBarStyle.queueContentIn, .easeOut(duration: 0.13))
         // 0.10 → 0.033, qua hai bước. Hằng số 0.10 mâu thuẫn với chính phép đo
