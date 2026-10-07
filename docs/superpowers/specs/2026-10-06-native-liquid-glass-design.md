@@ -140,14 +140,17 @@ pill" không còn đúng.
 - **Khi bung: thẻ đặc ngay từ khung đầu, không có lớp kính**, như Apple Music.
   Lớp `.thinMaterial` cũ của viên pill bị xoá. Lúc nghỉ, khung ấy là viên kính
   của hệ thống; lúc bung, thẻ đặc phủ lên.
-- **Khi thu (sửa 2026-10-06 sau QA trên máy):** ở đoạn cuối, lúc thẻ còn lớn hơn
-  viên kính một chút, mặt thẻ chuyển từ đặc sang `.glassEffect`; thẻ **lún quá
-  chỗ ~10pt rồi nảy lại** (không bẹp hình) như Apple Music; chỉ sau cú nảy mới
-  nhường cho accessory — kính nhường cho kính, không đổi màu. Video Apple Music:
-  thẻ thành kính ~66–100ms trước khi chạm đáy, lún ~132–200ms, nảy về ~200–500ms.
-
-### Thay đổi hành vi
-
+- **Khi thu (chốt 2026-10-07, sau nhiều vòng QA trên máy):** cú co mềm kiểu
+  zoom của iOS — thẻ dẹt dần và gọn về đúng viên thuốc trên một lò xo **không
+  nảy** (không phồng, không nén–giãn, không nảy kiểu vật rơi), nội dung mở rộng
+  tan sớm, hàng mini player hiện dần ở đoạn cuối; ở đoạn cuối mặt thẻ chuyển từ
+  đặc sang `.glassEffect`, rồi nhường cho accessory bằng một cú mờ ngắn — kính
+  nhường cho kính. Cú kéo vẫn bám ngón tay ngay từ đầu.
+  - Lý do: đã thử zoom transition native (`UIViewController.Transition.zoom`,
+    spike `docs/prototypes/NativeAccessoryHandoff`) — hình cú co đẹp nhưng iOS
+    cố định thời gian (mở ~1 s mới xong, thu ~1,2 s, vuốt sớm bị giữ lại), đo
+    trên iPhone 12 / iOS 27; không chỉnh được. Các cú nảy tự chế (lún, phồng,
+    nảy vật rơi, nén–giãn) đều bị chê hoặc lộ viên kính tĩnh của hệ thống.
 - **Đóng tìm kiếm không còn tự quay về tab trước đó.** Search là một tab thường
   của hệ thống, như Apple Music.
 - **Lệnh của nút transport chạy lúc nhấc tay** thay vì lúc chạm xuống (hệ quả của
