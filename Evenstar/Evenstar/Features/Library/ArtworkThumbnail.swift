@@ -90,6 +90,15 @@ struct ArtworkThumbnail: View {
         }
     }
 
+    /// Nền ô placeholder khi không có `tint` — cũng là màu mà ô bìa của thẻ
+    /// player hoà về khi thu hẳn (`PlayerCard.placeholderExpandedWeight`), để
+    /// lúc thẻ trao chỗ cho accessory hai ô trùng màu. Một hằng số, không phải
+    /// hai chỗ gõ cùng một màu.
+    static let placeholderFill = Color(.tertiarySystemFill)
+
+    /// Màu nốt nhạc của ô placeholder — xem `placeholderFill` về vì sao dùng chung.
+    static let placeholderGlyph = HierarchicalShapeStyle.secondary
+
     private var placeholder: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.12)
@@ -102,10 +111,10 @@ struct ArtworkThumbnail: View {
                 // *mặt phẳng* đã kéo về 0.50 độ sáng — pha loãng thêm ba lần
                 // nữa là kéo ô này về đúng màu nền, tức là xoá nó.
                 .fill(tint.map { AnyShapeStyle($0.opacity(0.6)) }
-                      ?? AnyShapeStyle(Color(.tertiarySystemFill)))
+                      ?? AnyShapeStyle(Self.placeholderFill))
             Image(systemName: "music.note")
                 .font(.system(size: size * 0.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Self.placeholderGlyph)
         }
     }
 }

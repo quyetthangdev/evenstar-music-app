@@ -295,6 +295,15 @@ struct PlayerCard: View {
     /// nó không được phép dựng lại `body`.
     @State private var flights = MorphFlights()
 
+    /// Chế độ sáng/tối **của hệ thống**, đọc ở đây — ngoài cây con tấm bìa,
+    /// nơi `\.colorScheme` bị ép tối (xem cuối `artworkView`). Chỉ để hai lớp
+    /// ô bìa mượn của accessory (`ArtworkThumbnail.placeholderFill`/
+    /// `placeholderGlyph`) phân giải đúng như chúng phân giải trong accessory —
+    /// đo được: dưới chế độ ép tối, ở chế độ sáng ô ra tối hơn và nốt nhạc ra
+    /// sáng, chẳng giống ô của accessory chút nào. Chỉ đổi khi người dùng đổi
+    /// chế độ, nên không thêm lượt dựng nào theo khung.
+    @Environment(\.colorScheme) private var systemColorScheme
+
     /// Độ mờ của **riêng tấm bìa** trong lúc nó đổi chỗ giữa cú mở và cú đóng
     /// hàng đợi, khi giảm chuyển động.
     ///
@@ -1355,6 +1364,25 @@ struct PlayerCard: View {
                              alpha: 1))
     }
 
+    /// Ô bìa của bài **không bìa** mang màu của thẻ mở tới đâu: 1 ở `progress`
+    /// 1, 0 ở `progress` 0 — ở đó nó đúng là ô của accessory
+    /// (`ArtworkThumbnail.placeholderFill`/`placeholderGlyph`).
+    ///
+    /// **Tuyến tính trên cả quãng, không dồn về cuối — chọn.** Nền thẻ ngay sau
+    /// ô bìa cũng đổi tuyến tính trên `progress` (lớp nền player mở hiện theo
+    /// `.opacity(progress)` trên mặt đặc sáng của viên thuốc), nên ô bìa và nền
+    /// sau nó đổi **cùng một nhịp**: không lúc nào ô bìa là thứ duy nhất đang
+    /// đổi màu, và độ tương phản giữa hai thứ giữ gần như không đổi suốt đường
+    /// đi. Dồn về cuối thì cú đổi màu rơi trúng quãng ~30ms thẻ hoà sang kính —
+    /// hai cú đổi chồng lên nhau, đọc ra lại thành một cú nhảy.
+    ///
+    /// Dưới `withAnimation`, `.opacity` của hai lớp được nội suy giữa hai đầu
+    /// dọc chính đường cong của hình học — mà hàm này tuyến tính, nên giá trị
+    /// đang vẽ đúng bằng hàm ở `progress` đang vẽ. Không cần `Animatable` riêng.
+    static func placeholderExpandedWeight(progress: Double) -> Double {
+        min(max(progress, 0), 1)
+    }
+
     /// 0.38 → 0.28, sau khi nền bài không-bìa chuyển sang đen tuyền.
     ///
     /// Con số cũ được chọn khi nền còn là dốc xám 0.26→0.13, và một ô 0.38 trên
@@ -1586,7 +1614,20 @@ struct PlayerCard: View {
             // Bám sắc màu của bài, không phải một màu xám gõ tay: với bài có
             // bìa đang giải mã, lớp này là thứ nhìn thấy trong khoảnh khắc
             // trước khi ảnh tới, và một mảng xám ở đó nhấp nháy sai màu.
+            //
+            // **Bài không bìa: hoà dần về đúng ô của accessory khi thu** (vòng
+            // sửa 4, QA trên máy). Ô của thẻ tối, ô `ArtworkThumbnail` của
+            // accessory sáng (`placeholderFill`, trong suốt một phần trên kính),
+            // nên lúc trao chỗ ô bìa nhảy tối → sáng. Giờ ô của accessory nằm
+            // dưới, ô tối phủ lên ở độ mờ `placeholderExpandedWeight` — 1 khi mở
+            // hẳn, 0 khi thu hẳn — nên ở `progress` 0 thứ nhìn thấy **chính là**
+            // ô của accessory. Bài có bìa thì ô sáng tắt hẳn và ô tối đặc như
+            // cũ: ảnh phủ lên, không gì đổi.
+            Rectangle().fill(ArtworkThumbnail.placeholderFill)
+                .environment(\.colorScheme, systemColorScheme)
+                .opacity(hasArtwork ? 0 : 1)
             Rectangle().fill(Self.placeholderTile(tintColour))
+                .opacity(hasArtwork ? 1 : Self.placeholderExpandedWeight(progress: progress))
 
             // **Luôn gắn, không bao giờ chèn.** Một `if source == .image` ở đây
             // là một rẽ nhánh **cấu trúc**, và cú giải mã ghi `artwork` bằng
@@ -1627,14 +1668,25 @@ struct PlayerCard: View {
                 // at a fixed base size and use `.scaleEffect`, which does
                 // animate, to track `side` continuously. Ratio matches
                 // ArtworkThumbnail's placeholder (size * 0.5). See F6.
-                Image(systemName: "music.note")
-                    .font(.system(size: Self.placeholderGlyphBase * 0.5))
-                    // Trắng 0.62, không phải `.secondary`. Nốt nhạc nằm trên
-                    // một mảng có độ sáng đã biết (`placeholderTileBrightness`),
-                    // nên độ tương phản là thứ tính được chứ không phải thứ để
-                    // môi trường quyết — và `.secondary` ở chế độ sáng cho một
-                    // nốt xám đậm trên mảng ấy, gần như không thấy.
-                    .foregroundStyle(.white.opacity(0.62))
+                // Hai nốt chồng khít, hoà theo cùng trọng số với hai ô nền ở
+                // trên: nốt của accessory (`ArtworkThumbnail.placeholderGlyph`)
+                // ở dưới, nốt trắng của thẻ mở phủ lên.
+                ZStack {
+                    Image(systemName: "music.note")
+                        .font(.system(size: Self.placeholderGlyphBase * 0.5))
+                        .foregroundStyle(ArtworkThumbnail.placeholderGlyph)
+                        .environment(\.colorScheme, systemColorScheme)
+                        .opacity(1 - Self.placeholderExpandedWeight(progress: progress))
+                    Image(systemName: "music.note")
+                        .font(.system(size: Self.placeholderGlyphBase * 0.5))
+                        // Trắng 0.62, không phải `.secondary`. Nốt nhạc nằm trên
+                        // một mảng có độ sáng đã biết (`placeholderTileBrightness`),
+                        // nên độ tương phản là thứ tính được chứ không phải thứ để
+                        // môi trường quyết — và `.secondary` ở chế độ sáng cho một
+                        // nốt xám đậm trên mảng ấy, gần như không thấy.
+                        .foregroundStyle(.white.opacity(0.62))
+                        .opacity(Self.placeholderExpandedWeight(progress: progress))
+                }
                     .scaleEffect(min(width, height) / Self.placeholderGlyphBase)
                     // **`scaleEffect` không đổi kích thước layout.**
                     //
@@ -1779,7 +1831,17 @@ struct PlayerCard: View {
         // where it used to fade to nothing. The accessory's own thumbnail has
         // none, so the handoff frame adds a faint lift under a 30pt cover —
         // one of the things to judge on device.
-        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+        //
+        // **Bài không bìa: bóng nhạt dần theo ô bìa (vòng sửa 4).** Ô của
+        // accessory mà ô bìa hoà về là một lớp *trong suốt một phần*
+        // (`ArtworkThumbnail.placeholderFill`), nên bóng đổ nằm dưới lọt qua nó:
+        // đo được, ô ra tối hơn ô của accessory ~3–5 mỗi kênh ở cả hai chế độ.
+        // Độ đậm của bóng theo cùng `placeholderExpandedWeight`, nên ở
+        // `progress` 0 không còn bóng — đúng như accessory. Chỉ màu của bóng đổi,
+        // không phải bán kính hay độ lệch: hình của bóng vẫn không đổi, đúng
+        // điều đoạn trên đòi; và bài có bìa vẫn là hằng số 0.18.
+        .shadow(color: .black.opacity(hasArtwork ? 0.18 : 0.18 * Self.placeholderExpandedWeight(progress: progress)),
+                radius: 6, y: 3)
         .position(centre)
         // Cú hoà mờ thay cho cú bay khi giảm chuyển động — xem
         // `setQueueFactor(to:)`. Ở chế độ thường nó là hằng số 1 và modifier
