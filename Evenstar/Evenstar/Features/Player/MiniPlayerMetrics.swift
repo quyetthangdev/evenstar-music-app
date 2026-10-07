@@ -24,8 +24,8 @@ enum MiniPlayerMetrics {
     }
 
     /// Chỗ dành cho tên bài trong một hàng rộng `rowWidth` — đúng chỗ mà
-    /// `HStack` của accessory chừa cho nó: trừ lề trái tới chữ, khe tối thiểu
-    /// của `Spacer`, cụm nút và lề phải.
+    /// `HStack` của accessory chừa cho nó: trừ lề trái tới chữ, khe trước cụm
+    /// nút (`padding` cuối vùng thông tin bài), cụm nút và lề phải.
     static func titleWidth(rowWidth: CGFloat, showsNext: Bool) -> CGFloat {
         max(0, rowWidth - titleLeadingInset - artworkTitleGap
             - controlsWidth(showsNext: showsNext) - trailingInset)

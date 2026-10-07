@@ -29,4 +29,54 @@ enum TrackSwipe {
         let blocked = translation < 0 ? !canGoNext : !canGoPrevious
         return blocked ? translation * rubberBandFactor : translation
     }
+
+    // MARK: - Hình
+
+    /// Nội dung mờ đi chừng này khi đã trượt trọn một bề ngang.
+    static let maxFade: Double = 0.6
+    /// Độ mờ ở đáy cú mờ chéo của Giảm chuyển động — bài đổi ở đây.
+    static let dimmedOpacity: Double = 0.15
+    /// Bài cũ trượt hẳn ra trong chừng này, rồi bài mới vào trên `settle`.
+    static let exitDuration: Double = 0.16
+    /// Mỗi nửa cú mờ chéo của Giảm chuyển động.
+    static let fadeDuration: Double = 0.12
+
+    /// Nội dung lệch bao nhiêu. Giảm chuyển động: không trượt chút nào, chỉ mờ.
+    static func slide(travel: CGFloat, reduceMotion: Bool) -> CGFloat {
+        reduceMotion ? 0 : travel
+    }
+
+    /// Mờ theo quãng đã đi, dừng ở `1 - maxFade` sau một bề ngang. Đứng yên
+    /// thì rõ hẳn, kể cả trước khi vùng thông tin bài được đo (`width` 0).
+    static func opacity(travel: CGFloat, width: CGFloat) -> Double {
+        guard travel != 0 else { return 1 }
+        guard width > 0 else { return 1 - maxFade }
+        return 1 - Double(min(abs(travel) / width, 1)) * maxFade
+    }
+
+    // MARK: - Đổi bài
+
+    /// Đổi bài cho một cú vuốt đã quyết. `false` khi không đổi gì.
+    ///
+    /// Hỏi lại `canGoNext`/`canGoPrevious` ở đây chứ không tin quyết định lúc
+    /// thả: bài đổi **sau** cú trượt ra, và trong ~0,16s ấy bài cuối có thể đã
+    /// hết. `next()` ở cuối hàng đợi khi tắt repeat dừng phát — cú vuốt không
+    /// bao giờ được gọi nó ở đó. Không cái nào tăng `explicitSelections`, nên
+    /// vuốt đổi bài không bung player.
+    @MainActor
+    static func commit(_ outcome: Outcome, on playback: PlaybackService) -> Bool {
+        switch outcome {
+        case .next:
+            guard playback.canGoNext else { return false }
+            playback.next()
+            return true
+        case .previous:
+            guard playback.canGoPrevious else { return false }
+            playback.stepBack()
+            return true
+        case .cancel:
+            return false
+        }
+    }
 }
+

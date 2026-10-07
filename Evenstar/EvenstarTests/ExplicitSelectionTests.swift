@@ -97,6 +97,20 @@ final class ExplicitSelectionTests: XCTestCase {
         XCTAssertEqual(service.explicitSelections, before)
     }
 
+    /// The mini player's swipe back. Swiping is not choosing a row: a track
+    /// change from the accessory must leave the player collapsed.
+    func testStepBackDoesNotCount() throws {
+        let (service, _, library) = try makeStack()
+        let list = try tracks(3, library: library)
+        service.play(list[2], in: list)
+        let before = service.explicitSelections
+
+        service.stepBack()
+
+        XCTAssertEqual(service.queueIndex, 1, "precondition: stepBack() actually moved")
+        XCTAssertEqual(service.explicitSelections, before)
+    }
+
     /// The one that matters most: a track ending on its own is the case where
     /// an accidental open would happen unattended.
     ///
