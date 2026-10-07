@@ -26,6 +26,11 @@ struct PlayerAnchor: Equatable {
 
     static func dragTravel(for frame: CGRect) -> CGFloat { max(frame.minY, 1) }
 
+    /// Tâm thẻ đi xuống bao nhiêu điểm cho mỗi đơn vị `progress` khi thu — vận
+    /// tốc của cú hạ cánh suy ra từ đây (`LandingBounce`). `cardFrame` tuyến
+    /// tính theo `progress`, nên đây là một hằng số của mỗi khung.
+    var centerTravel: CGFloat { cardFrame(progress: 0).midY - cardFrame(progress: 1).midY }
+
     func cardFrame(progress: Double) -> CGRect {
         let p = CGFloat(min(max(progress, 0), 1))
         let leading = leadingMargin * (1 - p)

@@ -5,7 +5,8 @@ import SwiftUI
 /// Ba việc:
 /// - vẽ hàng mini player trùng khít hàng mà `PlayerCard` vẽ ở `progress` 0;
 /// - báo khung của mình lên `PlayerExpansion`, để thẻ biết bung ra từ đâu — và
-///   môi trường chữ hệ thống đặt cho nó, để hàng của thẻ vẽ y như thế;
+///   môi trường chữ hệ thống đặt cho nó, để hàng của thẻ vẽ y như thế — và
+///   mang neo để thẻ tìm được viên kính của hệ thống (`AccessoryCapsule`);
 /// - nhận chạm và cú kéo lên trên vùng thông tin bài, rồi chuyển sang thẻ.
 ///   Nút play/next nằm ngoài vùng ấy, nên bấm nút không bao giờ thành kéo.
 ///
@@ -54,6 +55,9 @@ struct MiniPlayerAccessory: View {
         }
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Neo để tìm viên kính của hệ thống — xem `AccessoryCapsule`. Mang đúng
+        // khung hàng.
+        .background(AccessoryCapsuleAnchor(capsule: expansion.capsule))
         .opacity(expansion.showsAccessoryContent ? 1 : 0)
         // Bật tắt, không bao giờ mờ dần, dù lượt cập nhật có mang animation
         // nào: hàng này thế chỗ hàng y hệt của thẻ trong một lượt — xem
@@ -85,8 +89,12 @@ struct MiniPlayerAccessory: View {
             axis = nil
             drivesCard = false
         }
-        // Accessory bị dỡ giữa cú kéo (bài về nil) cũng là một cú huỷ.
-        .onDisappear { expansion.cancelAccessoryDrag() }
+        // Accessory bị dỡ giữa cú kéo (bài về nil) cũng là một cú huỷ — và
+        // giữa cú hạ cánh thì viên kính phải hiện lại.
+        .onDisappear {
+            expansion.cancelAccessoryDrag()
+            expansion.capsule.restore()
+        }
     }
 
     private var info: some View {

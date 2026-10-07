@@ -276,6 +276,18 @@ struct PlayerCard: View {
     /// nó không được phép dựng lại `body`.
     @State private var flights = MorphFlights()
 
+    /// Cú hạ cánh của cú thu gần nhất, nếu nó có — xem `LandingBounce` và
+    /// `morph(to:curves:)`. `nil` ở mọi cú morph khác: thẻ không lún.
+    @State private var landing: LandingBounce?
+    /// Đồng hồ của các cú hạ cánh: mỗi cú tăng nó thêm 1, tuyến tính trên
+    /// `LandingBounce.duration` (hai chặng cùng tốc độ — xem `morph`);
+    /// `landingStart` là giá trị lúc cú ấy bắt đầu.
+    /// Chỉ tăng, không bao giờ đặt lại về 0: đặt lại một giá trị đang có
+    /// animation chạy không gỡ được animation ấy, còn một mốc bắt đầu đọc từ
+    /// state thì luôn đúng.
+    @State private var landingClock: Double = 0
+    @State private var landingStart: Double = 0
+
     /// Chế độ sáng/tối **của hệ thống**, đọc ở đây — ngoài cây con tấm bìa,
     /// nơi `\.colorScheme` bị ép tối (xem cuối `artworkView`). Chỉ để hai lớp
     /// ô bìa mượn của accessory (`ArtworkThumbnail.placeholderFill`/
@@ -1186,6 +1198,9 @@ struct PlayerCard: View {
         // exactly where the card's bottom edge is — where
         // `PlayerAnchor.cardFrame(progress:)` says it is.
         .padding(.bottom, anchor.bottomOffset * (1 - progress))
+        // Cú hạ cánh: cả thẻ lún cứng, không đổi khung nào — xem
+        // `LandingBounce`. Không có cú hạ cánh thì là `.offset(y: 0)`.
+        .modifier(LandingOffset(clock: landingClock, start: landingStart, bounce: landing))
     }
 
     // MARK: - Pieces
@@ -1201,7 +1216,9 @@ struct PlayerCard: View {
             // thành kính ở đoạn cuối cú thu — xem `CardSurface`.
             CardSurface(progress: progress,
                         glassGate: expansion.cardSurfaceIsGlass ? 1 : 0,
-                        anchor: anchor)
+                        anchor: anchor,
+                        glassStartRatio: landing == nil ? Self.collapseGlassStartRatio
+                                                        : Self.landingGlassStartRatio)
             LinearGradient(
                 // **Bám theo vệt tan của bìa, không phải trải đều cả thẻ.**
                 //
@@ -2702,6 +2719,15 @@ struct PlayerCard: View {
     /// rồi hàng mini của thẻ đổi chỗ với hàng y hệt của accessory. Kính nhường
     /// cho kính, nên không có cú đổi màu nào.
     ///
+    /// **Có hạ cánh** (bổ sung 2026-10-07) khi viên kính của hệ thống ẩn được
+    /// (`planLanding`, `AccessoryCapsule`) và không cú nào khác đang bay: hình
+    /// học đi theo `BottomBarStyle.landingCollapse` — tới viên thuốc ~0,3s với
+    /// vận tốc còn lại — rồi cả thẻ lún cứng qua chỗ nghỉ và về
+    /// (`LandingBounce`, `LandingOffset`); cửa sổ kính bắt đầu từ 4× thay vì 2×.
+    /// Viên kính ẩn từ đầu cú thu (thẻ còn phủ kín nó), hiện lại dần khi thẻ đã
+    /// về trong nửa điểm, rồi mới tới `handOff(_:)` như trên. Không ẩn được thì
+    /// không có gì trong đoạn này chạy: cú co mềm y như trước.
+    ///
     /// `commitCollapse()` nằm **trong** `withAnimation` của hình học, để lớp
     /// kính đi theo đường cong ấy thay vì bật một bậc lúc nhấc tay (xem
     /// `PlayerExpansion.isCollapsing`). Không còn gì phải hiện "ngay" ở
@@ -2721,8 +2747,20 @@ struct PlayerCard: View {
         let generation = expansion.beginMotion()
         guard BottomBarStyle.reduceMotion else {
             let now = CACurrentMediaTime()
-            let curves = requested.flooring(span: progress, residuals: flights.residuals(at: now))
+            let residuals = flights.residuals(at: now)
+            // Cú hạ cánh chỉ khi không còn cú nào đang bay — sàn phần dư và cú
+            // lún không chung một đường cong — và khi viên kính của hệ thống
+            // ẩn được. Không thì cú co mềm, y như trước.
+            let bounce = target == 0 && residuals.isEmpty
+                ? planLanding(initialVelocity: requested.initialVelocity) : nil
+            let chosen = bounce == nil
+                ? requested : BottomBarStyle.landingCollapse(initialVelocity: requested.initialVelocity)
+            let curves = chosen.flooring(span: progress, residuals: residuals)
             flights.record(curves, delta: target - progress, at: now)
+            withTransaction(Transaction(animation: nil)) {
+                landing = bounce
+                landingStart = landingClock
+            }
             withAnimation(curves.geometry) {
                 if target == 0 { expansion.commitCollapse() }
                 settled = target
@@ -2730,9 +2768,33 @@ struct PlayerCard: View {
                 expansion.set(progress: target, animation: curves.geometry)
             } completion: {
                 // Cú này đã bị một chuyển động mới hơn thay thế: không phải việc
-                // của nó nữa. Xem `PlayerExpansion.motion`.
-                guard expansion.motion == generation else { return }
+                // của nó nữa. Xem `PlayerExpansion.motion`. Có hạ cánh thì hình
+                // học tới đích ở **đầu** cú lún: trao tay sau nó, ở dưới.
+                guard expansion.motion == generation, bounce == nil else { return }
                 handOff(generation)
+            }
+            if let bounce {
+                // Đồng hồ chạy hai chặng cùng một tốc độ, nối bằng `completion`:
+                // chặng đầu tới `LandingBounce.handoff` — thẻ đã về trong nửa
+                // điểm — rồi viên kính hiện lại dần dưới nó trong khi chặng sau
+                // đưa nốt thẻ về chỗ nghỉ; xong mới trao tay. Theo đồng hồ của
+                // animation chứ không hẹn giờ: một `Task.sleep` trên main actor
+                // đo được trễ tới hơn 2s khi luồng chính bận (vòng 9, test chụp
+                // từng khung), còn `completion` đi theo chính cú lún.
+                let split = bounce.handoff / bounce.duration
+                let start = landingClock
+                withAnimation(.linear(duration: bounce.handoff)) {
+                    landingClock = start + split
+                } completion: {
+                    guard expansion.motion == generation else { return }
+                    withAnimation(.linear(duration: bounce.duration - bounce.handoff)) {
+                        landingClock = start + 1
+                    }
+                    expansion.capsule.restore(fadingIn: BottomBarStyle.capsuleReturnDuration) {
+                        guard expansion.motion == generation else { return }
+                        handOff(generation)
+                    }
+                }
             }
             return
         }
@@ -2766,6 +2828,21 @@ struct PlayerCard: View {
         }
         // Giảm chuyển động: hình học đã ở đích ngay, nên về nghỉ ngay.
         arriveAtRestIfCollapsed()
+    }
+
+    /// Cú hạ cánh cho cú thu sắp chạy, và ẩn viên kính của hệ thống cho nó —
+    /// hoặc `nil`, khi ấy không ẩn gì. Xem `LandingBounce` và `AccessoryCapsule`.
+    private func planLanding(initialVelocity: Double) -> LandingBounce? {
+        let screen = expansion.screenSize
+        let anchor = PlayerAnchor(
+            frame: expansion.anchorFrame == .zero ? PlayerAnchor.fallbackFrame(screen: screen)
+                                                  : expansion.anchorFrame,
+            screen: screen
+        )
+        guard let bounce = LandingBounce(initialVelocity: initialVelocity, span: progress,
+                                         centerTravel: Double(anchor.centerTravel)),
+              expansion.capsule.hide() else { return nil }
+        return bounce
     }
 
     /// Cú trao tay cho accessory, khi hình học của cú thu đã tới đích: mặt thẻ
@@ -2935,10 +3012,11 @@ struct PlayerCard: View {
     /// chậm hay cú búng — và đó đúng là cái Apple Music cho thấy: thẻ thành
     /// kính khi còn lớn hơn viên kính thấy rõ. Tuyến tính trên chiều cao; độ
     /// chậm dần của lò xo đã là phần êm ở hai đầu.
-    static func collapseGlass(cardHeight: CGFloat, capsuleHeight: CGFloat) -> Double {
+    static func collapseGlass(cardHeight: CGFloat, capsuleHeight: CGFloat,
+                              startRatio: Double = collapseGlassStartRatio) -> Double {
         guard capsuleHeight > 0 else { return 0 }
         let ratio = Double(cardHeight / capsuleHeight)
-        let t = (collapseGlassStartRatio - ratio) / (collapseGlassStartRatio - collapseGlassEndRatio)
+        let t = (startRatio - ratio) / (startRatio - collapseGlassEndRatio)
         return min(max(t, 0), 1)
     }
 
@@ -2955,6 +3033,15 @@ struct PlayerCard: View {
     ///     đúng `progress × dragTravel` (thẻ cao 2× → ~42pt, 1,25× → ~11pt).
     static let collapseGlassStartRatio: Double = 2
     static let collapseGlassEndRatio: Double = 1.25
+
+    /// Cửa sổ kính của cú thu **có hạ cánh** bắt đầu sớm hơn: khi thẻ còn gấp
+    /// **4** viên kính. Lý do "không sớm hơn" ở trên không còn — viên kính của
+    /// hệ thống đã ẩn (`AccessoryCapsule`), không còn gì lộ xuyên qua thẻ — còn
+    /// lý do "không là một cú cắt" thì gắt hơn: lò xo tiếp cận
+    /// (`LandingBounce.approachSpring`) lao vào đích, đi từ 2× tới 1,25× chỉ
+    /// trong ~26ms. Từ 4× là ~72ms (0,21s → 0,29s trên iPhone 12), gần bằng
+    /// ~90ms của cú co mềm.
+    static let landingGlassStartRatio: Double = 4
 
     /// - Parameter safeAreaSize / insets: the same geometry `card(size:insets:)`
     ///   lays out with, so the decode target matches what `artworkView` will
@@ -3107,6 +3194,9 @@ private struct CardSurface: View, Animatable {
     var progress: Double
     var glassGate: Double
     let anchor: PlayerAnchor
+    /// `PlayerCard.collapseGlassStartRatio`, hay `landingGlassStartRatio` khi
+    /// cú thu có hạ cánh.
+    let glassStartRatio: Double
 
     var animatableData: AnimatablePair<Double, Double> {
         get { AnimatablePair(progress, glassGate) }
@@ -3119,7 +3209,8 @@ private struct CardSurface: View, Animatable {
     var body: some View {
         let glass = glassGate * PlayerCard.collapseGlass(
             cardHeight: anchor.cardFrame(progress: progress).height,
-            capsuleHeight: anchor.collapsedHeight
+            capsuleHeight: anchor.collapsedHeight,
+            startRatio: glassStartRatio
         )
         ZStack {
             if glass > 0 {
@@ -3212,6 +3303,27 @@ private struct PresentedOpacity: ViewModifier, Animatable {
         content
             .opacity(opacity)
             .allowsHitTesting(opacity >= Self.hitTestThreshold)
+    }
+}
+
+/// Cú lún của cú hạ cánh, đọc **giá trị đang vẽ** của đồng hồ — xem
+/// `LandingBounce`. `Animatable` vì cùng lẽ với `MiniRowFade` ngay dưới: một
+/// `.offset(y: f(clock))` trần sẽ được tính ở hai đầu (cả hai là 0) và không
+/// bao giờ lún. `offset` là một hiệu ứng hình học: không đổi khung, không dựng
+/// lại bố cục.
+private struct LandingOffset: ViewModifier, Animatable {
+    var clock: Double
+    let start: Double
+    let bounce: LandingBounce?
+
+    var animatableData: Double {
+        get { clock }
+        set { clock = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let depth = bounce.map { $0.offset(at: (clock - start) * $0.duration) } ?? 0
+        content.offset(y: depth)
     }
 }
 

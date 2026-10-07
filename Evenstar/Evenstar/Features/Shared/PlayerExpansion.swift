@@ -101,6 +101,11 @@ final class PlayerExpansion {
     /// Thẻ đang nằm yên ở 0 và vô hình, còn accessory đang hiện nội dung của nó.
     private(set) var isCardResting = true
 
+    /// Viên kính của hệ thống, ẩn tạm trong lúc thẻ hạ cánh — xem
+    /// `AccessoryCapsule`. Mọi lối ra khỏi cú hạ cánh đi qua đây đều hiện nó
+    /// lại: `leaveRest()` và `arriveAtRest()`.
+    @ObservationIgnored let capsule = AccessoryCapsule()
+
     /// Một cú thu đã được quyết (`PlayerCard.morph(to: 0…)`) và thẻ chưa về
     /// nghỉ — tức đang ở giữa lò xo, hoặc trong cú mờ trao tay.
     ///
@@ -212,6 +217,9 @@ final class PlayerExpansion {
         // thuộc tính `@Observable` là một lần mời các view đọc nó dựng lại.
         if isCollapsing { isCollapsing = false }
         if cardSurfaceHandedOver { cardSurfaceHandedOver = false }
+        // Cú hạ cánh bị cắt ngang: thẻ lại phủ lên viên kính, nên hiện nó lại
+        // ngay — thẻ đặc che nó.
+        capsule.restore()
         guard isCardResting else { return }
         anchorFrame = PlayerAnchor.resolve(measured: accessoryFrame, screen: screenSize)
         anchorIsInline = accessoryIsInline
@@ -235,6 +243,8 @@ final class PlayerExpansion {
 
     func arriveAtRest() {
         guard !accessoryDragging else { return }
+        // Cùng lượt với thẻ biến mất: không khung nào thiếu cả hai.
+        capsule.restore()
         isCardResting = true
         isCollapsing = false
     }

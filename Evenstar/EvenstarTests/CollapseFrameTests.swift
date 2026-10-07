@@ -368,6 +368,9 @@ final class CollapseFrameTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         XCTAssertTrue(rig.expansion.isCardResting)
+        // Không có accessory ở đây, nên không có viên kính nào để ẩn: đây là
+        // nhánh dự phòng — cú co mềm, không lún (mục 1 ở trên).
+        XCTAssertFalse(rig.expansion.capsule.isHidden)
     }
 
     // MARK: - Cú trao tay, với accessory thật
@@ -379,11 +382,14 @@ final class CollapseFrameTests: XCTestCase {
     private struct Shell: View {
         let playback: PlaybackService
         let expansion: PlayerExpansion
+        var stripes = false
 
         var body: some View {
             ZStack {
                 TabView {
-                    Tab("A", systemImage: "music.note") { Color.white.ignoresSafeArea() }
+                    Tab("A", systemImage: "music.note") {
+                        if stripes { Stripes() } else { Color.white.ignoresSafeArea() }
+                    }
                     Tab("B", systemImage: "square.stack") { Color.white }
                 }
                 .tabViewBottomAccessory {
@@ -436,7 +442,17 @@ final class CollapseFrameTests: XCTestCase {
     /// kính nửa trong). Sửa môi trường chữ thôi: 3,9 → 6,3 → 0 — vẫn nảy lên,
     /// vì kính của thẻ vẫn nằm giữa hai hàng. Sau cả hai: 3,9 → 2,9 → 2,0 →
     /// 1,1 → 0,2 → 0.
-    func testTheHandoffMovesOneWayAndTheTwoRowsAreTheSame() throws {
+    private struct ShellRig {
+        let playback: PlaybackService
+        let expansion: PlayerExpansion
+        let track: Track
+        let host: UIViewController
+        let screen: CGSize
+        let pill: CGRect
+    }
+
+    /// `Shell` trong một cửa sổ 390×844, accessory của hệ thống đã dựng.
+    private func mountShell(stripes: Bool = false) throws -> ShellRig {
         let library = try InMemoryLibrary.make()
         let track = InMemoryLibrary.makeTrack()
         try library.insert(track)
@@ -444,7 +460,7 @@ final class CollapseFrameTests: XCTestCase {
                                        library: library)
         playback.play(track, in: [track])
         let expansion = PlayerExpansion()
-        let host = UIHostingController(rootView: Shell(playback: playback, expansion: expansion)
+        let host = UIHostingController(rootView: Shell(playback: playback, expansion: expansion, stripes: stripes)
             .environment(library).environment(playback))
         let screen = CGSize(width: 390, height: 844)
         host.view.frame = CGRect(origin: .zero, size: screen)
@@ -463,17 +479,30 @@ final class CollapseFrameTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         let pill = expansion.accessoryFrame
         XCTAssertGreaterThan(pill.width, 100, "the system accessory was never laid out")
+        return ShellRig(playback: playback, expansion: expansion, track: track, host: host, screen: screen, pill: pill)
+    }
 
-        playback.play(track, in: [track])
+    /// Mở hẳn, rồi thả không vận tốc: cùng lò xo với cú chạm thu.
+    private func openAndRelease(_ rig: ShellRig, verticalVelocity: CGFloat = 0) {
+        rig.playback.play(rig.track, in: [rig.track])
         RunLoop.main.run(until: Date().addingTimeInterval(0.9))
-        XCTAssertEqual(expansion.progress, 1)
-
-        // Thả không vận tốc: cùng lò xo với cú chạm thu.
-        let travel = PlayerAnchor.dragTravel(for: expansion.anchorFrame)
+        XCTAssertEqual(rig.expansion.progress, 1)
+        let travel = PlayerAnchor.dragTravel(for: rig.expansion.anchorFrame)
         let translation = 0.02 * travel + AccessoryDragAxis.lockDistance
-        expansion.accessoryDragChanged(translationHeight: translation)
+        rig.expansion.accessoryDragChanged(translationHeight: translation)
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-        expansion.accessoryDragEnded(predictedTranslationHeight: translation + 900, verticalVelocity: 0)
+        rig.expansion.accessoryDragEnded(predictedTranslationHeight: translation + 900,
+                                         verticalVelocity: verticalVelocity)
+    }
+
+    ///
+    /// Từ vòng 9 cảnh này đi nhánh **có hạ cánh** (accessory thật, viên kính ẩn
+    /// được): cú trao tay chạy sau cú lún, khi viên kính đã hiện lại dưới thẻ —
+    /// và vẫn phải một chiều như thế.
+    func testTheHandoffMovesOneWayAndTheTwoRowsAreTheSame() throws {
+        let rig = try mountShell()
+        let (expansion, host, screen, pill) = (rig.expansion, rig.host, rig.screen, rig.pill)
+        openAndRelease(rig)
 
         let band = CGRect(x: 0, y: pill.minY - 30, width: screen.width, height: pill.height + 60)
         let inner = CGRect(x: pill.minX + 4, y: 34, width: pill.width - 8, height: pill.height - 8)
@@ -523,6 +552,144 @@ final class CollapseFrameTests: XCTestCase {
         // 3. Mặt thẻ tan trước, rồi hai hàng mới đổi chỗ.
         XCTAssertTrue(shots[..<firstRest].contains(where: \.surfaceHandedOver),
                       "the rows swapped while the card's surface was still there")
+    }
+
+    // MARK: - Cú hạ cánh
+
+    /// Một khung của cú hạ cánh, đọc ở một cột ngoài thanh tab (x = 95pt: bên
+    /// trái nút tab đầu, trên hàng mini — mép dưới viên thuốc không dính vào
+    /// thanh tab ở cột này khi lún).
+    private struct LandingShot {
+        let ms: Double
+        let top: Int?
+        let bottom: Int?
+        /// Số hàng **có kính** (sáng hơn hẳn sọc) giữa mép trên viên kính lúc
+        /// nghỉ và mép trên thẻ — chỉ khi thẻ đã lún xuống dưới mép ấy.
+        let above: Int?
+        let capsuleHidden: Bool
+        let resting: Bool
+    }
+
+    private func landingShot(_ rig: ShellRig, ms: Double) -> LandingShot {
+        // Đọc cờ cả trước lẫn sau lúc chụp: `drawHierarchy` chạy nốt các lượt
+        // cập nhật đang chờ, và cú hiện lại của viên kính có thể rơi vào đó.
+        let hiddenBefore = rig.expansion.capsule.isHidden
+        let width = Int(rig.screen.width), height = Int(rig.screen.height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: rig.screen, format: format).image { _ in
+            rig.host.view.drawHierarchy(in: CGRect(origin: .zero, size: rig.screen), afterScreenUpdates: true)
+        }
+        var data = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(data: &data, width: width, height: height, bitsPerComponent: 8,
+                                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image.cgImage!, in: CGRect(origin: .zero, size: rig.screen))
+        var column: [(r: Int, g: Int, b: Int)] = []
+        for row in 0..<height {
+            let p = (row * width + 95) * 4
+            column.append((Int(data[p]), Int(data[p + 1]), Int(data[p + 2])))
+        }
+        let pixels = Column(pixels: column)
+        let restTop = Int(rig.pill.minY)
+        let cover = pixels.cover(around: Int(rig.pill.midY) + 2)
+        let above = cover.flatMap { cover -> Int? in
+            guard cover.lowerBound > restTop + 1 else { return nil }
+            // Kính làm sáng sọc lên (~[220, 206, 253], tổng ~680); sọc trần và
+            // hàng pha hai màu sọc ở ranh giới — trong `TabView` ranh giới sọc
+            // không rơi đúng điểm nguyên — đều tối hơn nhiều (tổng ≤ ~400).
+            return ((restTop - 3)..<(cover.lowerBound - 1)).filter { pixels.sum($0) > 500 }.count
+        }
+        return LandingShot(ms: ms, top: cover?.lowerBound, bottom: cover?.upperBound, above: above,
+                           capsuleHidden: hiddenBefore && rig.expansion.capsule.isHidden,
+                           resting: rig.expansion.isCardResting)
+    }
+
+    /// **Cú hạ cánh như Apple Music** (spec, Phần 1, bổ sung 2026-10-07), với
+    /// accessory thật: khi viên kính của hệ thống ẩn được, thẻ tới viên thuốc
+    /// rồi **cả thẻ** lún xuống — mép trên và mép dưới cùng đi, kích thước giữ
+    /// nguyên — rồi về đúng chỗ nghỉ; suốt lúc ấy viên kính của hệ thống không
+    /// lộ ra phía trên thẻ; rồi nó hiện lại và thẻ trao chỗ.
+    ///
+    /// Đo được (simulator iOS 26, khung ~33ms vì mỗi lần chụp chậm): mép trên
+    /// 705 → 711 → 709 → 707 → 705; trên video 60 khung/giây của cùng cảnh
+    /// trên màn hình: 735 → 739 → 742 → 743 → 742 → … → 735 (lún 8pt, ~250ms).
+    func testTheLandingSinksTheWholePillAndHidesTheSystemCapsule() throws {
+        let rig = try mountShell(stripes: true)
+        let restTop = Int(rig.pill.minY), restBottom = Int(rig.pill.maxY) - 1
+        openAndRelease(rig)
+        var shots: [LandingShot] = []
+        var restedAt: Double?
+        let start = CACurrentMediaTime()
+        while CACurrentMediaTime() - start < 2.5 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.002))
+            let shot = landingShot(rig, ms: (CACurrentMediaTime() - start) * 1000)
+            shots.append(shot)
+            if shot.resting, restedAt == nil { restedAt = shot.ms }
+            if let restedAt, shot.ms - restedAt > 100 { break }
+        }
+        for shot in shots {
+            print(String(format: "[landing] t=%6.1fms top=%@ bottom=%@ above=%@ hidden=%d resting=%d", shot.ms,
+                         shot.top.map(String.init) ?? "—", shot.bottom.map(String.init) ?? "—",
+                         shot.above.map(String.init) ?? "—", shot.capsuleHidden ? 1 : 0, shot.resting ? 1 : 0))
+        }
+
+        // Những khung thẻ đã tới viên thuốc — mép trên không còn ở trên chỗ
+        // nghỉ — mà viên kính của hệ thống còn ẩn: đó là cú lún.
+        let landed = shots.filter { shot in
+            guard shot.capsuleHidden, let top = shot.top, shot.bottom != nil else { return false }
+            return top >= restTop - 1
+        }
+        XCTAssertGreaterThanOrEqual(landed.count, 4, "too few frames caught the landing")
+        let sinks = landed.map { $0.top! - restTop }
+        let deepest = try XCTUnwrap(sinks.max())
+        print("[landing] sinks \(sinks), deepest \(deepest)pt")
+
+        // 1. Lún thật, cỡ Apple: ~8pt (khung ~33ms có thể lỡ đáy vài điểm).
+        XCTAssertGreaterThanOrEqual(deepest, 5, "the pill barely moved")
+        XCTAssertLessThanOrEqual(deepest, Int(LandingBounce.maxDepth) + 1)
+        for shot in landed {
+            let sink = shot.top! - restTop
+            // 2. Cứng: mép dưới đi theo mép trên — kích thước không đổi. 2pt cho
+            // các hàng pha màu ở ranh giới sọc, vốn không rơi đúng điểm nguyên
+            // trong `TabView`.
+            XCTAssertEqual(shot.bottom! - shot.top! + 1, Int(rig.pill.height), accuracy: 2,
+                           "the pill changed size at t=\(shot.ms)ms")
+            // 3. Không bao giờ lên quá chỗ nghỉ.
+            XCTAssertGreaterThanOrEqual(sink, -1, "rose above rest at t=\(shot.ms)ms")
+            // 4. Viên kính của hệ thống không lộ ra phía trên thẻ đang lún.
+            if let above = shot.above, sink >= 2 {
+                XCTAssertEqual(above, 0, "the system capsule showed above the card at t=\(shot.ms)ms")
+            }
+        }
+        // …và mép dưới thật sự đi xuống cùng nó: ở khung sâu nhất, đáy cũng
+        // thấp hơn chỗ nghỉ chừng ấy.
+        let deepestShot = try XCTUnwrap(landed.first { $0.top! - restTop == deepest })
+        XCTAssertEqual(deepestShot.bottom! - restBottom, deepest, accuracy: 2, "the bottom edge stayed put")
+        // 5. Về đúng chỗ nghỉ trước khi viên kính hiện lại.
+        XCTAssertEqual(try XCTUnwrap(landed.last).top! - restTop, 0, accuracy: 1, "did not come back to rest")
+        // Đúng một nhịp: sau đáy chỉ đi lên.
+        let bottomIndex = try XCTUnwrap(sinks.firstIndex(of: deepest))
+        for (earlier, later) in zip(sinks[bottomIndex...], sinks[bottomIndex...].dropFirst()) {
+            XCTAssertLessThanOrEqual(later, earlier, "sank again after the deepest point")
+        }
+        // 6. Rồi viên kính hiện lại và thẻ trao chỗ.
+        XCTAssertFalse(rig.expansion.capsule.isHidden)
+        XCTAssertTrue(rig.expansion.isCardResting)
+    }
+
+    /// Giảm chuyển động: không cú hạ cánh nào — viên kính của hệ thống không bao
+    /// giờ bị ẩn.
+    func testWithReduceMotionTheCapsuleIsNeverHidden() throws {
+        BottomBarStyle.reduceMotion = true
+        let rig = try mountShell()
+        openAndRelease(rig)
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            XCTAssertFalse(rig.expansion.capsule.isHidden)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(rig.expansion.isCardResting)
     }
 
     // MARK: - Cú bung

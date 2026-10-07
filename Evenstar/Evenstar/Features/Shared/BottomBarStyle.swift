@@ -519,6 +519,10 @@ enum BottomBarStyle {
     /// Reduced: nhánh phẳng của chính lối vào ấy (`expandFlat`/`settleFlat`),
     /// không vận tốc — `PlayerCard.morph(to:curves:)` dùng nó cho cú hoà mờ và
     /// về nghỉ ngay, như trước.
+    ///
+    /// Đây là cú thu **không hạ cánh** — nhánh dự phòng khi viên kính của hệ
+    /// thống không ẩn được, hay khi một cú bung còn đang bay. Có hạ cánh thì
+    /// `PlayerCard.morph(to:curves:)` thay nó bằng `landingCollapse`.
     @MainActor
     static func collapse(initialVelocity: Double = 0, afterDrag: Bool) -> MorphCurves {
         if reduceMotion { return MorphCurves(afterDrag ? settleFlat : expandFlat) }
@@ -569,6 +573,23 @@ enum BottomBarStyle {
     /// nhánh "phẳng" ở đây sẽ là một nhánh không ai gọi.
     static let collapseHandoff = Animation.easeOut(duration: collapseHandoffDuration)
     static let collapseHandoffDuration: Double = 0.15
+
+    /// Cú thu **có hạ cánh** — khi viên kính của hệ thống ẩn được
+    /// (`AccessoryCapsule`): hình học tới viên thuốc với vận tốc còn lại, dừng
+    /// ở đích (`CollapseSpring` dừng ở lần chạm đích đầu), rồi cả thẻ lún cứng
+    /// qua chỗ nghỉ và về — `LandingBounce`. Không ẩn được thì
+    /// `collapse(initialVelocity:afterDrag:)`, cú co mềm, y như trước.
+    @MainActor
+    static func landingCollapse(initialVelocity: Double = 0) -> MorphCurves {
+        MorphCurves(collapse: LandingBounce.approachSpring, initialVelocity: initialVelocity)
+    }
+
+    /// Viên kính của hệ thống hiện lại dưới thẻ, sau cú hạ cánh và trước cú trao
+    /// tay. Không hiện tức thì: bóng đổ của nó nằm **ngoài** thẻ, và đo được
+    /// (vòng 9) ẩn nó làm vùng ngay dưới viên thuốc sáng lên ~8 mức — hiện lại
+    /// một khung là một cú nháy. Bên trong thì không đổi gì (0,03 mức): mặt kính
+    /// của thẻ phủ lên nó.
+    static let capsuleReturnDuration: TimeInterval = 0.08
 
     /// How the content behind the player recedes as it opens, the way a sheet
     /// pushes its presenting screen back.
@@ -1060,4 +1081,123 @@ struct CollapseSpring: CustomAnimation {
     /// học của cú thu kết thúc và thẻ trao chỗ cho accessory; lệch to hơn thì cú
     /// trao tay lộ ra thành một cú nhích.
     static let settleEpsilon: Double = 0.0005
+}
+
+/// Cú hạ cánh của cú thu: **cả thẻ** lún cứng xuống quá chỗ nghỉ rồi về, một
+/// nhịp, kích thước giữ nguyên — như mini player của Apple Music (spec, Phần 1,
+/// bổ sung 2026-10-07).
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// HAI LÒ XO, VÀ VÌ SAO CÁC CON SỐ LÀ CÁC CON SỐ NÀY
+/// ─────────────────────────────────────────────────────────────────────────
+/// Đo từ video Apple Music (30 khung/giây, iPhone 12, vị trí tên bài từng
+/// khung): tới chỗ nghỉ ~300ms sau lúc bắt đầu thu, lún sâu nhất ~8pt ở
+/// ~333–367ms, về lại chỗ nghỉ ~530ms. Một nhịp, viên thuốc đi cứng.
+///
+///   - **Lún: `spring`, một lò xo tắt dần thả từ chỗ nghỉ với vận tốc của thẻ
+///     lúc chạm đích.** Với lò xo ấy, x(t) ∝ e^(−ζωt)·sin(ω_d·t): sâu nhất ở
+///     ω_d·t = arccos ζ, về chỗ nghỉ ở ω_d·t = π. Tỉ số hai mốc chỉ phụ thuộc ζ:
+///     Apple cho ~50ms : ~230ms → arccos ζ / π ≈ 0,22 → ζ ≈ 0,78, tức
+///     `bounce` 0,22; rồi π/ω_d = 0,23s cho `duration` 0,29s. Lần vọt ngược
+///     thứ hai còn e^(−ζπ/√(1−ζ²)) ≈ 2% của lần đầu (~0,16pt) — và bị cắt hẳn:
+///     cú lún dừng ở lần về chỗ nghỉ đầu, nên đúng một nhịp.
+///   - **Tiếp cận: `approachSpring`, chọn để tới đích ~300ms với vận tốc vừa
+///     đủ cho ~8pt.** Độ sâu tỉ lệ với vận tốc lúc chạm (~0,02s × v), nên 8pt
+///     cần tâm thẻ đi xuống ~400pt/s khi tới viên thuốc. Tìm trên lưới (duration,
+///     bounce): (0,6s, 0,33) chạm đích ở ~0,30s với tâm thẻ ~400pt/s trên
+///     iPhone 12 (tâm đi 307pt từ mở hẳn tới viên thuốc). Lò xo tiếp cận có nảy,
+///     nhưng `CollapseSpring` dừng hình học ở lần chạm đích đầu: thẻ không bao
+///     giờ nhỏ hơn viên thuốc — phần vượt của nó *chính là* cú lún, chuyển từ
+///     kích thước sang vị trí.
+///
+/// Một lò xo cho cả hai thì không được: lò xo đúng nhịp lún (0,29s) đưa thẻ từ
+/// mở hẳn tới viên thuốc trong ~0,17s — nhanh gần gấp đôi Apple.
+///
+/// Liền vận tốc: cú lún bắt đầu với đúng vận tốc của **tâm** thẻ lúc chạm đích
+/// — viên thuốc đi cứng, nên tâm là điểm đại diện; mép trên đang lao xuống
+/// nhanh hơn, mép dưới thì đang đi lên. Thả tay mạnh thì lún sâu hơn, kẹp ở
+/// `maxDepth`.
+///
+/// Thuần: test hỏi thẳng `offset(at:)` mà không chạy animation.
+struct LandingBounce: Equatable {
+    static let approachSpring = Spring(duration: 0.6, bounce: 0.33)
+    static let spring = Spring(duration: 0.29, bounce: 0.22)
+    /// Sâu nhất, kể cả sau một cú búng mạnh.
+    static let maxDepth: Double = 12
+
+    /// Lúc hình học chạm đích, tính từ đầu cú thu.
+    let arrival: TimeInterval
+    /// Vận tốc đi xuống lúc chạm đích, pt/s, đã kẹp theo `maxDepth`.
+    let velocity: Double
+    /// Lúc thẻ về lại chỗ nghỉ — hết cú lún — tính từ đầu cú thu.
+    let duration: TimeInterval
+    /// Lúc cú trao tay được bắt đầu, tính từ đầu cú thu: khi thẻ đã về trong
+    /// `restTolerance` của chỗ nghỉ. Đoạn cuối của lò xo bò rất chậm (dưới
+    /// 0,5pt suốt ~60ms cuối), và viên kính hiện lại dưới một thẻ lệch nửa
+    /// điểm là không thấy — nên không phí đoạn ấy.
+    let handoff: TimeInterval
+
+    /// - Parameters:
+    ///   - initialVelocity: vận tốc đầu của cú thu, cùng đơn vị với
+    ///     `CollapseSpring.initialVelocity` (phần quãng đường mỗi giây).
+    ///   - span: `progress` lúc bắt đầu thu.
+    ///   - centerTravel: tâm thẻ đi xuống bao nhiêu điểm cho mỗi đơn vị
+    ///     `progress` — `PlayerAnchor.centerTravel`.
+    init?(initialVelocity: Double, span: Double, centerTravel: Double) {
+        guard span > 0, centerTravel > 0 else { return nil }
+        let approach = Self.approachSpring
+        var time = 0.0
+        while approach.value(target: 1.0, initialVelocity: initialVelocity, time: time) < 1 {
+            time += 0.0005
+            if time > 2 { return nil }
+        }
+        let fraction = approach.velocity(target: 1.0, initialVelocity: initialVelocity, time: time)
+        let raw = max(0, fraction * span * centerTravel)
+        arrival = time
+        velocity = min(raw, Self.maxDepth / Self.depthPerVelocity)
+        duration = time + Self.returnTime
+        // Sau đáy, lần đầu thẻ đã về trong `restTolerance`.
+        let speed = velocity
+        let settle = stride(from: Self.peakTime, to: Self.returnTime, by: 0.0005).first {
+            Self.spring.value(target: 0.0, initialVelocity: speed, time: $0) <= Self.restTolerance
+        } ?? Self.returnTime
+        handoff = time + settle
+    }
+
+    /// Thẻ cách chỗ nghỉ chừng này thì coi như đã về — xem `handoff`.
+    static let restTolerance: Double = 0.5
+
+    /// Từ lúc chạm đích tới đáy cú lún — không phụ thuộc vận tốc.
+    static let peakTime: TimeInterval = {
+        stride(from: 0.0, to: returnTime, by: 0.0005)
+            .max { spring.value(target: 0.0, initialVelocity: 1, time: $0)
+                 < spring.value(target: 0.0, initialVelocity: 1, time: $1) } ?? 0
+    }()
+
+    /// Độ lún, điểm, đi xuống là dương, ở `time` giây sau đầu cú thu.
+    func offset(at time: TimeInterval) -> Double {
+        let elapsed = time - arrival
+        guard elapsed > 0, elapsed < Self.returnTime else { return 0 }
+        // Chỉ nửa đi xuống của lò xo: cú lún dừng ở lần về chỗ nghỉ đầu, nên
+        // phần âm nhỏ xíu quanh mốc ấy (lưới tìm `returnTime` là 0,5ms) bị cắt.
+        return max(0, Self.spring.value(target: 0.0, initialVelocity: velocity, time: elapsed))
+    }
+
+    /// Lún sâu nhất của cú này.
+    var depth: Double { velocity * Self.depthPerVelocity }
+
+    /// Từ lúc chạm đích tới lúc về lại chỗ nghỉ: lần đầu `spring` qua lại 0.
+    static let returnTime: TimeInterval = {
+        var time = 0.001
+        while spring.value(target: 0.0, initialVelocity: 1, time: time) > 0 { time += 0.0005 }
+        return time
+    }()
+
+    /// Độ sâu lớn nhất cho mỗi pt/s vận tốc lúc chạm — cú lún tuyến tính theo
+    /// vận tốc đầu.
+    static let depthPerVelocity: Double = {
+        stride(from: 0.0, to: returnTime, by: 0.0005)
+            .map { spring.value(target: 0.0, initialVelocity: 1, time: $0) }
+            .max() ?? 0
+    }()
 }
