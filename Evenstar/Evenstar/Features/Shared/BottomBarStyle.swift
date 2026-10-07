@@ -502,13 +502,14 @@ enum BottomBarStyle {
                                    initialVelocity: initialVelocity)
     }
 
-    /// Thẻ thu về viên kính accessory, **đáy võng quá chỗ ~10pt rồi nảy lại**,
-    /// theo nhịp Apple Music (video 2026-10-06, từng khung 33ms: chạm đáy
-    /// ~132ms, lún tới ~200ms, nảy về tới ~500ms). Sửa 2026-10-06 sau QA trên
-    /// máy: bản trước đáp khít viên kính rồi đứng chết — người dùng gọi là
-    /// "cứng". Apple Music dời cả viên kính xuống; ta **giãn** thẻ, mép trên
-    /// ghim ở viên kính, vì viên kính của hệ thống đứng yên và một tấm thẻ dời
-    /// xuống để lộ nó thành viền thứ hai — QA IMG_2559, xem `CollapseGlass`.
+    /// Thẻ thu về viên kính accessory, **phồng quá chỗ ~10pt rồi nảy lại**, theo
+    /// nhịp Apple Music (video 2026-10-06, từng khung 33ms: chạm đáy ~132ms, lún
+    /// tới ~200ms, nảy về tới ~500ms). Sửa 2026-10-06 sau QA trên máy: bản trước
+    /// đáp khít viên kính rồi đứng chết — người dùng gọi là "cứng". Apple Music
+    /// dời cả viên kính xuống; ta **phồng** thẻ đối xứng — mép trên lên, mép
+    /// dưới xuống, hai bên nở — vì viên kính của hệ thống đứng yên: một tấm thẻ
+    /// dời xuống để lộ nó thành viền thứ hai (QA IMG_2559), một tấm thẻ ghim mép
+    /// trên thì "mép trên không đàn hồi, nhìn như gãy". Xem `CollapseGlass`.
     ///
     /// ─────────────────────────────────────────────────────────────────────
     /// VÌ SAO KHÔNG CHỈ LÀ MỘT LÒ XO NẢY HƠN
@@ -524,17 +525,16 @@ enum BottomBarStyle {
     ///   - `geometry` **dừng ở lần đầu chạm đích**. Khung thẻ không bao giờ
     ///     ngoại suy, nên không bao giờ nhỏ hơn viên kính.
     ///   - `landing` chạy hết: vọt qua 0, nảy về. `PlayerCard.landing` đi theo
-    ///     nó, và phần **âm** của nó thành cú giãn của lớp kính (`CollapseGlass`
-    ///     trong `PlayerCard.swift`) — đáy võng, hai bên nở, mép trên đứng yên;
-    ///     không đụng bố cục.
+    ///     nó, và phần **âm** của nó thành cú phồng của lớp kính (`CollapseGlass`
+    ///     trong `PlayerCard.swift`) — mọi mép chỉ đi ra; không đụng bố cục.
     ///
-    /// Không có thời lượng nào phải đoán: cú giãn bắt đầu **đúng** khung hình
+    /// Không có thời lượng nào phải đoán: cú phồng bắt đầu **đúng** khung hình
     /// học chạm đích, vì đó là cùng một phép tính `Spring.value` trên cùng
-    /// một đồng hồ. Và đà không mất: ngay trước khi chạm, mép trên thẻ đi
-    /// `dragTravel × dp/dt`; ngay sau, mép trên dừng ở viên kính và mép dưới đi
-    /// tiếp đúng tốc độ ấy (độ dốc của `PlayerCard.landingSag` ở 0 là 1). Một
-    /// cú búng mạnh võng sâu hơn — vận tốc ngón tay đi vào cả hai — và
-    /// `landingSag` chặn trần nó.
+    /// một đồng hồ. Đà của cú thu đi vào cú phồng: ngay trước khi chạm, mép
+    /// trên thẻ đi `dragTravel × dp/dt`; ngay sau, chiều cao thẻ lớn lên đúng
+    /// tốc độ ấy (độ dốc của `PlayerCard.landingGrowth` ở 0 là 1), chia đôi cho
+    /// hai mép. Một cú búng mạnh phồng hơn — vận tốc ngón tay đi vào cả hai —
+    /// và `landingGrowth` chặn trần nó.
     ///
     /// ─────────────────────────────────────────────────────────────────────
     /// THỜI LƯỢNG VÀ ĐỘ NẢY
@@ -563,7 +563,7 @@ enum BottomBarStyle {
     /// Lò xo thả từ đứng yên vọt qua đích một phần `e^(−πζ/√(1−ζ²))` quãng
     /// đường, `ζ = 1 − bounce`. Cú lún tính bằng điểm là phần ấy nhân quãng
     /// đường còn lại (`progress` lúc thả × `dragTravel`, ~710pt trên iPhone
-    /// 12), rồi qua trần mềm của `PlayerCard.landingSag`:
+    /// 12), rồi qua trần mềm của `PlayerCard.landingGrowth` — tổng hai mép:
     ///
     ///     bounce   vọt qua   thu trọn quãng   kéo tới 0.9, búng 1900pt/s
     ///     0.14     0.5%       3,5pt            3,2pt    (`settle` cũ)
