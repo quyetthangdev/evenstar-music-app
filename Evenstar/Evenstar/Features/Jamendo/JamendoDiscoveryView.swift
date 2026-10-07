@@ -270,7 +270,11 @@ struct JamendoDiscoveryView: View {
                 Text(loadError)
             } actions: {
                 Button("Thử lại") { Task { await load() } }
-                    .buttonStyle(.prominentAction)
+                    .buttonStyle(.glassProminent)
+                    // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                    // trắng — nút trắng trên nền sáng thì không ai thấy.
+                    .tint(Color(.label))
+                    .foregroundStyle(Color(.systemBackground))
             }
             .listRowSeparator(.hidden)
         } else if hasLoadedOnce, results.isEmpty {

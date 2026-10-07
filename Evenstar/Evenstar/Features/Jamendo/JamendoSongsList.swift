@@ -27,13 +27,14 @@ struct JamendoSongsList: View {
             } description: {
                 Text("Jamendo là kho nhạc Creative Commons miễn phí.")
             } actions: {
-                // `.prominentAction`, matching `EmptyLibraryView` and
-                // `DriveSongsList.empty`'s own call-to-action button — this
-                // was the one empty state of the three still missing it.
                 NavigationLink("Khám phá Jamendo") {
                     JamendoDiscoveryView()
                 }
-                .buttonStyle(.prominentAction)
+                .buttonStyle(.glassProminent)
+                // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                // trắng — nút trắng trên nền sáng thì không ai thấy.
+                .tint(Color(.label))
+                .foregroundStyle(Color(.systemBackground))
             }
         } else {
             List(jamendoTracks) { track in

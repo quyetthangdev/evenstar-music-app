@@ -81,7 +81,11 @@ struct TrackMetadataEditor: View {
                     // for — the guidelines ask for exactly one primary action on
                     // the trailing side.
                     Button("Lưu") { save() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
+                        // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                        // trắng — nút trắng trên nền sáng thì không ai thấy.
+                        .tint(Color(.label))
+                        .foregroundStyle(Color(.systemBackground))
                         .disabled(trimmedTitle.isEmpty)
                 }
             }

@@ -71,7 +71,11 @@ struct DriveSongsList: View {
             Text("Nhạc trên Drive được phát trực tiếp, không tốn dung lượng máy. Thư mục phải được chia sẻ ở chế độ “bất kỳ ai có liên kết”, nghĩa là ai có link cũng xem được.")
         } actions: {
             Button("Thêm thư mục") { showManager = true }
-                .buttonStyle(.prominentAction)
+                .buttonStyle(.glassProminent)
+                // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                // trắng — nút trắng trên nền sáng thì không ai thấy.
+                .tint(Color(.label))
+                .foregroundStyle(Color(.systemBackground))
         }
         .toolbar {
             // Same entry point as the list below it. Without this the `…`

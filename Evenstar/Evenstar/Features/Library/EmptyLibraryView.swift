@@ -22,7 +22,11 @@ struct EmptyLibraryView: View {
             Text("Nhập file nhạc từ ứng dụng Tệp để bắt đầu.")
         } actions: {
             Button("Thêm nhạc", action: onImportTap)
-                .buttonStyle(.prominentAction)
+                .buttonStyle(.glassProminent)
+                // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                // trắng — nút trắng trên nền sáng thì không ai thấy.
+                .tint(Color(.label))
+                .foregroundStyle(Color(.systemBackground))
         }
     }
 }

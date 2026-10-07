@@ -52,7 +52,11 @@ struct ImportProgressSheet: View {
                             failureReasonsList(for: summary)
                         }
                         Button("Xong") { dismiss() }
-                            .buttonStyle(.prominentAction)
+                            .buttonStyle(.glassProminent)
+                            // Đặt màu rõ ràng: mặc định là màu accent, mà accent của app là
+                            // trắng — nút trắng trên nền sáng thì không ai thấy.
+                            .tint(Color(.label))
+                            .foregroundStyle(Color(.systemBackground))
                             .padding(.top, 8)
                     }
                     .padding(40)
