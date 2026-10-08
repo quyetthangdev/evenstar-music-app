@@ -359,9 +359,14 @@ struct NowPlayingContent: View {
         .padding(.top, 8)
     }
 
-    /// The glyph frame. 44pt, so the hit region needs no tricks — unlike the
-    /// pills, this row replaces nothing and can afford its own height.
-    private static let queueGlyphFrame: CGFloat = 44
+    /// Bằng khung của nút back/next (2026-10-08): ba vòng tròn kính cỡ phụ
+    /// cùng một cỡ ~48pt, chỉ nút play to hơn. 44 cho vòng ~58pt, to lệch
+    /// hẳn so với hàng điều khiển vừa thu nhỏ.
+    private static let queueGlyphFrame: CGFloat = transportGlyphFrame
+
+    /// Vùng chạm của nút hẹn giờ: biểu tượng trần, không có vòng kính đệm
+    /// thêm, nên tự giữ đủ 44pt Apple yêu cầu.
+    private static let sleepTimerHitHeight: CGFloat = 44
 
     /// One icon, trailing. Apple Music puts three here — lyrics, AirPlay and
     /// the queue — and this app has nothing to put behind the other two.
@@ -382,7 +387,7 @@ struct NowPlayingContent: View {
                 }
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .frame(width: Self.queueGlyphFrame, height: Self.queueGlyphFrame)
             }
             .glassToggleStyle(isOn: showingQueue)
@@ -448,7 +453,7 @@ struct NowPlayingContent: View {
                     : playback.sleepTimer.isRunning ? AnyShapeStyle(Color.white)
                                                     : AnyShapeStyle(.secondary)
             )
-            .frame(height: Self.queueGlyphFrame)
+            .frame(height: Self.sleepTimerHitHeight)
             .padding(.horizontal, 10)
             .contentShape(Rectangle())
         }
