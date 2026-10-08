@@ -459,4 +459,54 @@ final class AccessoryCapsuleTests: XCTestCase {
         capsule.restore(fadingIn: 0.05) { immediate = true }
         XCTAssertTrue(immediate, "nothing hidden: call back at once")
     }
+
+    /// **Cú hiện lại tự báo xong — chính animation báo, không phải
+    /// `CATransaction`** (lỗi 2026-10-08, IMG_2612: mini player chỉ mở được ở
+    /// lần chạm đầu).
+    ///
+    /// Đo trên iPhone 12, iOS 27, bản Release: một cú mờ `opacity` 0 → 1 trên
+    /// viên kính vừa nằm ở 0 thì completion của `CATransaction` **không nổ**
+    /// khi animation xong (đo được +1,2s, +2,5s, +3,3s — chỉ nổ khi một
+    /// transaction sau chạm vào layer ấy, tức lần ẩn kế tiếp), trong khi
+    /// `animationDidStop` của chính animation ấy nổ đúng +91ms, và
+    /// `UIView.animate` +101ms. Từ 0,02 thì cả hai đều đúng hạn. Simulator
+    /// iOS 26 không tái hiện (completion nổ sau ~4ms), nên test này ghim cơ
+    /// chế: cú mờ mang một `delegate`, và `animationDidStop` của nó — dù xong
+    /// hay bị gỡ — gọi `completion` đúng một lần.
+    ///
+    /// Thiếu nó, cú trao tay chờ mãi: thẻ không bao giờ về nghỉ, hàng của
+    /// accessory ở độ mờ 0 không nhận chạm, thẻ ở `progress` 0 cũng không — mọi
+    /// cú chạm rơi xuống viên kính của hệ thống.
+    func testFadingBackInIsReportedByTheAnimationItself() throws {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        var calls = 0
+        capsule.restore(fadingIn: 30) { calls += 1 }
+        let fade = try XCTUnwrap(tree.container.layer.animation(forKey: AccessoryCapsule.fadeKey))
+        let delegate = try XCTUnwrap(fade.delegate,
+                                     "the fade-in's end must come from the animation, not from a CATransaction")
+        XCTAssertEqual(calls, 0, "not before the fade ends")
+        delegate.animationDidStop?(fade, finished: true)
+        XCTAssertEqual(calls, 1)
+        delegate.animationDidStop?(fade, finished: false)
+        XCTAssertEqual(calls, 1, "called back once only")
+    }
+
+    /// Cú hiện lại bị cắt — lần ẩn kế tiếp thay nó bằng cú mờ của mình, cùng
+    /// khoá — vẫn báo xong, để cú trao tay của nó không treo.
+    func testAFadeInCutShortStillCallsBack() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        var calls = 0
+        capsule.restore(fadingIn: 30) { calls += 1 }
+        capsule.hide()
+        let deadline = Date().addingTimeInterval(1)
+        while calls == 0, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        XCTAssertEqual(calls, 1)
+        capsule.restore()
+    }
 }

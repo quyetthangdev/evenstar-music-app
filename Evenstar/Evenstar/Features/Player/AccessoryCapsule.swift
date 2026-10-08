@@ -238,6 +238,15 @@ final class AccessoryCapsule {
     /// mờ ấy là `"opacity"`, chung với mọi animation `alpha` của hệ thống, và
     /// lúc hiện lại thì chỉ được gỡ cú của chính ta. Bắt đầu từ độ mờ **đang
     /// vẽ**, như `.beginFromCurrentState`.
+    ///
+    /// `completion` đi qua `delegate` của **chính animation** (`FadeEnd`),
+    /// không qua `CATransaction.setCompletionBlock`. Đo trên iPhone 12, iOS
+    /// 27: cú mờ 0 → 1 trên viên kính vừa nằm ở 0 thì completion của
+    /// transaction không nổ khi animation xong — chỉ nổ khi một transaction
+    /// sau chạm vào layer ấy (lần ẩn kế tiếp, vài giây sau) — còn
+    /// `animationDidStop` nổ đúng hạn. Cú trao tay chờ completion ấy, nên thẻ
+    /// không bao giờ về nghỉ và mini player chỉ mở được một lần. Xem
+    /// `AccessoryCapsuleTests.testFadingBackInIsReportedByTheAnimationItself`.
     private static func fade(_ view: UIView, to alpha: CGFloat, duration: TimeInterval,
                              completion: (@MainActor () -> Void)? = nil) {
         let layer = view.layer
@@ -246,13 +255,32 @@ final class AccessoryCapsule {
         animation.toValue = Float(alpha)
         animation.duration = duration
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        CATransaction.begin()
-        if let completion {
-            CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
-        }
+        if let completion { animation.delegate = FadeEnd(completion) }
         view.alpha = alpha
         layer.add(animation, forKey: fadeKey)
-        CATransaction.commit()
+    }
+
+    /// Báo cú mờ đã xong — chạy hết, hay bị gỡ (lần ẩn kế tiếp thay nó bằng
+    /// cú của mình, cùng khoá) — đúng một lần. `CAAnimation` giữ `delegate`
+    /// bằng tham chiếu mạnh, nên không ai khác phải giữ nó.
+    ///
+    /// `@MainActor` để được gửi vào `assumeIsolated` (Core Animation gọi
+    /// `animationDidStop` trên luồng chính).
+    @MainActor
+    private final class FadeEnd: NSObject, CAAnimationDelegate {
+        private var completion: (@MainActor () -> Void)?
+
+        init(_ completion: @escaping @MainActor () -> Void) {
+            self.completion = completion
+        }
+
+        nonisolated func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
+            MainActor.assumeIsolated {
+                let completion = self.completion
+                self.completion = nil
+                completion?()
+            }
+        }
     }
 
     /// Tổ tiên cao nhất của `anchor` mà khung (toạ độ cửa sổ) còn trùng khung
