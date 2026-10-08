@@ -384,46 +384,39 @@ private struct LoadKey: Equatable {
     let commercialOnly: Bool
 }
 
-private struct GenreChip: View {
+struct GenreChip: View {
     let genre: JamendoGenre
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            // `minHeight: 44` before the background/contentShape, not just a
-            // roomier `.contentShape` around the same small pill: HIG's rule
-            // on Buttons is a 44×44pt hit region, and the drafted padding
-            // (14 horizontal / 7 vertical around `.subheadline`) resolves to
-            // roughly 30pt tall. Growing the frame — not just the tap area —
-            // keeps the visible capsule and its hit region the same shape,
-            // which a padded-out `contentShape` alone would not: that would
-            // leave a bigger invisible rectangle around a smaller pill.
             // `label`, never `tag.capitalized`: the tag is a wire value and
             // capitalising it produced "Hiphop" and, in a Vietnamese
             // interface, "Electronic" and "Classical". See `JamendoGenre`.
+            //
+            // Fill and label colour come from `glassToggleStyle`, not from
+            // here: selected is `.glassProminent` tinted `Color(.label)` with a
+            // `systemBackground` label, unselected is plain `.glass` with the
+            // default label. Both invert with the appearance, which is what the
+            // old hand-drawn chips needed `Color.primary` for after the white
+            // accent made an accent fill invisible on light backgrounds (and a
+            // literal `.white` label invisible before that). Never put a
+            // `.foregroundStyle` back on the label: it would override the
+            // style's and reintroduce that bug.
             Text(genre.label)
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
-                // `Color(.systemBackground)`, not `.white`: the fill below is
-                // `Color.primary` now, not the accent, and a literal white
-                // label would go invisible against a light-mode fill — the
-                // same pair that already shipped invisible once before, at
-                // 0.12 opacity. See the fill's own comment.
-                .foregroundStyle(isSelected ? Color(.systemBackground) : Color.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .frame(minHeight: 44)
-                // `Color.primary`, not the accent colour. The accent is white
-                // now (design Part 2 item 5), and a white fill is invisible
-                // against this screen's light backgrounds regardless of what
-                // colour the label is. `Color.primary` inverts with the page
-                // in both appearances instead, so the selected chip stays
-                // visible independent of the accent.
-                .background(isSelected ? Color.primary : Color(.tertiarySystemFill),
-                            in: Capsule())
-                .contentShape(Capsule())
+                // No `.frame(minHeight: 44)`: the glass button pads this label
+                // itself, and 7pt vertical on top of that already resolves to
+                // ~46.7pt, past HIG's 44pt hit region (measured by
+                // `GenreChipTests`, which fails if it ever drops under 44). A
+                // `minHeight: 44` here would stack on the glass padding: ~58pt.
         }
-        .buttonStyle(.plain)
+        .glassToggleStyle(isOn: isSelected)
+        .buttonBorderShape(.capsule)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
