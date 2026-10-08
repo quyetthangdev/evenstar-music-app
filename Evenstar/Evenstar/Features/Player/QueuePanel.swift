@@ -74,7 +74,10 @@ struct QueuePanel: View {
     ///
     /// 54 trước đó đọc ra hơi nhỏ so với Apple Music: ở đó tấm bìa sau khi thu
     /// vẫn còn ra dáng một tấm bìa, không thành một cái icon.
-    static let headerArtwork: CGFloat = 60
+    ///
+    /// 72 (2026-10-08): đo trên ảnh chụp Apple Music cùng máy (iPhone 12),
+    /// tấm bìa header ở đó ~71pt; 60 vẫn đọc ra nhỏ khi đặt cạnh nhau.
+    static let headerArtwork: CGFloat = 72
 
     /// Hai viên thuốc và danh sách trượt lên bao xa.
     ///
@@ -107,17 +110,13 @@ struct QueuePanel: View {
 
     /// Pill geometry, moved here with the pills.
     ///
-    /// **36pt tall, and that is not negotiable.** `PlayerCard.contentBudget`
-    /// allows about 20pt of slack across the whole stack and its doc comment
-    /// records the same overrun shipping twice. The pills grow sideways; they
-    /// never grow down.
-    private static let pillHeight: CGFloat = 36
-
-    /// Half of what a 36pt pill is short of HIG's 44pt hit region. Spent on the
-    /// *hit shape* rather than the frame, by the padding → `contentShape` →
-    /// negative-padding trick `NowPlayingContent.jamendoCredit` uses for the
-    /// identical collision.
-    private static let pillHitPad: CGFloat = 4
+    /// **Never grows down.** `PlayerCard.contentBudget` allows little slack
+    /// across the whole stack and its doc comment records the same overrun
+    /// shipping twice. The pills grow sideways.
+    ///
+    /// 22 rồi (2026-10-08): đây là khung của nhãn, kiểu `.glass` đệm thêm
+    /// ~7pt mỗi phía. 36 cho viên cao ~50pt trên máy; Apple Music ~36pt.
+    private static let pillHeight: CGFloat = 22
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -186,10 +185,10 @@ struct QueuePanel: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(playback.currentTrack?.title ?? "—")
-                    .font(.subheadline.bold())
+                    .font(.headline)
                     .lineLimit(1)
                 Text(playback.currentTrack?.artistName ?? "")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -360,7 +359,7 @@ struct QueuePanel: View {
         let enabled = playback.currentTrack != nil
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .symbolReplace()
                 .frame(width: pillWidth, height: Self.pillHeight)
         }

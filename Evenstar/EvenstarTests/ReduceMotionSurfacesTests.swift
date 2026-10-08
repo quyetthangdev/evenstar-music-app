@@ -824,7 +824,7 @@ final class ReorderReducedMotionTests: XCTestCase {
 ///
 /// The single largest motion in the app, and until this round the only large one
 /// with no reduced path at all. Opening the queue shrank the full-bleed cover
-/// (~402×874) onto `QueuePanel.headerArtwork`'s 60pt slot and flew it diagonally
+/// (~402×874) onto `QueuePanel.headerArtwork`'s slot (60pt then) and flew it diagonally
 /// to the top-left corner — about 6.7× horizontally and 14.6× vertically — while
 /// the title block slid several hundred points behind it. `BottomBarStyle.queue`
 /// had a flat branch the whole time; a flat branch swaps the curve and leaves
