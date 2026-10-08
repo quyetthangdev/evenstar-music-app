@@ -593,7 +593,11 @@ struct PlayerCard: View {
     /// Vuông thì cú morph là một phép phóng to đều từ đầu tới cuối: thumbnail
     /// 36pt trượt lên giữa màn hình, nở ra thành khối vuông, bo góc tăng dần.
     /// Không có gì bị cắt, không có chuyển động thứ hai chồng lên.
-    private static let expandedArtworkInset: CGFloat = 24
+    private static let expandedArtworkInset: CGFloat = contentSideMargin
+
+    /// Lề hai bên của mọi thứ trong thẻ đã mở: ảnh bìa, khối điều khiển,
+    /// hàng đợi. 32pt như Apple Music đo trên iPhone 12; 24 trông sát viền.
+    private static let contentSideMargin: CGFloat = 32
 
     /// Khoảng hở trên và dưới khối vuông: dưới grabber, và trên khối điều khiển.
     private static let expandedArtworkTopGap: CGFloat = 24
@@ -1413,7 +1417,7 @@ struct PlayerCard: View {
     private static let grabberHeight: CGFloat = 5
 
     /// How far `QueuePanel` is inset from each side of the card.
-    private static let queuePanelSideMargin: CGFloat = 24
+    private static let queuePanelSideMargin: CGFloat = contentSideMargin
 
     /// Hints that the expanded card can be dragged away, the way the
     /// `.sheet` this replaced showed `.presentationDragIndicator(.visible)`.
@@ -1534,7 +1538,7 @@ struct PlayerCard: View {
             titleTravel: queueTitleTravel(size: size, topInset: topInset, collapsedHeight: collapsedHeight),
             titleOpacity: 1 - queueTitleHidden
         )
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Self.contentSideMargin)
             .frame(width: openWidth)
             .frame(width: size.width)
             // Measured from the card's bottom, not from the artwork — see
