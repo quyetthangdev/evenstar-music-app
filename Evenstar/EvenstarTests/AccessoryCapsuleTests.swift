@@ -213,7 +213,9 @@ final class AccessoryCapsuleTests: XCTestCase {
         XCTAssertEqual(cover.alpha, 1)
         XCTAssertTrue(cover.accessibilityElementsHidden)
         XCTAssertFalse(cover.isAccessibilityElement)
-        XCTAssertTrue(cover.gestureRecognizers?.contains { $0 is UITapGestureRecognizer } == true)
+        let press = try XCTUnwrap(cover.gestureRecognizers?.compactMap { $0 as? UILongPressGestureRecognizer }.first,
+                                  "the stand-in must answer on touch-down")
+        XCTAssertEqual(press.minimumPressDuration, 0)
         cover.handleTap()
         XCTAssertEqual(taps, 1)
 
@@ -439,6 +441,32 @@ final class AccessoryCapsuleTests: XCTestCase {
         XCTAssertNil(blocker(in: tree))
     }
 
+    /// Lớp thay ở lại suốt cú hiện lại và chỉ đi khi thẻ về nghỉ (`restore()`):
+    /// trong quãng ấy hàng của accessory còn ẩn, nên chạm vào viên thuốc phải
+    /// vẫn tới lớp thay. Trên máy, bản gỡ nó lúc bắt đầu mờ vào làm cú chạm ấy
+    /// chỉ nảy viên kính mà không mở player.
+    func testTheStandInStaysUntilTheCardRests() throws {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        var taps = 0
+        capsule.onTap = { taps += 1 }
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        var done = false
+        capsule.restore(fadingIn: 0.05) { done = true }
+        let deadline = Date().addingTimeInterval(1)
+        while !done, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        XCTAssertTrue(done)
+        let cover = try XCTUnwrap(blocker(in: tree), "the stand-in left before the card rested")
+        XCTAssertTrue(tree.window.hitTest(pillCentre, with: nil) === cover)
+        cover.handleTap()
+        XCTAssertEqual(taps, 1)
+
+        capsule.restore()
+        XCTAssertNil(blocker(in: tree))
+        XCTAssertTrue(tree.window.hitTest(pillCentre, with: nil)?.isDescendant(of: tree.container) == true)
+    }
+
     /// Hiện lại dần cho cú trao tay: `completion` chạy khi đã hiện hẳn — và chạy
     /// ngay khi không có gì để hiện, để cú trao tay không bao giờ bị kẹt.
     func testFadingBackInCallsBackOnceVisible() {
@@ -448,7 +476,6 @@ final class AccessoryCapsuleTests: XCTestCase {
         capsule.hide()
         var done = false
         capsule.restore(fadingIn: 0.05) { done = true }
-        XCTAssertNil(blocker(in: tree), "the capsule takes its taps back as it starts fading in")
         XCTAssertFalse(capsule.isHidden)
         XCTAssertEqual(tree.container.alpha, 1, "the model value is already back")
         let deadline = Date().addingTimeInterval(1)

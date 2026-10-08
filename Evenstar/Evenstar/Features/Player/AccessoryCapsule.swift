@@ -109,13 +109,24 @@ final class AccessoryCapsule {
             backgroundColor = .clear
             isAccessibilityElement = false
             accessibilityElementsHidden = true
-            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap)))
+            // Nhận ngay lúc ngón tay chạm xuống, không đợi nhấc lên: lớp này bị
+            // gỡ đúng lúc thẻ về nghỉ, và một cú chạm bắt đầu trên nó rồi nhấc
+            // lên sau lúc ấy thì một `UITapGestureRecognizer` bị huỷ giữa
+            // chừng — cú chạm mất. Chạm xuống là đủ để biết người dùng muốn mở.
+            let press = UILongPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
+            press.minimumPressDuration = 0
+            press.allowableMovement = .greatestFiniteMagnitude
+            addGestureRecognizer(press)
         }
 
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-        @objc func handleTap() { onTap?() }
+        @objc private func handlePress(_ press: UILongPressGestureRecognizer) {
+            if press.state == .began { handleTap() }
+        }
+
+        func handleTap() { onTap?() }
     }
 
     /// Chạm vào viên thuốc trong lúc viên kính ẩn — `PlayerExpansion` nối nó
@@ -199,6 +210,9 @@ final class AccessoryCapsule {
 
     /// Hiện lại ngay — mọi lối ra trừ cú trao tay.
     func restore() {
+        // Trước `guard`: sau `restore(fadingIn:)` viên kính đã thôi "ẩn" nhưng
+        // lớp thay nó vẫn nằm đó, chờ đúng lời gọi này lúc thẻ về nghỉ.
+        hidden.removeBlocker()
         guard isHidden else { return }
         hidden.putBack()
         isHidden = false
@@ -212,12 +226,16 @@ final class AccessoryCapsule {
             completion()
             return
         }
-        // Viên kính nhận chạm lại ngay — giá trị mô hình của nó đã là 1.
-        hidden.removeBlocker()
+        // **Lớp thay vẫn ở lại**, tới `restore()` lúc thẻ về nghỉ
+        // (`PlayerExpansion.arriveAtRest`) hay rời nghỉ. Suốt cú mờ này và hai
+        // bước trao tay sau nó, hàng của accessory còn ẩn và thẻ ở `progress` 0
+        // không nhận chạm — gỡ lớp thay ở đây thì chạm vào viên thuốc chỉ làm
+        // viên kính hệ thống nảy lên mà không mở gì (đo trên máy, 2026-10-08).
         isHidden = false
         // Không còn như ta để lại (`alpha` đã khác 0, xem `Hidden.take()`):
         // không có gì của ta để hiện — trao tay ngay.
         guard let view = hidden.take() else {
+            hidden.removeBlocker()
             completion()
             return
         }
@@ -225,6 +243,8 @@ final class AccessoryCapsule {
         // một animation trên layer không hiển thị có thể không bao giờ gọi
         // `completion`. Trả số cũ ngay, gỡ cú mờ của ta.
         guard view.window != nil else {
+            // Không còn viên kính nào ở đó để lớp thay đứng thay.
+            hidden.removeBlocker()
             view.layer.removeAnimation(forKey: Self.fadeKey)
             view.alpha = hidden.alpha
             completion()
