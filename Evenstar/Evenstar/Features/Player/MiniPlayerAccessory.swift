@@ -67,18 +67,13 @@ struct MiniPlayerAccessory: View {
         HStack(spacing: 0) {
             info
             MiniPlayerControls(playback: playback, showsNext: !isInline)
+                .modifier(AccessoryContentVisibility(visible: expansion.showsAccessoryContent))
         }
         .padding(.trailing, MiniPlayerMetrics.trailingInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Neo để tìm viên kính của hệ thống — xem `AccessoryCapsule`. Mang đúng
         // khung hàng.
         .background(AccessoryCapsuleAnchor(capsule: expansion.capsule))
-        .opacity(expansion.showsAccessoryContent ? 1 : 0)
-        // Bật tắt, không bao giờ mờ dần, dù lượt cập nhật có mang animation
-        // nào: hàng này thế chỗ hàng y hệt của thẻ trong một lượt — xem
-        // `BottomBarStyle.collapseHandoff`. Mờ dần thì giữa chừng hai hàng
-        // chồng nhau hoặc cùng nhạt — một nhịp chớp.
-        .animation(nil, value: expansion.showsAccessoryContent)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -125,6 +120,12 @@ struct MiniPlayerAccessory: View {
                              size: MiniPlayerMetrics.artworkSide)
             MiniPlayerTitle(playback: playback)
         }
+        // Ẩn **phần vẽ**, không ẩn vùng chạm: `contentShape` và cú chạm ở dưới
+        // nằm ngoài lớp ẩn này. Bản trước ẩn cả hàng bằng `opacity(0)`, mà
+        // SwiftUI không đưa chạm vào view trong suốt hẳn — nên suốt quãng trao
+        // tay sau cú thu (viên kính đang hiện lại, thẻ đã không nhận chạm),
+        // chạm vào mini player chỉ làm viên kính hệ thống nảy, không mở gì.
+        .modifier(AccessoryContentVisibility(visible: expansion.showsAccessoryContent))
         .modifier(TrackSwipeSlide(travel: swipeTravel, entry: swipeEntry,
                                   reduceMotion: BottomBarStyle.reduceMotion))
         .opacity(swipeDimmed ? TrackSwipe.dimmedOpacity : TrackSwipe.opacity(travel: swipeTravel, width: infoWidth))
@@ -285,5 +286,25 @@ struct TrackSwipeSlide: GeometryEffect {
     func effectValue(size: CGSize) -> ProjectionTransform {
         let x = TrackSwipe.slide(travel: travel, entry: entry.offset(phase: phase), reduceMotion: reduceMotion)
         return ProjectionTransform(CGAffineTransform(translationX: x, y: 0))
+    }
+}
+
+/// Hàng của accessory chỉ hiện lúc thẻ nghỉ — xem
+/// `PlayerExpansion.showsAccessoryContent`.
+///
+/// Bật tắt, không bao giờ mờ dần, dù lượt cập nhật có mang animation nào:
+/// hàng này thế chỗ hàng y hệt của thẻ trong một lượt — xem
+/// `BottomBarStyle.collapseHandoff`. Mờ dần thì giữa chừng hai hàng chồng nhau
+/// hoặc cùng nhạt — một nhịp chớp.
+///
+/// Gắn riêng lên phần vẽ của từng khối chứ không lên cả hàng, để vùng chạm của
+/// khối thông tin bài vẫn sống khi hàng đang ẩn.
+private struct AccessoryContentVisibility: ViewModifier {
+    let visible: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(visible ? 1 : 0)
+            .animation(nil, value: visible)
     }
 }
