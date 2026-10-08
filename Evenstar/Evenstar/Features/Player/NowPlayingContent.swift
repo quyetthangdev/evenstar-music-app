@@ -45,11 +45,22 @@ struct NowPlayingContent: View {
     /// the hit target Apple asks for, which these buttons did not previously
     /// have. Applied to `backward.fill` too, so the row stays symmetric about
     /// the play button.
-    private static let transportGlyphFrame: CGFloat = 44
+    ///
+    /// 34 rồi (2026-10-08): 44 cộng phần đệm của kiểu `.glass` thành vòng tròn
+    /// ~58pt, to quá trên máy thật. Vòng tròn kính vẫn quanh ~48pt, nên vùng
+    /// chạm vẫn trên 44 Apple yêu cầu.
+    private static let transportGlyphFrame: CGFloat = 34
 
     /// Larger than the arrows beside it so it still reads as the primary
     /// control now that it has no ring to set it apart.
-    private static let playGlyphSize: CGFloat = 42
+    ///
+    /// 30 rồi (2026-10-08): 42 cho vòng tròn kính ~72pt, lấn át cả hàng.
+    private static let playGlyphSize: CGFloat = 30
+
+    /// Khoảng chừa dưới hàng hẹn giờ/hàng đợi. Thẻ mở tràn tới mép vật lý,
+    /// nên không có khoảng này thì hai nút nằm sát mép dưới, đè lên vạch home.
+    /// Nằm trong chồng nội dung để `PlayerCardSmallScreenTests` đo cả nó.
+    private static let bottomClearance: CGFloat = 24
 
     /// `.title3` rather than `.title2`, a step down.
     ///
@@ -103,6 +114,7 @@ struct NowPlayingContent: View {
             volume
             queueToggleRow
         }
+        .padding(.bottom, Self.bottomClearance)
     }
 
     private var titleBlock: some View {
@@ -309,7 +321,7 @@ struct NowPlayingContent: View {
                 playback.previous()
             } label: {
                 Image(systemName: "backward.fill")
-                    .font(.title2)
+                    .font(.title3)
                     .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
             .buttonStyle(.glass)
@@ -336,7 +348,7 @@ struct NowPlayingContent: View {
                 playback.next()
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.title2)
+                    .font(.title3)
                     .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
             }
             .buttonStyle(.glass)

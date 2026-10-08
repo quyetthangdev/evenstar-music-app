@@ -573,7 +573,14 @@ struct PlayerCard: View {
     /// and the artwork reaches down behind them, dissolved to near-nothing by
     /// the time it gets there. Before, the artwork stopped where this region
     /// began, which is what held it to a square on every phone.
-    private static let contentBudget: CGFloat = 440
+    ///
+    /// **450 (2026-10-08).** The transport row shrank (play circle ~72 → ~56pt)
+    /// and `NowPlayingContent` gained a 24pt `bottomClearance` under the queue
+    /// row, because on a device the two bottom buttons sat almost on the
+    /// physical edge. Net the stack grew ~8pt; +10 here keeps the measured
+    /// stack inside the region one text size up, and lifts the bottom row to
+    /// roughly where Apple Music puts its own (~66pt from the edge, centre).
+    private static let contentBudget: CGFloat = 450
 
     /// The gap between where the artwork's frame ends and where the content
     /// starts, back when the two could not overlap. Kept as the amount the
