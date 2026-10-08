@@ -30,8 +30,9 @@ import OSLog
 /// Viên kính bị ẩn mà không hiện lại là mất mini player. Nên mọi lối ra đều
 /// gọi `restore()`: thẻ trao chỗ hay rời nghỉ (`PlayerExpansion`), accessory
 /// bị dỡ (bài về `nil`), app rời trạng thái active, đối tượng này bị huỷ — và
-/// một chốt thời gian (`watchdog`) cho mọi trường hợp còn lại, kể cả một
-/// `completion` không bao giờ nổ.
+/// một chốt thời gian (`watchdog`) cho mọi trường hợp còn lại. Cú hiện lại
+/// dần có chốt riêng: `completion` của nó nổ muộn nhất `duration + fadeInGrace`
+/// dù animation có báo xong hay không — xem `fade(_:to:duration:completion:)`.
 @MainActor
 final class AccessoryCapsule {
     private weak var anchor: UIView?
@@ -146,6 +147,10 @@ final class AccessoryCapsule {
     /// (~0,3s sau đầu cú thu).
     static let fadeOut: TimeInterval = 0.1
 
+    /// Cú hiện lại dần được chờ thêm chừng này sau `duration` trước khi coi như
+    /// đã xong.
+    static let fadeInGrace: TimeInterval = 0.5
+
     /// Khoá riêng cho cú mờ của chính ta.
     static let fadeKey = "evenstar.accessoryCapsule.fade"
 
@@ -176,6 +181,10 @@ final class AccessoryCapsule {
     @discardableResult
     func hide() -> Bool {
         if isHidden { return true }
+        // Lớp thay của lần ẩn trước có thể còn (nó sống tới `restore()`, quá
+        // lúc `isHidden` về `false`). Hai lớp chồng nhau thì lớp cũ mồ côi —
+        // không ai gỡ — và nuốt mọi cú chạm vào viên thuốc.
+        hidden.removeBlocker()
         guard let anchor, anchor.window != nil, let container = Self.container(of: anchor) else {
             Self.reportMissingOnce()
             return false
@@ -275,7 +284,19 @@ final class AccessoryCapsule {
         animation.toValue = Float(alpha)
         animation.duration = duration
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        if let completion { animation.delegate = FadeEnd(completion) }
+        if let completion {
+            let end = FadeEnd(completion)
+            animation.delegate = end
+            // Chốt riêng của cú hiện lại: `isHidden` đã về `false` nên
+            // `watchdog` không còn trông nó. Một layer rời cây vẽ giữa cú mờ
+            // (hệ thống dựng lại accessory) có thể không bao giờ gọi
+            // `animationDidStop` — khi ấy cú trao tay kẹt và lớp thay ở lại.
+            // `FadeEnd` chỉ chạy `completion` một lần, đường nào tới trước.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(duration + Self.fadeInGrace))
+                end.fire()
+            }
+        }
         view.alpha = alpha
         layer.add(animation, forKey: fadeKey)
     }
@@ -295,11 +316,14 @@ final class AccessoryCapsule {
         }
 
         nonisolated func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
-            MainActor.assumeIsolated {
-                let completion = self.completion
-                self.completion = nil
-                completion?()
-            }
+            MainActor.assumeIsolated { fire() }
+        }
+
+        @MainActor
+        func fire() {
+            let completion = self.completion
+            self.completion = nil
+            completion?()
         }
     }
 

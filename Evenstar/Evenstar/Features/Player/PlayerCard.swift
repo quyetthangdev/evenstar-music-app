@@ -604,7 +604,7 @@ struct PlayerCard: View {
 
     /// Lề hai bên của mọi thứ trong thẻ đã mở: ảnh bìa, khối điều khiển,
     /// hàng đợi. 32pt như Apple Music đo trên iPhone 12; 24 trông sát viền.
-    private static let contentSideMargin: CGFloat = 32
+    static let contentSideMargin: CGFloat = 32
 
     /// Khoảng hở trên và dưới khối vuông: dưới grabber, và trên khối điều khiển.
     private static let expandedArtworkTopGap: CGFloat = 24

@@ -127,7 +127,7 @@ struct RootView: View {
             // ở bản trước của file này (git log) — lý lẽ không đổi.
             if !hasWarmedPlayerChrome {
                 NowPlayingContent(playback: playback, showingQueue: .constant(false))
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, PlayerCard.contentSideMargin)
                     .opacity(0.02)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)

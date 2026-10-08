@@ -441,6 +441,19 @@ final class AccessoryCapsuleTests: XCTestCase {
         XCTAssertNil(blocker(in: tree))
     }
 
+    /// Ẩn lần nữa khi lớp thay của lần trước còn đó: chỉ được có một lớp.
+    func testHidingAgainNeverLeavesTwoStandIns() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        capsule.restore(fadingIn: 0.05) {}
+        capsule.hide()
+        XCTAssertEqual(tree.strip.subviews.filter { $0 is AccessoryCapsule.Blocker }.count, 1)
+        capsule.restore()
+        XCTAssertNil(blocker(in: tree))
+    }
+
     /// Lớp thay ở lại suốt cú hiện lại và chỉ đi khi thẻ về nghỉ (`restore()`):
     /// trong quãng ấy hàng của accessory còn ẩn, nên chạm vào viên thuốc phải
     /// vẫn tới lớp thay. Trên máy, bản gỡ nó lúc bắt đầu mờ vào làm cú chạm ấy

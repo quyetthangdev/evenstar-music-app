@@ -148,6 +148,9 @@ struct MiniPlayerAccessory: View {
             }
         }
         .accessibilityElement(children: .combine)
+        // Phần vẽ ẩn thì VoiceOver cũng không được tới: lúc thẻ mở, đây là một
+        // nút không nhãn nằm sau thẻ. Không ảnh hưởng vùng chạm.
+        .accessibilityHidden(!expansion.showsAccessoryContent)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { expansion.requestExpand() }
         .sensoryFeedback(.impact(weight: .light), trigger: swipeCommits)
