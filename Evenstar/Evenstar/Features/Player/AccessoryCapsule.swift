@@ -64,18 +64,21 @@ final class AccessoryCapsule {
             view.alpha = alpha
         }
 
-        /// View còn đúng như ta để lại — trong cửa sổ, `alpha` đúng số 0 ta
-        /// đặt — thì trả nó ra để hiện lại; không thì `nil`. Cả hai trường hợp
-        /// đều buông nó ra.
+        /// View còn đúng như ta để lại — `alpha` đúng số 0 ta đặt — thì trả nó
+        /// ra để hiện lại; không thì `nil`. Cả hai trường hợp đều buông nó ra.
         ///
-        /// Không hiện lại mù quáng: rời cửa sổ là hệ thống đã dỡ accessory (đo
-        /// trên iOS 26: bài về `nil` gỡ view ấy khỏi cây ngay, và lần sau dựng
-        /// một view mới), còn một `alpha` khác 0 là hệ thống đã tự đặt lại. Ép
-        /// về số cũ ở đó có thể để lại một viên kính rỗng trên màn hình.
+        /// Không hiện lại mù quáng: một `alpha` khác 0 là hệ thống đã tự đặt
+        /// lại (hay đang chạy animation của nó), ép về số cũ ở đó có thể để lại
+        /// một viên kính rỗng trên màn hình. Nhưng **không đòi view còn trong
+        /// cửa sổ**: bài về `nil` làm hệ thống gỡ view ấy khỏi cây (đo trên iOS
+        /// 26), và UIKit có thể gắn chính view ấy lại về sau — còn ở `alpha` 0
+        /// thì nó vô hình mãi, và lần `hide()` kế tiếp sẽ nhớ 0 làm số gốc. Đặt
+        /// `alpha` của một view không ở trong cửa sổ thì vô hại, nên số 0 của ta
+        /// luôn được trả lại, ở đâu cũng vậy.
         @MainActor
         func take() -> UIView? {
             defer { view = nil }
-            guard let view, view.window != nil, view.alpha == 0 else { return nil }
+            guard let view, view.alpha == 0 else { return nil }
             return view
         }
 
@@ -166,7 +169,13 @@ final class AccessoryCapsule {
             Self.reportMissingOnce()
             return false
         }
-        hidden.alpha = container.alpha
+        // Không bao giờ nhớ 0 làm số gốc: hiện lại sẽ trả view về 0, viên kính
+        // vô hình mãi. Một view đang ở 0 khi ta tìm thấy — vết của một lần ẩn
+        // chưa hiện lại, hay hệ thống đặt — coi như 1. Chọn "coi là 1" thay vì
+        // từ chối ẩn: từ chối để một view kẹt ở 0 kẹt mãi (không ai chữa nó),
+        // còn một viên kính đang được ta hiển thị mà ở 0 thì không có gì khác để
+        // giữ nguyên.
+        hidden.alpha = container.alpha == 0 ? 1 : container.alpha
         hidden.view = container
         if let parent = container.superview {
             let blocker = Blocker(frame: container.frame)
@@ -206,9 +215,18 @@ final class AccessoryCapsule {
         // Viên kính nhận chạm lại ngay — giá trị mô hình của nó đã là 1.
         hidden.removeBlocker()
         isHidden = false
-        // Không còn như ta để lại (xem `Hidden.take()`): không có gì của ta để
-        // hiện — trao tay ngay.
+        // Không còn như ta để lại (`alpha` đã khác 0, xem `Hidden.take()`):
+        // không có gì của ta để hiện — trao tay ngay.
         guard let view = hidden.take() else {
+            completion()
+            return
+        }
+        // Đã rời cửa sổ (hệ thống dỡ accessory): không ai thấy một cú mờ, và
+        // một animation trên layer không hiển thị có thể không bao giờ gọi
+        // `completion`. Trả số cũ ngay, gỡ cú mờ của ta.
+        guard view.window != nil else {
+            view.layer.removeAnimation(forKey: Self.fadeKey)
+            view.alpha = hidden.alpha
             completion()
             return
         }

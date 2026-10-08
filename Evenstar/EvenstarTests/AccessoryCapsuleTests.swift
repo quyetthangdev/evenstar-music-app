@@ -284,16 +284,65 @@ final class AccessoryCapsuleTests: XCTestCase {
         XCTAssertEqual(tree.container.alpha, 0.4, accuracy: 1e-6)
     }
 
-    /// Viên kính đã rời cửa sổ (hệ thống dỡ accessory): để yên nó.
-    func testRestoringLeavesAViewThatLeftTheWindowAlone() {
+    /// Viên kính đã rời cửa sổ (hệ thống dỡ accessory) mà vẫn ở số 0 ta đặt:
+    /// hiện lại số cũ cho nó. Đặt `alpha` của view không còn trong cửa sổ thì
+    /// vô hại, còn để nguyên ở 0 thì một view UIKit gắn lại sau này sẽ vô hình
+    /// mãi — và lần `hide()` kế tiếp sẽ nhớ 0 làm số "gốc".
+    func testRestoringBringsBackAViewThatLeftTheWindow() {
         let tree = makeTree()
         let capsule = AccessoryCapsule()
         capsule.attach(tree.anchor)
         capsule.hide()
         tree.container.removeFromSuperview()
+        XCTAssertNil(tree.container.window)
         capsule.restore()
         XCTAssertFalse(capsule.isHidden)
-        XCTAssertEqual(tree.container.alpha, 0)
+        XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(tree.container.layer.animation(forKey: AccessoryCapsule.fadeKey), "our fade goes too")
+        XCTAssertNil(blocker(in: tree))
+        // Gắn lại: không còn vô hình.
+        tree.strip.addSubview(tree.container)
+        XCTAssertEqual(tree.container.alpha, 1)
+    }
+
+    /// Cũng đúng ở lối hiện dần của cú trao tay: không đợi một cú mờ vào một
+    /// view không ai thấy, nhưng alpha phải về lại và `completion` phải nổ.
+    func testFadingBackInABrokenAwayViewStillRestoresItAndCallsBack() {
+        let tree = makeTree()
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        tree.container.removeFromSuperview()
+        var done = false
+        capsule.restore(fadingIn: 0.05) { done = true }
+        let deadline = Date().addingTimeInterval(1)
+        while !done, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        XCTAssertTrue(done)
+        XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
+    }
+
+    /// Một view còn `alpha` 0 từ trước (hệ thống, hay vết của một lần ẩn chưa
+    /// hiện lại) không bao giờ được nhớ là số gốc: hiện lại sẽ trả nó về 0,
+    /// viên kính vô hình mãi. Coi nó là 1 — chữa luôn trường hợp kẹt, thay vì
+    /// từ chối ẩn và để nó kẹt.
+    func testHidingAViewAlreadyAtZeroNeverRestoresItToZero() {
+        let tree = makeTree()
+        tree.container.alpha = 0
+        let capsule = AccessoryCapsule()
+        capsule.attach(tree.anchor)
+        capsule.hide()
+        capsule.restore()
+        XCTAssertEqual(tree.container.alpha, 1)
+        XCTAssertNil(blocker(in: tree))
+
+        tree.container.alpha = 0
+        capsule.hide()
+        var done = false
+        capsule.restore(fadingIn: 0.05) { done = true }
+        let deadline = Date().addingTimeInterval(1)
+        while !done, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        XCTAssertEqual(tree.container.alpha, 1)
     }
 
     // MARK: - Mọi lối ra đều hiện lại
