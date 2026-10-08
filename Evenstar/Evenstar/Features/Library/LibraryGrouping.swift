@@ -12,7 +12,7 @@ import Foundation
 /// SwiftData row, which raises `NSObjectInaccessibleException`, an Objective-C
 /// exception Swift cannot catch. Deleting the track that was playing reached
 /// that window reliably, because `PlaybackService.handleTrackDeleted` clears
-/// `currentTrack`, which `RootView`'s body reads, so a full rebuild of all five
+/// `currentTrack`, which `RootView`'s body reads, so a full rebuild of all four
 /// tabs was already scheduled before the row died.
 ///
 /// `LibraryStore.remove(_:)` closes that window for `store.tracks`, and cannot

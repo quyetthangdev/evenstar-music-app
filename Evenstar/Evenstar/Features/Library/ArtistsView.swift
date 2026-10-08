@@ -33,6 +33,7 @@ struct ArtistsView: View {
                     artists = LibraryGrouping.artists(from: store.tracks)
                 }
                 .navigationTitle("Nghệ sĩ")
+                .toolbar { AccountToolbarItem() }
                 // Hoisted above the empty/non-empty branch in `content` so it
                 // stays attached to the navigation path even if the library
                 // empties while an artist detail screen is pushed — a

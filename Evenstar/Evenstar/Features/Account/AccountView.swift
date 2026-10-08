@@ -1,17 +1,25 @@
 import SwiftUI
 import SwiftData
 
-/// What the library adds up to, plus what build this is.
+/// What the library adds up to, plus what build this is — the content of the
+/// account sheet.
+///
+/// Not a tab any more. Like Apple Music, the account is the round button at the
+/// top right of the three library tabs (`AccountToolbarItem`), and this view is
+/// what it opens: a sheet presented from `RootView`, so it covers the player
+/// card and the mini player accessory along with everything else.
 ///
 /// Named "Tài khoản" because that is where an Apple Music sign-in will go in
 /// Phase 3. Until then it is deliberately only what is true today — counts,
 /// storage, version. No signed-out account row promising something that does
-/// not exist.
+/// not exist: the header card says "Thư viện", not a name the app does not
+/// have.
 struct AccountView: View {
     /// The local library, fetched once for the whole app — see `LibraryStore`.
     /// This screen renders no track of its own; it reads the array for a count
     /// and for the file paths behind the storage figure.
     @Environment(LibraryStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
 
     private var tracks: [Track] { store.tracks }
 
@@ -47,11 +55,22 @@ struct AccountView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Thư viện") {
-                    row("Bài hát", value: "\(tracks.count)")
-                    row("Album", value: albumCountText)
-                    row("Nghệ sĩ", value: artistCountText)
-                    row("Dung lượng", value: storageText)
+                // Thẻ đầu sheet, chỗ Apple Music đặt ảnh và tên tài khoản.
+                // Chưa có tài khoản nào thì nó là thư viện: tiêu đề có sẵn
+                // trong catalogue, dòng phụ chỉ có số — không thêm chữ mới.
+                Section {
+                    header
+                }
+
+                Section {
+                    row("Bài hát", symbol: LibraryTab.songs.symbol, tint: .pink,
+                        value: "\(tracks.count)")
+                    row("Album", symbol: LibraryTab.albums.symbol, tint: .orange,
+                        value: albumCountText)
+                    row("Nghệ sĩ", symbol: LibraryTab.artists.symbol, tint: .purple,
+                        value: artistCountText)
+                    row("Dung lượng", symbol: "internaldrive", tint: .gray,
+                        value: storageText)
                 }
 
                 // One row rather than the appearance control inline.
@@ -63,10 +82,12 @@ struct AccountView: View {
                 // instead of as another section wedged between the storage
                 // figure and the version number.
                 Section {
-                    NavigationLink("Cài đặt") { SettingsView() }
-                }
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label { Text("Cài đặt") } icon: { IconTile(symbol: "gearshape.fill", tint: .gray) }
+                    }
 
-                Section("Nguồn nhạc") {
                     // `showsDoneButton: false` — this `NavigationLink` pushes
                     // onto the `NavigationStack` this screen already owns, so
                     // the pushed bar's native back chevron is the way out.
@@ -74,16 +95,36 @@ struct AccountView: View {
                     // call site, `DriveSongsList`'s sheet, which has no back
                     // chevron to rely on. See `DriveFoldersView`'s doc
                     // comment on `showsDoneButton`.
-                    NavigationLink("Thư mục Drive") {
+                    NavigationLink {
                         DriveFoldersView(showsDoneButton: false)
+                    } label: {
+                        Label { Text("Thư mục Drive") } icon: { IconTile(symbol: "folder.fill", tint: .blue) }
                     }
-                }
-
-                Section("Ứng dụng") {
-                    row("Phiên bản", value: Self.versionText)
+                } footer: {
+                    // Chú thích căn giữa ở đáy, như cuối các trang của
+                    // Settings — không phải một hàng chiếm chỗ như các hàng
+                    // dùng được. Hai `Text` cạnh nhau chứ không nối bằng `+`:
+                    // nhãn vẫn là khoá "Phiên bản" có sẵn, số hiệu thì
+                    // `verbatim` để không thành một khoá mới.
+                    HStack(spacing: 4) {
+                        Text("Phiên bản")
+                        Text(verbatim: Self.versionText)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 24)
                 }
             }
+            .listSectionSpacing(.compact)
             .navigationTitle("Tài khoản")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Nút ✓ kính của iOS 26, đúng chỗ sheet tài khoản của Apple
+                // Music đặt nó. `role: .confirm` không nhãn: hệ thống tự vẽ
+                // dấu tick và tự đặt tên cho VoiceOver.
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(role: .confirm) { dismiss() }
+                }
+            }
             // Keyed on the count so importing or deleting re-measures. It is a
             // cheap proxy: editing a track's tags does not change what is on
             // disk, and nothing else alters the file set.
@@ -101,6 +142,27 @@ struct AccountView: View {
         }
     }
 
+    private var header: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "music.note.house.fill")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Color.indigo.gradient, in: .circle)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Thư viện")
+                    .font(.title2.weight(.semibold))
+                Text(verbatim: "\(tracks.count) · \(storageText)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+
     /// `LocalizedStringKey`, not `String`.
     ///
     /// As `String` this compiled, read correctly in Vietnamese, and silently
@@ -108,12 +170,12 @@ struct AccountView: View {
     /// and a literal passed to a `String` parameter has already collapsed to
     /// plain text by the time `Text` sees it. The screen proved it — "Account"
     /// and "Library" translated, and every row between them stayed Vietnamese.
-    private func row(_ title: LocalizedStringKey, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
+    private func row(_ title: LocalizedStringKey, symbol: String, tint: Color,
+                     value: String) -> some View {
+        LabeledContent {
             Text(value)
-                .foregroundStyle(.secondary)
+        } label: {
+            Label { Text(title) } icon: { IconTile(symbol: symbol, tint: tint) }
         }
     }
 
@@ -175,6 +237,20 @@ struct AccountView: View {
     }
 }
 
+/// Ô vuông bo góc có màu đặt trước mỗi hàng, như trong Settings của iOS.
+private struct IconTile: View {
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(tint.gradient, in: .rect(cornerRadius: 8, style: .continuous))
+    }
+}
+
 #Preview {
     let container: ModelContainer
     do {
@@ -214,7 +290,7 @@ struct AccountView: View {
     }
     // Same reason as the two extra models above: the pushed `DriveFoldersView`
     // reads `DriveLibraryService` out of the environment, so without this the
-    // Nguồn nhạc row crashes the preview rather than showing the screen.
+    // Thư mục Drive row crashes the preview rather than showing the screen.
     let driveLibrary = DriveLibraryService(library: library)
     // Seeded by hand — see the same note in `AlbumsView`'s preview.
     return AccountView()

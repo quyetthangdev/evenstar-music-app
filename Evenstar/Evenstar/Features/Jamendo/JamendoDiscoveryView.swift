@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Reached from the Jamendo chip's toolbar, the same shape the `+` uses to open
 /// the file importer. It is not a tab: it is one source among the library's,
-/// and the system tab bar already holds the app's five destinations.
+/// and the system tab bar already holds the app's four destinations.
 struct JamendoDiscoveryView: View {
     @Environment(JamendoLibraryService.self) private var jamendo
     @Environment(PlaybackService.self) private var playback

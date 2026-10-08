@@ -8,7 +8,7 @@ import SwiftUI
 /// The first version published this through a `@Binding` written from an
 /// `onChange`. That cost two update passes per frame of a drag: the card's own
 /// body ran, then `onChange` fired, then the write invalidated `RootView`, whose
-/// body rebuilds the `TabView` and its five tabs for SwiftUI to diff. The recede
+/// body rebuilds the `TabView` and its four tabs for SwiftUI to diff. The recede
 /// was visibly rough, and no amount of making the *effect* cheaper could fix it,
 /// because the cost was not in the effect.
 ///

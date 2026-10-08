@@ -61,6 +61,7 @@ struct AlbumsView: View {
                     albums = LibraryGrouping.albums(from: store.tracks)
                 }
                 .navigationTitle("Album")
+                .toolbar { AccountToolbarItem() }
                 // Hoisted above the empty/non-empty branch in `content` so it
                 // stays attached to the navigation path even if the library
                 // empties while an album detail screen is pushed — a

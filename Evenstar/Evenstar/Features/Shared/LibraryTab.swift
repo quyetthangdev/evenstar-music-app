@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// Năm điểm đến của app. Search là một tab thường của hệ thống
+/// Bốn điểm đến của app. Search là một tab thường của hệ thống
 /// (`Tab(role: .search)`), không còn là nút tròn riêng như thời thanh tab tự vẽ.
-enum LibraryTab: String, Identifiable {
-    case songs, albums, artists, account, search
+///
+/// **Không có tab Tài khoản.** Như Apple Music, tài khoản là nút tròn ở góc
+/// trên bên phải của ba tab thư viện (`AccountToolbarItem`) và mở thành một
+/// sheet từ `RootView` — thanh tab chỉ giữ chỗ cho nội dung.
+enum LibraryTab: String, Identifiable, CaseIterable {
+    case songs, albums, artists, search
     var id: String { rawValue }
 
     /// **`String(localized:)`, not a bare literal.** A `String` handed to
@@ -22,7 +26,6 @@ enum LibraryTab: String, Identifiable {
         case .songs:   String(localized: "Bài hát", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .albums:  String(localized: "Album", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .artists: String(localized: "Nghệ sĩ", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
-        case .account: String(localized: "Tài khoản", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         case .search:  String(localized: "Tìm kiếm", bundle: AppLanguage.resolvedBundle, locale: AppLanguage.resolvedLocale)
         }
     }
@@ -32,7 +35,6 @@ enum LibraryTab: String, Identifiable {
         case .songs:   "music.note.list"
         case .albums:  "square.stack"
         case .artists: "music.mic"
-        case .account: "person.crop.circle"
         case .search:  "magnifyingglass"
         }
     }

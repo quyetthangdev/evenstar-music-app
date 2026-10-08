@@ -17,7 +17,7 @@ import SwiftData
 ///
 /// Why a store rather than one `@Query` in `RootView` handed down through the
 /// environment: `RootView.body` must not read anything that changes as often as
-/// the library does. Its body builds the `TabView` and all five tabs for
+/// the library does. Its body builds the `TabView` and all four tabs for
 /// SwiftUI to diff, and `PlayerExpansion.swift` documents in detail what that
 /// cost looked like on screen the last time something frequently-changing was
 /// read up there. A `@Query` only lives in a `View`, and a `View` that holds
@@ -229,7 +229,7 @@ final class LibraryStore {
 /// A `@Query` needs a `View` to live in, and it invalidates that view on every
 /// change to the table. This is that view, deliberately reduced to nothing so
 /// the invalidation lands on a body that costs one `Color.clear` to rebuild
-/// instead of on `RootView`'s, which rebuilds the `TabView` and five tabs.
+/// instead of on `RootView`'s, which rebuilds the `TabView` and four tabs.
 ///
 /// Why this rather than `store.refresh()` called from the places that change
 /// data: what changes the set of rows today is `LibraryService.insert` and

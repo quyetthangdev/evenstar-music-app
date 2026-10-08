@@ -149,6 +149,12 @@ struct SongsView: View {
                             ))
                         }
                     }
+                    // Khoảng cách cố định trước nút tài khoản: không có nó, iOS
+                    // 26 gộp `+` và ảnh đại diện vào chung một viên kính, như
+                    // thể hai nút là một nhóm việc. Chúng không phải — một nút
+                    // thêm nhạc, một nút mở tài khoản.
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                    AccountToolbarItem()
                 }
         }
         .fileImporter(

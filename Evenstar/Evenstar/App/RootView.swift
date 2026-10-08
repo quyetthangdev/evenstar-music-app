@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The app's root: the five destinations in a native `TabView`, with the player
+/// The app's root: the four destinations in a native `TabView`, with the player
 /// card on top.
 ///
 /// The tab bar, its scroll-minimise and the detached search tab are the
@@ -47,13 +47,16 @@ struct RootView: View {
     @Environment(PlaybackService.self) private var playback
     @State private var tab: LibraryTab = .songs
     @State private var query = ""
+    /// Sheet Tài khoản. Chỉ `RootView` giữ nó; ba tab thư viện nhận binding
+    /// qua `\.showingAccount`.
+    @State private var showingAccount = false
     /// How far the player has opened, 0 collapsed to 1 full screen.
     ///
     /// A `@State` reference type, not a value: `RootView`'s body never reads
     /// `progress`, so it is not invalidated when the card moves. Only the one
     /// modifier that applies the transform re-runs. See `PlayerExpansion.swift`
     /// — the version before this was a `Binding`, and rebuilding this body and
-    /// its five tabs on every dragged frame is what made the recede stutter.
+    /// its four tabs on every dragged frame is what made the recede stutter.
     @State private var expansion = PlayerExpansion()
 
     /// The user's appearance override, or `.system` for none. Edited in
@@ -89,7 +92,7 @@ struct RootView: View {
         ZStack {
             // The app's one `@Query` on `Track`, in a view that draws nothing.
             // See `LibraryStore` — a `@Query` here would invalidate this body,
-            // which rebuilds the `TabView` and all five tabs.
+            // which rebuilds the `TabView` and all four tabs.
             LibraryQueryBridge()
 
             TabView(selection: $tab) {
@@ -102,10 +105,7 @@ struct RootView: View {
                 Tab(LibraryTab.artists.label, systemImage: LibraryTab.artists.symbol, value: LibraryTab.artists) {
                     ArtistsView()
                 }
-                Tab(LibraryTab.account.label, systemImage: LibraryTab.account.symbol, value: LibraryTab.account) {
-                    AccountView()
-                }
-                // Có nhãn, như bốn tab kia: không nhãn thì hệ thống tự đặt
+                // Có nhãn, như ba tab kia: không nhãn thì hệ thống tự đặt
                 // "Search" theo ngôn ngữ máy, không theo ngôn ngữ trong app.
                 Tab(LibraryTab.search.label, systemImage: LibraryTab.search.symbol,
                     value: LibraryTab.search, role: .search) {
@@ -115,6 +115,9 @@ struct RootView: View {
             // Thanh tab, cú thu nhỏ khi cuộn và tab tìm kiếm tách riêng đều là
             // của hệ thống — thay cho `FloatingTabBar` và `ScrollMinimise`.
             .tabBarMinimizeBehavior(.onScrollDown)
+            // Nút tài khoản ở ba tab thư viện bật sheet qua binding này — xem
+            // `AccountToolbarItem` và chỗ `.sheet` cuối `body`.
+            .environment(\.showingAccount, $showingAccount)
             .miniPlayerAccessory(playback: playback, expansion: expansion)
             // The content recedes as the player opens. The transform lives in
             // the modifier, not here — see `PlayerExpansion.swift`.
@@ -206,6 +209,21 @@ struct RootView: View {
         } message: {
             Text(verbatim: Self.storeWarningBody)
         }
+        // Sheet Tài khoản, gắn ở đây chứ không trong một tab: ở gốc nó che cả
+        // `PlayerCard` lẫn mini player trong accessory, như sheet tài khoản
+        // của Apple Music.
+        //
+        // Sau `.id(language)`, cùng lý do với hộp thoại bên trên — và ở đây lý
+        // do ấy cụ thể hơn: đổi ngôn ngữ diễn ra *trong* sheet này, ở
+        // `SettingsView`. Gắn bên trong, cú dựng lại của `.id` sẽ đóng sheet
+        // ngay dưới ngón tay người dùng. Cái giá cũng y hệt: sheet nằm trên
+        // `.environment(\.locale,)` nên phải tự đặt lại locale. Body này đọc
+        // `language`, nên closure chạy lại khi nó đổi và sheet dịch theo ngay,
+        // vẫn đứng ở màn Cài đặt.
+        .sheet(isPresented: $showingAccount) {
+            AccountView()
+                .environment(\.locale, AppLanguage.resolvedLocale)
+        }
         // Khôi phục hàng đợi đã lưu **không** còn ở đây. Nó đã dời lên `.task`
         // của `EvenstarApp`, ngay sau lượt quét trùng, và phải chạy sau lượt
         // ấy — xem ghi chú dài ở chỗ đó. Đừng thêm lại một `.task` khôi phục ở
@@ -216,7 +234,7 @@ struct RootView: View {
 
 /// Gắn accessory. Đây là chỗ **duy nhất** đọc `currentTrack` cho nó, và nằm
 /// trong một modifier chứ không trong `RootView.body`: body ấy dựng lại
-/// `TabView` cùng năm tab, còn body của modifier này chỉ bọc `content` đã dựng
+/// `TabView` cùng bốn tab, còn body của modifier này chỉ bọc `content` đã dựng
 /// sẵn. Cùng mẫu với `RecedeBehindPlayer`.
 ///
 /// `EmptyView()` khi không có bài: spike 2026-10-06 xác nhận hệ thống khi ấy ẩn
