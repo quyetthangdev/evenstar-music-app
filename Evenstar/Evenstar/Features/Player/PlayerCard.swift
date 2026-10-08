@@ -1160,7 +1160,7 @@ struct PlayerCard: View {
             // đi **xuống**, khác `preferredColorScheme` vốn đi ngược lên cửa sổ
             // và kéo theo cả app — xem ghi chú ở `RootView`.
             expandedContent(size: cardSize, openWidth: fullWidth, topInset: insets.top,
-                            collapsedHeight: anchor.collapsedHeight)
+                            collapsedHeight: anchor.collapsedHeight, dragTravel: dragTravel)
                 .environment(\.colorScheme, .dark)
             grabber(topInset: insets.top)
         }
@@ -1538,12 +1538,13 @@ struct PlayerCard: View {
     ///   Chỉ bề rộng ngang đổi. `size` vẫn đi vào `queueTitleTravel` và
     ///   `contentOffset` như cũ — hình học tấm bìa cố ý bám `cardSize`.
     private func expandedContent(size: CGSize, openWidth: CGFloat, topInset: CGFloat,
-                                 collapsedHeight: CGFloat) -> some View {
+                                 collapsedHeight: CGFloat, dragTravel: CGFloat) -> some View {
         NowPlayingContent(
             playback: playback,
             showingQueue: $showingQueue,
             titleTravel: queueTitleTravel(size: size, topInset: topInset, collapsedHeight: collapsedHeight),
-            titleOpacity: 1 - queueTitleHidden
+            titleOpacity: 1 - queueTitleHidden,
+            transportDrag: AnyGesture(drag(travel: dragTravel, threshold: Self.controlsDragThreshold).map { _ in })
         )
             .padding(.horizontal, Self.contentSideMargin)
             .frame(width: openWidth)
@@ -2155,6 +2156,11 @@ struct PlayerCard: View {
     static func dragThreshold(progress: Double) -> CGFloat {
         progress > 0.5 ? 2 : 10
     }
+
+    /// Ngưỡng kéo khi ngón tay đặt xuống trên hàng nút điều khiển: dung sai
+    /// của một cú chạm, như nút trong danh sách cuộn. Xem
+    /// `NowPlayingContent.transportDrag`.
+    static let controlsDragThreshold: CGFloat = 10
 
     /// The finger's travel with the recognition threshold taken back out.
     ///

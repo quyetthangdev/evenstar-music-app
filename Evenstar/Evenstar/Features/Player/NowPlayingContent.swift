@@ -22,6 +22,17 @@ struct NowPlayingContent: View {
     /// nó. Xem `PlayerCard.queueTitleFadeStart`.
     var titleOpacity: Double = 1
 
+    /// Cú kéo thẻ, gắn lại riêng trên hàng nút điều khiển với ngưỡng lớn hơn.
+    ///
+    /// Thẻ mở bắt kéo sau 2pt (`PlayerCard.dragThreshold`) để vuốt xuống không
+    /// có vùng chết. Nhưng một cú chạm thật trên máy thường nhích 3–6pt, và
+    /// ngay khi cú kéo của thẻ nhận, nó huỷ nút đang được chạm: nút "không
+    /// ăn". Gắn ở đây, cử chỉ con được ưu tiên hơn cử chỉ của thẻ, nên trên
+    /// hàng nút ngón tay có 10pt dung sai như một nút trong danh sách cuộn,
+    /// còn vượt quá thì thẻ vẫn bám theo như cũ. `nil` khi không có thẻ nào
+    /// để kéo (xem trước, test).
+    var transportDrag: AnyGesture<Void>? = nil
+
     /// Counts taps on each transport control, exactly as `MiniPlayerChrome`
     /// does for Next and for the same
     /// reason — a `Bool` would fire once and then sit at `true`. Its own
@@ -56,6 +67,13 @@ struct NowPlayingContent: View {
     ///
     /// 30 rồi (2026-10-08): 42 cho vòng tròn kính ~72pt, lấn át cả hàng.
     private static let playGlyphSize: CGFloat = 30
+
+    /// Back/next là biểu tượng trần, không vòng kính (2026-10-08), như Apple
+    /// Music. Biểu tượng to hơn bản có vòng để vẫn đọc ra là nút, và khung
+    /// chạm rộng hơn hẳn biểu tượng: thiếu vòng tròn thì mắt không còn chỉ
+    /// cho ngón tay chỗ bấm.
+    private static let arrowGlyphSize: CGFloat = 24
+    private static let arrowHitFrame: CGFloat = 60
 
     /// Khoảng chừa dưới hàng hẹn giờ/hàng đợi. Thẻ mở tràn tới mép vật lý,
     /// nên không có khoảng này thì hai nút nằm sát mép dưới, đè lên vạch home.
@@ -321,11 +339,11 @@ struct NowPlayingContent: View {
                 playback.previous()
             } label: {
                 Image(systemName: "backward.fill")
-                    .font(.title3)
-                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
+                    .font(.system(size: Self.arrowGlyphSize))
+                    .frame(width: Self.arrowHitFrame, height: Self.arrowHitFrame)
+                    .contentShape(Circle())
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .buttonStyle(BareGlyphButtonStyle())
             .sensoryFeedback(.impact(weight: .light), trigger: previousTaps)
             .disabled(playback.currentTrack == nil)
 
@@ -348,15 +366,16 @@ struct NowPlayingContent: View {
                 playback.next()
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.title3)
-                    .frame(width: Self.transportGlyphFrame, height: Self.transportGlyphFrame)
+                    .font(.system(size: Self.arrowGlyphSize))
+                    .frame(width: Self.arrowHitFrame, height: Self.arrowHitFrame)
+                    .contentShape(Circle())
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .buttonStyle(BareGlyphButtonStyle())
             .sensoryFeedback(.impact(weight: .light), trigger: nextTaps)
             .disabled(!playback.canGoNext)
         }
         .padding(.top, 8)
+        .modifier(OptionalDrag(gesture: transportDrag))
     }
 
     /// Bằng khung của nút back/next (2026-10-08): ba vòng tròn kính cỡ phụ
@@ -538,5 +557,34 @@ private struct PlaybackScrubber: View {
             duration: playback.duration,
             onSeek: { playback.seek(to: $0) }
         )
+    }
+}
+
+/// Gắn một cú kéo nếu có. Xem `NowPlayingContent.transportDrag`.
+private struct OptionalDrag: ViewModifier {
+    let gesture: AnyGesture<Void>?
+
+    func body(content: Content) -> some View {
+        if let gesture {
+            content.gesture(gesture)
+        } else {
+            content
+        }
+    }
+}
+
+/// Nút chỉ có biểu tượng: nhấn thì co lại và mờ đi, nhả ra bật về.
+///
+/// Không vòng kính nên không có hiệu ứng nhấn của `.glass` để dựa vào; đây là
+/// phản hồi nhìn thấy được thay cho nó, cùng với rung nhẹ ở chỗ gọi.
+private struct BareGlyphButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.55 : 1) : 0.3)
+            .scaleEffect(configuration.isPressed ? 0.86 : 1)
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
     }
 }
