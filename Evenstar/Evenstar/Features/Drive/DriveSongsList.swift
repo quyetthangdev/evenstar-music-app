@@ -12,7 +12,9 @@ struct DriveSongsList: View {
     @Query(sort: [SortDescriptor(\DriveTrack.title, comparator: .localizedStandard)])
     private var tracks: [DriveTrack]
 
-    @State private var showManager = false
+    /// Của `SongsView`: lối vào trình quản lý thư mục nằm trong menu ⋯ chung
+    /// của màn Bài hát, không còn là một nút ⋯ riêng ở góc trái.
+    @Binding var showManager: Bool
     @State private var errorMessage: String?
 
     var body: some View {
@@ -77,16 +79,6 @@ struct DriveSongsList: View {
                 .tint(Color(.label))
                 .foregroundStyle(Color(.systemBackground))
         }
-        .toolbar {
-            // Same entry point as the list below it. Without this the `…`
-            // button vanishes exactly when there is nothing else on screen to
-            // reach the manager from except the one button in the middle —
-            // and it reappears the moment a folder exists, which reads as the
-            // toolbar flickering rather than as a deliberate state.
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showManager = true } label: { Image(systemName: "ellipsis.circle") }
-            }
-        }
     }
 
     private var list: some View {
@@ -124,11 +116,6 @@ struct DriveSongsList: View {
         }
         .listStyle(.plain)
         .refreshable { await rescanAll() }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showManager = true } label: { Image(systemName: "ellipsis.circle") }
-            }
-        }
     }
 
     /// What the one status line says.

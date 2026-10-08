@@ -69,6 +69,13 @@ struct SongsView: View {
     /// empty screen they did not ask for.
     @State private var source: LibrarySource = .local
 
+    /// Mở từ menu ⋯ — `NavigationLink` không sống được trong một `Menu`, nên
+    /// cú đẩy sang khám phá Jamendo đi bằng trạng thái.
+    @State private var showJamendoDiscovery = false
+    /// Trình quản lý thư mục Drive. Sheet vẫn thuộc `DriveSongsList`; chỉ lối
+    /// vào nằm ở menu ⋯ của màn này.
+    @State private var showDriveManager = false
+
     /// Bài đang chờ xác nhận xoá vì nó không có trên máy này. `nil` khi không
     /// có hộp thoại nào đang mở.
     ///
@@ -95,66 +102,24 @@ struct SongsView: View {
             content
                 .navigationTitle("Bài hát")
                 .toolbar {
+                    // **Một menu ⋯ thay cho ba nút.** Trước đây góc này có `+`,
+                    // dưới thanh nguồn có thêm nút sắp xếp đứng một mình, và
+                    // nguồn Drive còn gắn một nút ⋯ ở góc trái — cùng lúc với
+                    // ảnh đại diện, màn hình có tới bốn điều khiển rải ba chỗ.
+                    // Apple Music gom việc phụ của một danh sách vào một ⋯ cạnh
+                    // ảnh đại diện; ở đây cũng vậy, và nội dung menu đổi theo
+                    // nguồn đang xem.
                     ToolbarItem(placement: .topBarTrailing) {
-                        // One glyph for all three chips, because this corner
-                        // has one meaning: add music to the source you are
-                        // looking at. Only the destination differs — a file
-                        // importer for the two local-ish sources, Jamendo's
-                        // catalogue for the third.
-                        //
-                        // It used to show `magnifyingglass` for Jamendo, on the
-                        // reasoning that its screen "is reached by search, not
-                        // by picking files off the device". That is true of the
-                        // mechanism and wrong about the user: nobody arrives
-                        // wanting a search mechanism, they arrive wanting more
-                        // music. Three things broke because of it. The `+` that
-                        // means "add" on two chips vanished on the third.
-                        // A magnifying glass already means "search the library"
-                        // a few points away, on the tab bar's own search tab.
-                        // And with the affordance unrecognisable, the
-                        // only remaining signpost to discovery was
-                        // `JamendoSongsList`'s empty state — which deletes
-                        // itself the moment the first track is saved, leaving a
-                        // user who had saved exactly one track with no way
-                        // back in that they could find.
-                        //
-                        // The label is what carries the difference now, and it
-                        // has to: two identical glyphs would otherwise read the
-                        // same to VoiceOver.
-                        if source == .jamendo {
-                            NavigationLink {
-                                JamendoDiscoveryView()
-                            } label: {
-                                Image(systemName: "plus.circle")
-                            }
-                            .accessibilityLabel(String(
-                                localized: "Khám phá Jamendo",
-                                bundle: AppLanguage.resolvedBundle,
-                                locale: AppLanguage.resolvedLocale
-                            ))
-                        } else {
-                            Button {
-                                showFileImporter = true
-                            } label: {
-                                Image(systemName: "plus.circle")
-                            }
-                            // "Thêm nhạc", not a new string: it is already in
-                            // the catalogue, already translated, and already
-                            // what `EmptyLibraryView`'s own import button says.
-                            // Two names for one action is how a glossary rots.
-                            .accessibilityLabel(String(
-                                localized: "Thêm nhạc",
-                                bundle: AppLanguage.resolvedBundle,
-                                locale: AppLanguage.resolvedLocale
-                            ))
-                        }
+                        moreMenu
                     }
                     // Khoảng cách cố định trước nút tài khoản: không có nó, iOS
-                    // 26 gộp `+` và ảnh đại diện vào chung một viên kính, như
-                    // thể hai nút là một nhóm việc. Chúng không phải — một nút
-                    // thêm nhạc, một nút mở tài khoản.
+                    // 26 gộp ⋯ và ảnh đại diện vào chung một viên kính, như
+                    // thể hai nút là một nhóm việc. Chúng không phải.
                     ToolbarSpacer(.fixed, placement: .topBarTrailing)
                     AccountToolbarItem()
+                }
+                .navigationDestination(isPresented: $showJamendoDiscovery) {
+                    JamendoDiscoveryView()
                 }
         }
         .fileImporter(
@@ -247,56 +212,50 @@ struct SongsView: View {
         }
     }
 
-    /// Nút sắp xếp, chỉ ở nguồn **Trên máy**.
+    /// Menu ⋯ của màn Bài hát. Mục đầu luôn là "thêm nhạc vào nguồn đang
+    /// xem"; phần sau là việc riêng của nguồn ấy.
     ///
-    /// Drive và Jamendo cũng mang `playCount`, nhưng danh sách của chúng do
-    /// service khác dựng và không đi qua `store.tracks` — kéo vào là ba đường
-    /// riêng thay vì một, cho một tính năng chưa ai đòi ở đó.
+    /// Sắp xếp chỉ có ở **Trên máy**. Drive và Jamendo cũng mang `playCount`,
+    /// nhưng danh sách của chúng do service khác dựng và không đi qua
+    /// `store.tracks` — kéo vào là ba đường riêng thay vì một, cho một tính
+    /// năng chưa ai đòi ở đó.
     ///
-    /// `Menu` chứ không `Picker` phân đoạn thứ hai: hai thanh phân đoạn chồng
-    /// nhau đọc ra như hai bộ lọc ngang hàng, mà chúng không ngang hàng — nguồn
-    /// đổi *nội dung*, sắp xếp chỉ đổi *thứ tự* của nội dung ấy.
-    private var sortRow: some View {
-        HStack {
-            Spacer()
-            Menu {
-                Picker("Sắp xếp", selection: $sort) {
+    /// Sắp xếp là một `Picker` kiểu `.menu` lồng trong menu: hiện thành một
+    /// mục con mang tên kiểu đang chọn ngay bên dưới, mở ra là thấy dấu tick —
+    /// trạng thái đọc được mà không cần hàng chữ hay nút riêng ngoài màn hình.
+    private var moreMenu: some View {
+        Menu {
+            switch source {
+            case .local:
+                Button { showFileImporter = true } label: {
+                    Label("Thêm nhạc", systemImage: "plus")
+                }
+                Picker(selection: $sort) {
                     ForEach(TrackSort.allCases) { option in
                         Label(option.label, systemImage: option.systemImage)
                             .tag(option)
                     }
+                } label: {
+                    Label("Sắp xếp", systemImage: "arrow.up.arrow.down")
                 }
-            } label: {
-                // Chỉ glyph, không kèm chữ — dạng Apple dùng cho điều khiển sắp
-                // xếp ở Ảnh và Tệp.
-                //
-                // Bản trước bày cả `sort.label` cạnh icon. Nó cho biết đang sắp
-                // theo gì, nhưng phải trả bằng một hàng chữ đổi bề rộng mỗi lần
-                // đổi kiểu — "Tên A→Z" và "Nghe nhiều nhất" lệch nhau khá xa,
-                // nên hàng nhích qua nhích lại. Trạng thái đã nằm trong `Menu`:
-                // mở ra là thấy dấu tick ở mục đang chọn.
-                //
-                // `.fill` khi khác mặc định, viền rỗng khi đang ở `.title`: đó
-                // là cách Apple nói "bộ lọc này đang có tác dụng" mà không cần
-                // thêm chữ nào.
-                Image(systemName: sort == .default
-                      ? "arrow.up.arrow.down.circle"
-                      : "arrow.up.arrow.down.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(sort == .default ? AnyShapeStyle(.secondary)
-                                                      : AnyShapeStyle(Color.accentColor))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                .pickerStyle(.menu)
+            case .drive:
+                Button { showFileImporter = true } label: {
+                    Label("Thêm nhạc", systemImage: "plus")
+                }
+                Button { showDriveManager = true } label: {
+                    Label("Thư mục Drive", systemImage: "folder")
+                }
+            case .jamendo:
+                // Vẫn là "thêm nhạc", chỉ khác nơi đến: kho của Jamendo thay
+                // cho trình chọn tệp. Nhãn riêng để VoiceOver và mắt phân biệt.
+                Button { showJamendoDiscovery = true } label: {
+                    Label("Khám phá Jamendo", systemImage: "plus")
+                }
             }
-            .accessibilityLabel(String(
-                localized: "Sắp xếp",
-                bundle: AppLanguage.resolvedBundle,
-                locale: AppLanguage.resolvedLocale
-            ))
-            .accessibilityValue(sort.label)
+        } label: {
+            Image(systemName: "ellipsis")
         }
-        .padding(.horizontal)
-        .padding(.bottom, 2)
     }
 
     @ViewBuilder
@@ -311,15 +270,11 @@ struct SongsView: View {
             .padding(.horizontal)
             .padding(.bottom, 8)
 
-            if source == .local {
-                sortRow
-            }
-
             switch source {
             case .local:
                 localContent
             case .drive:
-                DriveSongsList()
+                DriveSongsList(showManager: $showDriveManager)
             case .jamendo:
                 JamendoSongsList()
             }
